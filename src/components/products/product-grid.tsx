@@ -8,7 +8,7 @@ import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { createProduct, updateProduct } from "@/actions/products";
 import { validateProduct } from "@/lib/validations";
@@ -25,6 +25,7 @@ import {
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -136,6 +137,20 @@ export function ProductGrid({
   const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isAutoPopulating = useRef(false);
+  const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const saveColumnState = useCallback(() => {
+    if (!gridApiRef.current) return;
+    const state = gridApiRef.current.getColumnState();
+    localStorage.setItem("ag-grid-col-state-products", JSON.stringify(state));
+  }, []);
+
+  const saveColumnStateDebounced = useCallback(() => {
+    if (colSaveTimer.current) clearTimeout(colSaveTimer.current);
+    colSaveTimer.current = setTimeout(() => {
+      saveColumnState();
+    }, 300);
+  }, [saveColumnState]);
 
   const rowData = useMemo((): (Record<string, unknown> & { __status: RowStatus })[] => {
     return (products as Record<string, unknown>[]).map((p) => ({
@@ -164,7 +179,7 @@ export function ProductGrid({
   const columnDefs = useMemo<ColDef[]>(() => [
     { headerName: "", field: "__status", width: 40, maxWidth: 40, pinned: "left", editable: false, sortable: false, cellRenderer: StatusCellRenderer, cellClass: "status-cell" },
     { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 90, editable: true },
-    { field: "date", headerName: "Date", minWidth: 100, editable: true },
+    { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
     { field: "skuCode", headerName: "SKU", minWidth: 90, editable: true },
     { field: "articleNumber", headerName: "Art #", minWidth: 80, editable: true },
     { field: "colour", headerName: "Colour", minWidth: 90, editable: true },
@@ -173,7 +188,32 @@ export function ProductGrid({
     { field: "gender", headerName: "Gender", minWidth: 85, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: genderValues }, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
     { field: "vendorId", headerName: "Vendor", minWidth: 110, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "status", headerName: "Status", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: statusValues }, valueFormatter: (p) => PRODUCT_STATUS_LABELS[p.value] || p.value || "" },
-    { field: "isRepeat", headerName: "Repeat", minWidth: 65, maxWidth: 65, editable: true, cellDataType: "boolean" },
+    {
+      field: "isRepeat", headerName: "Repeat", minWidth: 65, editable: false,
+      cellRenderer: (params: { data: Record<string, unknown> }) => {
+        if (!params.data) return null;
+        const checked = Boolean(params.data.isRepeat);
+        return (
+          <div className="flex items-center justify-center h-full">
+            <button
+              onClick={() => {
+                const rowId = String(params.data.id);
+                const updated = { ...params.data, isRepeat: !checked };
+                gridApiRef.current?.applyTransaction({ update: [updated] });
+                setStatus(rowId, "dirty");
+                if (rowId.startsWith("__new_")) {
+                  setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? updated : r));
+                }
+                debouncedSave(updated);
+              }}
+              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${checked ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
+            >
+              {checked && <Check className="h-3 w-3 text-white" />}
+            </button>
+          </div>
+        );
+      },
+    },
     // Fabric
     { field: "fabricName", headerName: "Fabric Name", minWidth: 110, editable: true },
     numCol("fabricGsm", "GSM", 65),
@@ -231,8 +271,8 @@ export function ProductGrid({
         if (!params.data) return null;
         const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
           </button>
         );
       },
@@ -374,14 +414,18 @@ export function ProductGrid({
           <Input placeholder="Search style, SKU, name..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[200px]" />
         </form>
         <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Vendor" /></SelectTrigger>
+          <SelectTrigger className="w-[150px]">
+            <span className="truncate">{vendorLabels[searchParams.get("vendor") || ""] || "All Vendors"}</span>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vendors</SelectItem>
             {vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
           </SelectContent>
         </Select>
         <Select value={searchParams.get("status") || "all"} onValueChange={(v) => applyFilter("status", v)}>
-          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[170px]">
+            <span className="truncate">{PRODUCT_STATUS_LABELS[searchParams.get("status") || ""] || "All Statuses"}</span>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
             {Object.entries(PRODUCT_STATUS_LABELS).map(([k, v]) => (<SelectItem key={k} value={k}>{v}</SelectItem>))}
@@ -398,8 +442,27 @@ export function ProductGrid({
         <AgGridReact
           rowData={enrichedData}
           columnDefs={columnDefs}
-          onGridReady={(e: GridReadyEvent) => { gridApiRef.current = e.api; }}
+          onGridReady={(e: GridReadyEvent) => {
+            gridApiRef.current = e.api;
+            const saved = localStorage.getItem("ag-grid-col-state-products");
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                const pinnedMap: Record<string, string | null> = {};
+                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as string; });
+                const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
+                  if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
+                  return cs;
+                });
+                e.api.applyColumnState({ state: merged, applyOrder: true });
+              } catch {
+                // Ignore invalid saved state
+              }
+            }
+          }}
           onCellValueChanged={onCellValueChanged}
+          onColumnMoved={saveColumnState}
+          onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
           defaultColDef={{ editable: true, sortable: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={{ type: "fitCellContents" }}

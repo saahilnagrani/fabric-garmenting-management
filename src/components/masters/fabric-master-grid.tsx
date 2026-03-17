@@ -105,6 +105,7 @@ export function FabricMasterGrid({
 
   return (
     <DataGrid<FabricMasterRow>
+      gridId="fabric-masters"
       rowData={rowData}
       columnDefs={columnDefs}
       defaultRow={defaultRow}

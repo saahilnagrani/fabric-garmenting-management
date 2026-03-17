@@ -11,7 +11,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -202,7 +201,9 @@ export function ProductForm({
               value={String(watched.gender)}
               onValueChange={(v) => setValue("gender", v ?? "")}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <span className="truncate">{GENDER_LABELS[String(watched.gender)] || "Select gender"}</span>
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(GENDER_LABELS).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v}</SelectItem>
@@ -220,7 +221,9 @@ export function ProductForm({
               value={String(watched.vendorId)}
               onValueChange={(v) => setValue("vendorId", v ?? "")}
             >
-              <SelectTrigger><SelectValue placeholder="Select vendor" /></SelectTrigger>
+              <SelectTrigger>
+                <span className="truncate">{vendors.find((v) => v.id === String(watched.vendorId))?.name || "Select vendor"}</span>
+              </SelectTrigger>
               <SelectContent>
                 {vendors.map((v) => (
                   <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
@@ -234,7 +237,9 @@ export function ProductForm({
               value={String(watched.status)}
               onValueChange={(v) => setValue("status", v ?? "")}
             >
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger>
+                <span className="truncate">{PRODUCT_STATUS_LABELS[String(watched.status)] || "Select status"}</span>
+              </SelectTrigger>
               <SelectContent>
                 {Object.entries(PRODUCT_STATUS_LABELS).map(([k, v]) => (
                   <SelectItem key={k} value={k}>{v}</SelectItem>

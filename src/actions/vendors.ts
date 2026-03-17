@@ -17,3 +17,10 @@ export async function createVendor(data: {
   revalidatePath("/vendors");
   return vendor;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function updateVendor(id: string, data: any) {
+  const vendor = await db.vendor.update({ where: { id }, data });
+  revalidatePath("/vendors");
+  return vendor;
+}

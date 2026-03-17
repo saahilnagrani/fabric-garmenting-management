@@ -7,7 +7,7 @@ import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { createFabricOrder, updateFabricOrder } from "@/actions/fabric-orders";
 import { validateFabricOrder } from "@/lib/validations";
@@ -15,6 +15,7 @@ import { GENDER_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
 import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -47,6 +48,7 @@ function toRow(o: any): Record<string, unknown> {
     quantityOrdered: toNum(o.quantityOrdered),
     quantityShipped: toNum(o.quantityShipped),
     fabricCostTotal: toNum(o.fabricCostTotal),
+    orderDate: s(o.orderDate),
     isRepeat: Boolean(o.isRepeat),
     isStrikedThrough: Boolean(o.isStrikedThrough),
   };
@@ -70,6 +72,7 @@ function toPayload(data: Record<string, unknown>, phaseId?: string): any {
     quantityOrdered: numOrNull(data.quantityOrdered),
     quantityShipped: numOrNull(data.quantityShipped),
     fabricCostTotal: numOrNull(data.fabricCostTotal),
+    orderDate: strOrNull(data.orderDate),
     isRepeat: Boolean(data.isRepeat),
     isStrikedThrough: Boolean(data.isStrikedThrough),
   };
@@ -107,6 +110,20 @@ export function FabricOrderGrid({
   const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isAutoPopulating = useRef(false);
+  const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const saveColumnState = useCallback(() => {
+    if (!gridApiRef.current) return;
+    const state = gridApiRef.current.getColumnState();
+    localStorage.setItem("ag-grid-col-state-fabric-orders", JSON.stringify(state));
+  }, []);
+
+  const saveColumnStateDebounced = useCallback(() => {
+    if (colSaveTimer.current) clearTimeout(colSaveTimer.current);
+    colSaveTimer.current = setTimeout(() => {
+      saveColumnState();
+    }, 300);
+  }, [saveColumnState]);
 
   const rowData = useMemo((): (Record<string, unknown> & { __status: RowStatus })[] => {
     return (orders as Record<string, unknown>[]).map((o) => ({
@@ -127,21 +144,22 @@ export function FabricOrderGrid({
 
   const columnDefs = useMemo<ColDef[]>(() => [
     { headerName: "", field: "__status", width: 40, maxWidth: 40, pinned: "left", editable: false, sortable: false, cellRenderer: StatusCellRenderer, cellClass: "status-cell" },
+    { field: "fabricName", headerName: "Fabric Name", minWidth: 120, pinned: "left", editable: true },
     { field: "vendorId", headerName: "Vendor", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
-    { field: "styleNumbers", headerName: "Style #s", minWidth: 130, editable: true },
-    { field: "fabricName", headerName: "Fabric", minWidth: 120, editable: true },
-    { field: "colour", headerName: "Colour", minWidth: 100, editable: true },
+    { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
+    { field: "styleNumbers", headerName: "Fabric used for styles", minWidth: 160, editable: true },
+    { field: "colour", headerName: "Colours", minWidth: 100, editable: true },
     { field: "availableColour", headerName: "Avail. Colour", minWidth: 110, editable: true },
     { field: "gender", headerName: "Gender", minWidth: 85, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: genderValues }, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
-    { field: "billNumber", headerName: "Bill #", minWidth: 90, editable: true },
-    { field: "receivedAt", headerName: "Received At", minWidth: 110, editable: true },
+    { field: "billNumber", headerName: "Invoice #", minWidth: 90, editable: true },
+    { field: "receivedAt", headerName: "Received At", minWidth: 130, editable: true, cellEditor: DateCellEditor },
     numCol("costPerUnit", "Cost/Unit", 85),
-    numCol("quantityOrdered", "Ordered", 80),
-    numCol("quantityShipped", "Shipped", 80),
-    numCol("fabricCostTotal", "Total Cost", 90),
-    // Computed: cost * qty
+    numCol("quantityOrdered", "Ordered Qty (kg)", 110),
+    numCol("quantityShipped", "Shipped Qty (kg)", 110),
+    numCol("fabricCostTotal", "Expected Cost (Rs)", 130),
+    // Computed: Ordered Qty * Cost/Unit
     {
-      headerName: "Calc Cost", minWidth: 90, editable: false, cellClass: "computed-cell",
+      headerName: "Fabric Cost (Rs)", minWidth: 110, editable: false, cellClass: "computed-cell",
       valueGetter: (p) => {
         if (!p.data) return 0;
         const cost = toNum(p.data.costPerUnit) || 0;
@@ -150,7 +168,32 @@ export function FabricOrderGrid({
       },
       valueFormatter: (p) => formatCurrency(p.value),
     },
-    { field: "isRepeat", headerName: "Rpt", minWidth: 55, maxWidth: 55, editable: true, cellDataType: "boolean" },
+    {
+      field: "isRepeat", headerName: "Repeat", minWidth: 75, maxWidth: 75, editable: false,
+      cellRenderer: (params: { data: Record<string, unknown> }) => {
+        if (!params.data) return null;
+        const checked = Boolean(params.data.isRepeat);
+        return (
+          <div className="flex items-center justify-center h-full">
+            <button
+              onClick={() => {
+                const rowId = String(params.data.id);
+                const updated = { ...params.data, isRepeat: !checked };
+                gridApiRef.current?.applyTransaction({ update: [updated] });
+                setStatus(rowId, "dirty");
+                if (rowId.startsWith("__new_")) {
+                  setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? updated : r));
+                }
+                debouncedSave(updated);
+              }}
+              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${checked ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
+            >
+              {checked && <Check className="h-3 w-3 text-white" />}
+            </button>
+          </div>
+        );
+      },
+    },
     // Actions
     {
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
@@ -158,8 +201,8 @@ export function FabricOrderGrid({
         if (!params.data) return null;
         const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
           </button>
         );
       },
@@ -256,7 +299,7 @@ export function FabricOrderGrid({
       id, phaseId, vendorId: vendors[0]?.id || "", styleNumbers: "", fabricName: "",
       colour: "", gender: "", billNumber: "", receivedAt: "", availableColour: "",
       costPerUnit: null, quantityOrdered: null, quantityShipped: null, fabricCostTotal: null,
-      isRepeat: currentTab === "repeat", isStrikedThrough: false,
+      orderDate: "", isRepeat: currentTab === "repeat", isStrikedThrough: false,
     };
     setTempRows((prev) => position === "top" ? [newRow, ...prev] : [...prev, newRow]);
     setStatus(id, "dirty");
@@ -296,7 +339,9 @@ export function FabricOrderGrid({
         ))}
         <div className="ml-auto" />
         <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Vendor" /></SelectTrigger>
+          <SelectTrigger className="w-[150px]">
+            <span className="truncate">{vendorLabels[searchParams.get("vendor") || ""] || "All Vendors"}</span>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vendors</SelectItem>
             {vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
@@ -313,8 +358,28 @@ export function FabricOrderGrid({
         <AgGridReact
           rowData={enrichedData}
           columnDefs={columnDefs}
-          onGridReady={(e: GridReadyEvent) => { gridApiRef.current = e.api; }}
+          onGridReady={(e: GridReadyEvent) => {
+            gridApiRef.current = e.api;
+            const saved = localStorage.getItem("ag-grid-col-state-fabric-orders");
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                // Preserve pinned settings from column defs
+                const pinnedMap: Record<string, string | null> = {};
+                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as string; });
+                const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
+                  if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
+                  return cs;
+                });
+                e.api.applyColumnState({ state: merged, applyOrder: true });
+              } catch {
+                // Ignore invalid saved state
+              }
+            }
+          }}
           onCellValueChanged={onCellValueChanged}
+          onColumnMoved={saveColumnState}
+          onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
           defaultColDef={{ editable: true, sortable: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={{ type: "fitCellContents" }}

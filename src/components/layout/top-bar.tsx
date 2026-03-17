@@ -13,8 +13,8 @@ export async function TopBar() {
 
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-background px-4">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="h-6" />
+      <SidebarTrigger className="-ml-1" />
+      <Separator orientation="vertical" className="mr-2 h-4" />
       <PhaseSelector
         phases={phases}
         currentPhaseId={currentPhase?.id}

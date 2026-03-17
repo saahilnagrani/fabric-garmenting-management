@@ -7,7 +7,7 @@ import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { createExpense, updateExpense } from "@/actions/expenses";
 import { validateExpense } from "@/lib/validations";
@@ -15,6 +15,7 @@ import { EXPENSE_TYPE_LABELS, FABRIC_STATUS_LABELS, DELIVERY_LOCATIONS } from "@
 import { formatCurrency } from "@/lib/formatters";
 import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -121,6 +122,20 @@ export function ExpenseGrid({
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
   const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const saveColumnState = useCallback(() => {
+    if (!gridApiRef.current) return;
+    const state = gridApiRef.current.getColumnState();
+    localStorage.setItem("ag-grid-col-state-expenses", JSON.stringify(state));
+  }, []);
+
+  const saveColumnStateDebounced = useCallback(() => {
+    if (colSaveTimer.current) clearTimeout(colSaveTimer.current);
+    colSaveTimer.current = setTimeout(() => {
+      saveColumnState();
+    }, 300);
+  }, [saveColumnState]);
 
   const rowData = useMemo((): (Record<string, unknown> & { __status: RowStatus })[] => {
     return (expenses as Record<string, unknown>[]).map((e) => ({
@@ -169,7 +184,7 @@ export function ExpenseGrid({
     { field: "invoiceNumber", headerName: "Invoice #", minWidth: 100, editable: true },
     { field: "vendorId", headerName: "Vendor", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "specification", headerName: "Type", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: typeValues }, valueFormatter: (p) => EXPENSE_TYPE_LABELS[p.value] || p.value || "" },
-    { field: "date", headerName: "Date", minWidth: 110, editable: true },
+    { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
     { field: "description", headerName: "Description", minWidth: 150, editable: true },
     { field: "quantity", headerName: "Qty", minWidth: 90, editable: true },
     {
@@ -186,9 +201,9 @@ export function ExpenseGrid({
       valueParser: (p) => toNum(p.newValue),
     },
     { field: "fabricStatus", headerName: "Fabric Status", minWidth: 130, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: fabricStatusValues }, valueFormatter: (p) => FABRIC_STATUS_LABELS[p.value] || p.value || "" },
-    { field: "inwardDate", headerName: "Inward Date", minWidth: 110, editable: true },
-    { field: "expectedInward", headerName: "Exp Inward", minWidth: 110, editable: true },
-    { field: "actualInward", headerName: "Act Inward", minWidth: 110, editable: true },
+    { field: "inwardDate", headerName: "Inward Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
+    { field: "expectedInward", headerName: "Exp Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor },
+    { field: "actualInward", headerName: "Act Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor },
     // Actions
     {
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
@@ -196,8 +211,8 @@ export function ExpenseGrid({
         if (!params.data || String(params.data.id) === "__total") return null;
         const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
           </button>
         );
       },
@@ -306,14 +321,18 @@ export function ExpenseGrid({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Vendor" /></SelectTrigger>
+          <SelectTrigger className="w-[150px]">
+            <span className="truncate">{vendorLabels[searchParams.get("vendor") || ""] || "All Vendors"}</span>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vendors</SelectItem>
             {vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
           </SelectContent>
         </Select>
         <Select value={searchParams.get("type") || "all"} onValueChange={(v) => applyFilter("type", v)}>
-          <SelectTrigger className="w-[170px]"><SelectValue placeholder="Type" /></SelectTrigger>
+          <SelectTrigger className="w-[170px]">
+            <span className="truncate">{EXPENSE_TYPE_LABELS[searchParams.get("type") || ""] || "All Types"}</span>
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Types</SelectItem>
             {Object.entries(EXPENSE_TYPE_LABELS).map(([k, v]) => (<SelectItem key={k} value={k}>{v}</SelectItem>))}
@@ -330,8 +349,27 @@ export function ExpenseGrid({
         <AgGridReact
           rowData={enrichedData}
           columnDefs={columnDefs}
-          onGridReady={(e: GridReadyEvent) => { gridApiRef.current = e.api; }}
+          onGridReady={(e: GridReadyEvent) => {
+            gridApiRef.current = e.api;
+            const saved = localStorage.getItem("ag-grid-col-state-expenses");
+            if (saved) {
+              try {
+                const parsed = JSON.parse(saved);
+                const pinnedMap: Record<string, string | null> = {};
+                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as string; });
+                const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
+                  if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
+                  return cs;
+                });
+                e.api.applyColumnState({ state: merged, applyOrder: true });
+              } catch {
+                // Ignore invalid saved state
+              }
+            }
+          }}
           onCellValueChanged={onCellValueChanged}
+          onColumnMoved={saveColumnState}
+          onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
           defaultColDef={{ editable: true, sortable: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={{ type: "fitCellContents" }}

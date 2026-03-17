@@ -31,8 +31,8 @@ const navItems = [
   { title: "Expenses", href: "/expenses", icon: Receipt },
   { title: "Vendors", href: "/vendors", icon: Users },
   { title: "Phases", href: "/phases", icon: Layers },
-  { title: "Fabric Masters", href: "/fabric-masters", icon: BookOpen },
-  { title: "Product Masters", href: "/product-masters", icon: ClipboardList },
+  { title: "Fabrics Master DB", href: "/fabric-masters", icon: BookOpen },
+  { title: "Products Master DB", href: "/product-masters", icon: ClipboardList },
 ];
 
 export function AppSidebar() {

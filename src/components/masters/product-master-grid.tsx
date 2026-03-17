@@ -216,6 +216,7 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
 
   return (
     <DataGrid<ProductMasterRow>
+      gridId="product-masters"
       rowData={rowData}
       columnDefs={columnDefs}
       defaultRow={defaultRow}

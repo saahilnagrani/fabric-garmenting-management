@@ -8,7 +8,7 @@ export default async function FabricMastersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Fabric Masters</h1>
+        <h1 className="text-2xl font-bold">Fabrics Master DB</h1>
         <p className="text-sm text-muted-foreground">
           {masters.length} fabrics. These defaults auto-populate when adding fabric orders.
         </p>

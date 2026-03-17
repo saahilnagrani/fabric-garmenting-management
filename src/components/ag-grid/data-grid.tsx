@@ -14,6 +14,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 type RowStatus = "clean" | "dirty" | "saving" | "error";
 
 type DataGridProps<T extends Record<string, unknown>> = {
+  gridId: string;
   rowData: T[];
   columnDefs: ColDef<T>[];
   defaultRow: Partial<T>;
@@ -24,7 +25,9 @@ type DataGridProps<T extends Record<string, unknown>> = {
   getRowId?: (data: T) => string;
   pinnedBottomRowData?: T[];
   height?: string;
+  autoHeight?: boolean;
   onCellValueChangedExtra?: (event: CellValueChangedEvent<T>) => void;
+  showStrikethrough?: boolean;
 };
 
 let tempIdCounter = 0;
@@ -42,6 +45,7 @@ function StatusCellRenderer(props: { data: { __status?: RowStatus } }) {
 }
 
 export function DataGrid<T extends Record<string, unknown>>({
+  gridId,
   rowData,
   columnDefs,
   defaultRow,
@@ -52,18 +56,46 @@ export function DataGrid<T extends Record<string, unknown>>({
   getRowId: getRowIdProp,
   pinnedBottomRowData,
   height = "600px",
+  autoHeight = false,
   onCellValueChangedExtra,
+  showStrikethrough = true,
 }: DataGridProps<T>) {
   const gridRef = useRef<AgGridReact<T>>(null);
   const gridApiRef = useRef<GridApi<T> | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const [tempRows, setTempRows] = useState<Map<string, T>>(new Map());
+  const [topTempRows, setTopTempRows] = useState<T[]>([]);
+  const [bottomTempRows, setBottomTempRows] = useState<T[]>([]);
   const isAutoPopulating = useRef(false);
+  const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const colStateKey = `ag-grid-col-state-${gridId}`;
+
+  const saveColumnState = useCallback(() => {
+    if (!gridApiRef.current) return;
+    const state = gridApiRef.current.getColumnState();
+    localStorage.setItem(colStateKey, JSON.stringify(state));
+  }, [colStateKey]);
+
+  const saveColumnStateDebounced = useCallback(() => {
+    if (colSaveTimer.current) clearTimeout(colSaveTimer.current);
+    colSaveTimer.current = setTimeout(() => {
+      saveColumnState();
+    }, 300);
+  }, [saveColumnState]);
+
+  function getRowIdFn(data: T): string {
+    if (getRowIdProp) return getRowIdProp(data);
+    return (data as Record<string, unknown>).id as string || (data as Record<string, unknown>).__tempId as string;
+  }
 
   // Enrich row data with status for rendering
   const enrichedData = useMemo(() => {
-    const tempEnriched = Array.from(tempRows.values()).map((row) => ({
+    const topEnriched = topTempRows.map((row) => ({
+      ...row,
+      __status: statusMap.get(getRowIdFn(row)) || ("dirty" as RowStatus),
+    }));
+    const bottomEnriched = bottomTempRows.map((row) => ({
       ...row,
       __status: statusMap.get(getRowIdFn(row)) || ("dirty" as RowStatus),
     }));
@@ -71,23 +103,34 @@ export function DataGrid<T extends Record<string, unknown>>({
       ...row,
       __status: statusMap.get(getRowIdFn(row)) || ("clean" as RowStatus),
     }));
-    const all = [...tempEnriched, ...serverEnriched];
+    const all = [...topEnriched, ...serverEnriched, ...bottomEnriched];
     return all.sort((a, b) => {
       const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
       const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
       return aStruck - bStruck;
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowData, statusMap, tempRows]);
-
-  function getRowIdFn(data: T): string {
-    if (getRowIdProp) return getRowIdProp(data);
-    return (data as Record<string, unknown>).id as string || (data as Record<string, unknown>).__tempId as string;
-  }
+  }, [rowData, statusMap, topTempRows, bottomTempRows]);
 
   const onGridReady = useCallback((params: GridReadyEvent<T>) => {
     gridApiRef.current = params.api;
-  }, []);
+    const saved = localStorage.getItem(colStateKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Preserve pinned settings from column defs so code-defined pins persist
+        const pinnedMap: Record<string, string | null> = {};
+        columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field as string] = col.pinned as string; });
+        const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
+          if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
+          return cs;
+        });
+        params.api.applyColumnState({ state: merged, applyOrder: true });
+      } catch {
+        // Ignore invalid saved state
+      }
+    }
+  }, [colStateKey, columnDefs]);
 
   const setStatus = useCallback((id: string, status: RowStatus) => {
     setStatusMap((prev) => {
@@ -121,11 +164,8 @@ export function DataGrid<T extends Record<string, unknown>>({
           delete (cleanData as Record<string, unknown>).__tempId;
           delete (cleanData as Record<string, unknown>).__status;
           await onCreate(cleanData);
-          setTempRows((prev) => {
-            const next = new Map(prev);
-            next.delete(rowId);
-            return next;
-          });
+          setTopTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
+          setBottomTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
           setStatusMap((prev) => {
             const next = new Map(prev);
             next.delete(rowId);
@@ -172,14 +212,9 @@ export function DataGrid<T extends Record<string, unknown>>({
       debouncedSave(event.data);
 
       // Keep temp rows in sync
-      const id = getRowIdFn(event.data);
-      if (id.startsWith("__new_")) {
-        setTempRows((prev) => {
-          if (!prev.has(id)) return prev;
-          const next = new Map(prev);
-          next.set(id, event.data);
-          return next;
-        });
+      if (rowId.startsWith("__new_")) {
+        setTopTempRows((prev) => prev.map((r) => getRowIdFn(r) === rowId ? event.data : r));
+        setBottomTempRows((prev) => prev.map((r) => getRowIdFn(r) === rowId ? event.data : r));
       }
 
       // Allow parent to hook into cell changes (for auto-populate)
@@ -196,11 +231,11 @@ export function DataGrid<T extends Record<string, unknown>>({
       id: tempId,
       __tempId: tempId,
     } as unknown as T;
-    setTempRows((prev) => {
-      const next = new Map(prev);
-      next.set(tempId, newRow);
-      return next;
-    });
+    if (position === "top") {
+      setTopTempRows((prev) => [newRow, ...prev]);
+    } else {
+      setBottomTempRows((prev) => [...prev, newRow]);
+    }
     setStatus(tempId, "dirty");
   }, [defaultRow, setStatus]);
 
@@ -210,11 +245,8 @@ export function DataGrid<T extends Record<string, unknown>>({
       const isNew = rowId.startsWith("__new_");
 
       if (isNew) {
-        setTempRows((prev) => {
-          const next = new Map(prev);
-          next.delete(rowId);
-          return next;
-        });
+        setTopTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
+        setBottomTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
         setStatusMap((prev) => {
           const next = new Map(prev);
           next.delete(rowId);
@@ -237,7 +269,7 @@ export function DataGrid<T extends Record<string, unknown>>({
     [onStrikethrough]
   );
 
-  // Build full column defs with status and actions columns
+  // Build full column defs with status and optionally actions columns
   const fullColumnDefs = useMemo<ColDef<T>[]>(() => {
     const statusCol: ColDef<T> = {
       headerName: "",
@@ -253,31 +285,36 @@ export function DataGrid<T extends Record<string, unknown>>({
       cellClass: "status-cell",
     };
 
-    const actionsCol: ColDef<T> = {
-      headerName: "",
-      width: 45,
-      maxWidth: 45,
-      pinned: "right",
-      editable: false,
-      sortable: false,
-      filter: false,
-      cellRenderer: (params: { data: T }) => {
-        if (!params.data) return null;
-        const isStruck = Boolean((params.data as Record<string, unknown>).isStrikedThrough);
-        return (
-          <button
-            onClick={() => strikethroughHandler(params.data)}
-            className={`p-1 ${isStruck ? "opacity-100" : "opacity-0 group-hover:opacity-100 hover:opacity-100"} transition-opacity`}
-            title={isStruck ? "Remove strikethrough" : "Strikethrough row"}
-          >
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
-          </button>
-        );
-      },
-    };
+    const cols: ColDef<T>[] = [statusCol, ...columnDefs];
 
-    return [statusCol, ...columnDefs, actionsCol];
-  }, [columnDefs, strikethroughHandler]);
+    if (showStrikethrough) {
+      const actionsCol: ColDef<T> = {
+        headerName: "",
+        width: 45,
+        maxWidth: 45,
+        pinned: "right",
+        editable: false,
+        sortable: false,
+        filter: false,
+        cellRenderer: (params: { data: T }) => {
+          if (!params.data) return null;
+          const isStruck = Boolean((params.data as Record<string, unknown>).isStrikedThrough);
+          return (
+            <button
+              onClick={() => strikethroughHandler(params.data)}
+              className={`p-1 cursor-pointer ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"} transition-opacity`}
+              title={isStruck ? "Remove strikethrough" : "Strikethrough row"}
+            >
+              <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
+            </button>
+          );
+        },
+      };
+      cols.push(actionsCol);
+    }
+
+    return cols;
+  }, [columnDefs, strikethroughHandler, showStrikethrough]);
 
   return (
     <div className="space-y-3">
@@ -285,13 +322,15 @@ export function DataGrid<T extends Record<string, unknown>>({
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         Add Row Top
       </Button>
-      <div className="ag-theme-quartz" style={{ height, width: "100%" }}>
+      <div className="ag-theme-quartz" style={autoHeight ? { width: "100%", maxHeight: height } : { height, width: "100%" }}>
         <AgGridReact<T>
           ref={gridRef}
           rowData={enrichedData}
           columnDefs={fullColumnDefs}
           onGridReady={onGridReady}
           onCellValueChanged={onCellValueChanged}
+          onColumnMoved={saveColumnState}
+          onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => getRowIdFn(params.data)}
           defaultColDef={{
             editable: true,
@@ -311,6 +350,7 @@ export function DataGrid<T extends Record<string, unknown>>({
           getRowClass={(params) => (params.data as Record<string, unknown>)?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
           suppressClickEdit={false}
+          domLayout={autoHeight ? "autoHeight" : "normal"}
         />
       </div>
       <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>

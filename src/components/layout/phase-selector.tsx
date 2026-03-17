@@ -6,7 +6,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { setCurrentPhase } from "@/actions/phases";
 
@@ -32,10 +31,12 @@ export function PhaseSelector({
     router.refresh();
   }
 
+  const selectedPhase = phases.find((p) => p.id === currentPhaseId);
+
   return (
     <Select value={currentPhaseId || ""} onValueChange={handleChange}>
       <SelectTrigger className="w-[220px]">
-        <SelectValue placeholder="Select phase" />
+        <span className="truncate">{selectedPhase?.name || "Select phase"}</span>
       </SelectTrigger>
       <SelectContent>
         {phases.map((phase) => (

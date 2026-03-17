@@ -32,3 +32,10 @@ export async function setCurrentPhase(id: string) {
   await db.phase.update({ where: { id }, data: { isCurrent: true } });
   revalidatePath("/");
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function updatePhase(id: string, data: any) {
+  const phase = await db.phase.update({ where: { id }, data });
+  revalidatePath("/phases");
+  return phase;
+}
