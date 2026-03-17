@@ -108,6 +108,20 @@
   cursor: text;
 }
 
+/* Sort icons - active sort column highlighted in blue */
+.ag-theme-quartz .ag-sort-ascending-icon,
+.ag-theme-quartz .ag-sort-descending-icon {
+  color: #3b82f6 !important;
+}
+
+.ag-theme-quartz .ag-sort-none-icon {
+  opacity: 0.25;
+}
+
+.ag-theme-quartz .ag-header-cell:hover .ag-sort-none-icon {
+  opacity: 0.5;
+}
+
 /* Strikethrough rows */
 .ag-theme-quartz .strikethrough-row {
   text-decoration: line-through;

@@ -335,6 +335,7 @@ export function DataGrid<T extends Record<string, unknown>>({
           defaultColDef={{
             editable: true,
             sortable: true,
+            unSortIcon: true,
             filter: false,
             resizable: true,
             minWidth: 60,

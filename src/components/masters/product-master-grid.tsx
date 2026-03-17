@@ -20,8 +20,9 @@ import { formatCurrency, formatPercent } from "@/lib/formatters";
 
 type ProductMasterRow = {
   id: string;
-  styleNumber: string;
   skuCode: string;
+  styleNumber: string;
+  articleNumber: string;
   fabricName: string;
   type: string;
   gender: string;
@@ -60,8 +61,9 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
         const s = (v: unknown) => (v === null || v === undefined ? "" : String(v));
         return {
           id: m.id as string,
-          styleNumber: s(m.styleNumber),
           skuCode: s(m.skuCode),
+          styleNumber: s(m.styleNumber),
+          articleNumber: s(m.articleNumber),
           fabricName: s(m.fabricName),
           type: s(m.type),
           gender: s(m.gender),
@@ -102,9 +104,10 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
 
   const columnDefs = useMemo<ColDef<ProductMasterRow>[]>(
     () => [
-      { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 100 },
-      { field: "skuCode", headerName: "SKU", minWidth: 100 },
-      { field: "fabricName", headerName: "Fabric", minWidth: 120 },
+      { field: "skuCode", headerName: "SKU", pinned: "left", minWidth: 120 },
+      { field: "styleNumber", headerName: "Style #", minWidth: 100 },
+      { field: "articleNumber", headerName: "Article #", minWidth: 100 },
+      { field: "fabricName", headerName: "Fabric Name", minWidth: 120 },
       { field: "type", headerName: "Type", minWidth: 100 },
       {
         field: "gender",
@@ -129,65 +132,63 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
         cellRenderer: MultiTagRenderer,
         cellEditor: MultiTagEditor,
       },
-      numCol("garmentsPerKg", "G/Kg"),
-      numCol("garmentsPerKg2", "G/Kg (2nd)"),
-      numCol("stitchingCost", "Stitch"),
-      numCol("brandLogoCost", "Logo"),
-      numCol("neckTwillCost", "Twill"),
-      numCol("reflectorsCost", "Refl"),
-      numCol("fusingCost", "Fuse"),
-      numCol("accessoriesCost", "Acc"),
-      numCol("brandTagCost", "BTag"),
-      numCol("sizeTagCost", "STag"),
-      numCol("packagingCost", "Pack"),
+      numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)", 140),
+      numCol("garmentsPerKg2", "No of Garments/kg (Fabric 2)", 140),
+      numCol("stitchingCost", "Stitching Cost (Rs)", 110),
+      numCol("brandLogoCost", "Logo Cost (Rs)", 95),
+      numCol("neckTwillCost", "Neck Twill Cost (Rs)", 110),
+      numCol("reflectorsCost", "Reflectors Cost (Rs)", 110),
+      numCol("fusingCost", "Fusing Cost (Rs)", 100),
+      numCol("accessoriesCost", "Accessories Cost (Rs)", 115),
+      numCol("brandTagCost", "Brand Tag Cost (Rs)", 110),
+      numCol("sizeTagCost", "Size Tag Cost (Rs)", 105),
+      numCol("packagingCost", "Packaging Cost (Rs)", 110),
       {
-        headerName: "Tot Garm",
-        minWidth: 85,
+        headerName: "Total Garmenting Cost (Rs)",
+        minWidth: 130,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeTotalGarmenting(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("fabricCostPerKg", "Fab ₹/Kg", 90),
-      numCol("fabric2CostPerKg", "Fab2 ₹/Kg", 90),
+      numCol("fabricCostPerKg", "Fabric 1 Cost/kg", 100),
+      numCol("fabric2CostPerKg", "Fabric 2 Cost/kg", 100),
       {
-        headerName: "Fab/Pc",
-        minWidth: 80,
+        headerName: "Fabric Cost per Piece (Rs)",
+        minWidth: 125,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeFabricCostPerPiece(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        headerName: "Tot Cost",
-        minWidth: 85,
+        headerName: "Total Cost per piece (Rs)",
+        minWidth: 125,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeTotalCost(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("inwardShipping", "Ship", 70),
+      numCol("inwardShipping", "Shipping Cost per piece (Rs)", 125),
       {
-        headerName: "Landed",
-        minWidth: 85,
+        headerName: "Total Landed Cost per piece (Rs)",
+        minWidth: 145,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeTotalLandedCost(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("proposedMrp", "Prop MRP", 90),
-      numCol("onlineMrp", "Online MRP", 90),
       {
-        headerName: "DP",
-        minWidth: 75,
+        headerName: "Dealer Price (50% off)",
+        minWidth: 115,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeDealerPrice(p.data.proposedMrp) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        headerName: "PM",
-        minWidth: 65,
+        headerName: "Profit Margin (%)",
+        minWidth: 100,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => {
@@ -204,8 +205,9 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
   );
 
   const defaultRow: Partial<ProductMasterRow> = {
-    styleNumber: "",
     skuCode: "",
+    styleNumber: "",
+    articleNumber: "",
     fabricName: "",
     type: "",
     gender: "MENS",
@@ -222,8 +224,9 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
       defaultRow={defaultRow}
       onCreate={async (data) => {
         const payload = {
+          skuCode: data.skuCode,
           styleNumber: data.styleNumber,
-          skuCode: data.skuCode || null,
+          articleNumber: data.articleNumber || null,
           fabricName: data.fabricName,
           type: data.type,
           gender: data.gender || "MENS",
@@ -251,8 +254,9 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
       }}
       onSave={async (id, data) => {
         const payload = {
+          skuCode: data.skuCode,
           styleNumber: data.styleNumber,
-          skuCode: data.skuCode || null,
+          articleNumber: data.articleNumber || null,
           fabricName: data.fabricName,
           type: data.type,
           gender: data.gender || "MENS",

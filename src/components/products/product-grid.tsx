@@ -26,6 +26,7 @@ import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
+import { ProductOrderSheet } from "./product-order-sheet";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -135,6 +136,7 @@ export function ProductGrid({
   const gridApiRef = useRef<GridApi | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
   const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isAutoPopulating = useRef(false);
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
@@ -219,7 +221,7 @@ export function ProductGrid({
     numCol("fabricGsm", "GSM", 65),
     numCol("fabricCostPerKg", "Fabric 1 Cost/kg", 100),
     numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)", 140),
-    { field: "fabric2Name", headerName: "Ordered Qty (Fabric 2; kg)", minWidth: 140, editable: true },
+    { field: "fabric2Name", headerName: "Fabric 2 Name", minWidth: 110, editable: true },
     numCol("fabric2CostPerKg", "Fabric 2 Cost/kg", 100),
     numCol("fabric2GarmentsPerKg", "No of Garments/kg (Fabric 2)", 140),
     // Quantities
@@ -433,10 +435,19 @@ export function ProductGrid({
         </Select>
       </div>
 
-      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+      <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row Top
+        Add Product Order
       </Button>
+
+      <ProductOrderSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        vendors={vendors}
+        phaseId={phaseId}
+        productMasters={productMasters}
+        isRepeatTab={currentTab === "repeat"}
+      />
 
       <div className="ag-theme-quartz" style={{ height: "650px", width: "100%" }}>
         <AgGridReact
@@ -464,7 +475,7 @@ export function ProductGrid({
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: true, sortable: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          defaultColDef={{ editable: true, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={{ type: "fitCellContents" }}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
@@ -474,10 +485,6 @@ export function ProductGrid({
         />
       </div>
 
-      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
-        <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row Bottom
-      </Button>
     </div>
   );
 }

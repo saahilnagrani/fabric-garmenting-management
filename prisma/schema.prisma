@@ -260,8 +260,9 @@ model FabricMaster {
 
 model ProductMaster {
   id                  String   @id @default(cuid())
-  styleNumber         String   @unique
-  skuCode             String?
+  skuCode             String   @unique
+  styleNumber         String
+  articleNumber       String?
   fabricName          String
   type                String
   gender              Gender
@@ -288,5 +289,6 @@ model ProductMaster {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  @@index([skuCode])
   @@index([styleNumber])
 }

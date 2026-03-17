@@ -149,10 +149,11 @@ async function main() {
   }
   console.log(`Seeded ${fabCount} fabric masters`);
 
-  // === Seed Product Masters ===
-  const productMap = new Map<string, {
+  // === Seed Product Masters (keyed by SKU Code) ===
+  type ProductEntry = {
+    skuCode: string;
     styleNumber: string;
-    skuCode: string | null;
+    articleNumber: string | null;
     fabricName: string;
     type: string;
     gender: string;
@@ -175,19 +176,22 @@ async function main() {
     inwardShipping: number | null;
     proposedMrp: number | null;
     onlineMrp: number | null;
-  }>();
+  };
 
-  // New designs
+  const productMap = new Map<string, ProductEntry>();
+
+  // New designs - keyed by SKU Code (column J)
   const newDesigns = XLSX.utils.sheet_to_json(wb.Sheets["Phase 3 - New Designs"]);
   for (const row of newDesigns as Record<string, unknown>[]) {
-    const styleNumber = s(row["Style Number"]);
-    if (!styleNumber) continue;
+    const skuCode = s(row["SKU Code"]);
+    if (!skuCode) continue; // Skip rows without SKU Code
 
-    const key = styleNumber.toLowerCase();
+    const key = skuCode.toLowerCase();
     if (!productMap.has(key)) {
       productMap.set(key, {
-        styleNumber,
-        skuCode: s(row["SKU Code"]) || null,
+        skuCode,
+        styleNumber: s(row["Style Number"]) || "",
+        articleNumber: s(row["Article Number"]) || null,
         fabricName: s(row["Fabric"]) || "Unknown",
         type: s(row["Type"]) || "Unknown",
         gender: GENDER_MAP[s(row["Gender"])] || "MENS",
@@ -218,19 +222,20 @@ async function main() {
     if (colour) entry.coloursAvailable.add(colour);
   }
 
-  // Repeat designs
+  // Repeat designs - keyed by SKU Code (column I)
   const repeatDesigns = XLSX.utils.sheet_to_json(wb.Sheets["Phase 3 - Repeat Designs"]);
   for (const row of repeatDesigns as Record<string, unknown>[]) {
-    const articleName = s(row["Article Name "]);
-    const productName = s(row["Product Name "]);
-    const styleNumber = articleName || productName;
-    if (!styleNumber || styleNumber === "Unknown") continue;
+    const skuCode = s(row["SKU Code"]);
+    if (!skuCode) continue; // Skip rows without SKU Code
 
-    const key = styleNumber.toLowerCase();
+    const key = skuCode.toLowerCase();
     if (!productMap.has(key)) {
+      const articleName = s(row["Article Name "]);
+      const productName = s(row["Product Name "]);
       productMap.set(key, {
-        styleNumber,
-        skuCode: s(row["SKU Code"]) || null,
+        skuCode,
+        styleNumber: articleName || productName || "",
+        articleNumber: s(row["Article Number"]) || null,
         fabricName: s(row["Fabric 1"]) || "Unknown",
         type: s(row["Type"]) || "Unknown",
         gender: "MENS",
@@ -259,67 +264,48 @@ async function main() {
     const entry = productMap.get(key)!;
     const colour1 = s(row["Colour 1"]);
     if (colour1) entry.coloursAvailable.add(colour1);
+    const colour2 = s(row["Colour 2"]);
+    if (colour2) entry.colours2Available.add(colour2);
   }
 
-  // Upsert product masters
+  // Upsert product masters by SKU Code
   let prodCount = 0;
   for (const entry of productMap.values()) {
+    const data = {
+      styleNumber: entry.styleNumber,
+      articleNumber: entry.articleNumber,
+      fabricName: entry.fabricName,
+      type: entry.type,
+      gender: entry.gender as "MENS" | "WOMENS" | "KIDS",
+      productName: entry.productName,
+      coloursAvailable: Array.from(entry.coloursAvailable),
+      colours2Available: Array.from(entry.colours2Available),
+      garmentsPerKg: entry.garmentsPerKg,
+      garmentsPerKg2: entry.garmentsPerKg2,
+      stitchingCost: entry.stitchingCost,
+      brandLogoCost: entry.brandLogoCost,
+      neckTwillCost: entry.neckTwillCost,
+      reflectorsCost: entry.reflectorsCost,
+      fusingCost: entry.fusingCost,
+      accessoriesCost: entry.accessoriesCost,
+      brandTagCost: entry.brandTagCost,
+      sizeTagCost: entry.sizeTagCost,
+      packagingCost: entry.packagingCost,
+      fabricCostPerKg: entry.fabricCostPerKg,
+      fabric2CostPerKg: entry.fabric2CostPerKg,
+      inwardShipping: entry.inwardShipping,
+      proposedMrp: entry.proposedMrp,
+      onlineMrp: entry.onlineMrp,
+    };
+
     await prisma.productMaster.upsert({
-      where: { styleNumber: entry.styleNumber },
-      update: {
-        fabricName: entry.fabricName,
-        type: entry.type,
-        gender: entry.gender as "MENS" | "WOMENS" | "KIDS",
-        productName: entry.productName,
-        coloursAvailable: Array.from(entry.coloursAvailable),
-        colours2Available: Array.from(entry.colours2Available),
-        garmentsPerKg: entry.garmentsPerKg,
-        garmentsPerKg2: entry.garmentsPerKg2,
-        stitchingCost: entry.stitchingCost,
-        brandLogoCost: entry.brandLogoCost,
-        neckTwillCost: entry.neckTwillCost,
-        reflectorsCost: entry.reflectorsCost,
-        fusingCost: entry.fusingCost,
-        accessoriesCost: entry.accessoriesCost,
-        brandTagCost: entry.brandTagCost,
-        sizeTagCost: entry.sizeTagCost,
-        packagingCost: entry.packagingCost,
-        fabricCostPerKg: entry.fabricCostPerKg,
-        fabric2CostPerKg: entry.fabric2CostPerKg,
-        inwardShipping: entry.inwardShipping,
-        proposedMrp: entry.proposedMrp,
-        onlineMrp: entry.onlineMrp,
-      },
-      create: {
-        styleNumber: entry.styleNumber,
-        skuCode: entry.skuCode,
-        fabricName: entry.fabricName,
-        type: entry.type,
-        gender: entry.gender as "MENS" | "WOMENS" | "KIDS",
-        productName: entry.productName,
-        coloursAvailable: Array.from(entry.coloursAvailable),
-        colours2Available: Array.from(entry.colours2Available),
-        garmentsPerKg: entry.garmentsPerKg,
-        garmentsPerKg2: entry.garmentsPerKg2,
-        stitchingCost: entry.stitchingCost,
-        brandLogoCost: entry.brandLogoCost,
-        neckTwillCost: entry.neckTwillCost,
-        reflectorsCost: entry.reflectorsCost,
-        fusingCost: entry.fusingCost,
-        accessoriesCost: entry.accessoriesCost,
-        brandTagCost: entry.brandTagCost,
-        sizeTagCost: entry.sizeTagCost,
-        packagingCost: entry.packagingCost,
-        fabricCostPerKg: entry.fabricCostPerKg,
-        fabric2CostPerKg: entry.fabric2CostPerKg,
-        inwardShipping: entry.inwardShipping,
-        proposedMrp: entry.proposedMrp,
-        onlineMrp: entry.onlineMrp,
-      },
+      where: { skuCode: entry.skuCode },
+      update: data,
+      create: { skuCode: entry.skuCode, ...data },
     });
     prodCount++;
   }
-  console.log(`Seeded ${prodCount} product masters`);
+  console.log(`Seeded ${prodCount} product masters (keyed by SKU Code)`);
 
   console.log("\nMaster seed complete!");
 }

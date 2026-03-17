@@ -44,6 +44,7 @@ export function validateProductMaster(
   data: Record<string, unknown>
 ): Record<string, string> | null {
   const errors: Record<string, string> = {};
+  if (!data.skuCode) errors.skuCode = "SKU Code required";
   if (!data.styleNumber) errors.styleNumber = "Style number required";
   if (!data.type) errors.type = "Type required";
   if (!data.gender) errors.gender = "Gender required";

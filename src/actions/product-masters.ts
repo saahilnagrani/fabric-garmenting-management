@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 
 export async function getProductMasters() {
   return db.productMaster.findMany({
-    orderBy: { styleNumber: "asc" },
+    orderBy: { skuCode: "asc" },
   });
 }
 

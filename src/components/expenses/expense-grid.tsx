@@ -371,7 +371,7 @@ export function ExpenseGrid({
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: true, sortable: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          defaultColDef={{ editable: true, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={{ type: "fitCellContents" }}
           pinnedBottomRowData={pinnedBottomRowData}
           singleClickEdit={true}
