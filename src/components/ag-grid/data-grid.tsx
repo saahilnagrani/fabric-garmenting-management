@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
-import { Plus, Trash2, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import "./ag-grid-theme.css";
 
@@ -19,7 +19,7 @@ type DataGridProps<T extends Record<string, unknown>> = {
   defaultRow: Partial<T>;
   onSave: (id: string, data: T) => Promise<unknown>;
   onCreate: (data: T) => Promise<unknown>;
-  onDelete: (id: string) => Promise<void>;
+  onStrikethrough: (id: string, isStrikedThrough: boolean) => Promise<unknown>;
   validate?: (data: T) => Record<string, string> | null;
   getRowId?: (data: T) => string;
   pinnedBottomRowData?: T[];
@@ -47,7 +47,7 @@ export function DataGrid<T extends Record<string, unknown>>({
   defaultRow,
   onSave,
   onCreate,
-  onDelete,
+  onStrikethrough,
   validate,
   getRowId: getRowIdProp,
   pinnedBottomRowData,
@@ -58,16 +58,27 @@ export function DataGrid<T extends Record<string, unknown>>({
   const gridApiRef = useRef<GridApi<T> | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const [tempRows, setTempRows] = useState<Map<string, T>>(new Map());
   const isAutoPopulating = useRef(false);
 
   // Enrich row data with status for rendering
   const enrichedData = useMemo(() => {
-    return rowData.map((row) => ({
+    const tempEnriched = Array.from(tempRows.values()).map((row) => ({
+      ...row,
+      __status: statusMap.get(getRowIdFn(row)) || ("dirty" as RowStatus),
+    }));
+    const serverEnriched = rowData.map((row) => ({
       ...row,
       __status: statusMap.get(getRowIdFn(row)) || ("clean" as RowStatus),
     }));
+    const all = [...tempEnriched, ...serverEnriched];
+    return all.sort((a, b) => {
+      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      return aStruck - bStruck;
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowData, statusMap]);
+  }, [rowData, statusMap, tempRows]);
 
   function getRowIdFn(data: T): string {
     if (getRowIdProp) return getRowIdProp(data);
@@ -106,18 +117,15 @@ export function DataGrid<T extends Record<string, unknown>>({
 
       try {
         if (isNew) {
-          // Remove internal fields before sending
           const cleanData = { ...data };
           delete (cleanData as Record<string, unknown>).__tempId;
           delete (cleanData as Record<string, unknown>).__status;
-          const created = await onCreate(cleanData);
-          // Update the row in grid with the real ID
-          const createdData = created as T;
-          const api = gridApiRef.current;
-          if (api) {
-            api.applyTransaction({ remove: [data] });
-            api.applyTransaction({ add: [createdData] });
-          }
+          await onCreate(cleanData);
+          setTempRows((prev) => {
+            const next = new Map(prev);
+            next.delete(rowId);
+            return next;
+          });
           setStatusMap((prev) => {
             const next = new Map(prev);
             next.delete(rowId);
@@ -163,6 +171,17 @@ export function DataGrid<T extends Record<string, unknown>>({
       setStatus(rowId, "dirty");
       debouncedSave(event.data);
 
+      // Keep temp rows in sync
+      const id = getRowIdFn(event.data);
+      if (id.startsWith("__new_")) {
+        setTempRows((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Map(prev);
+          next.set(id, event.data);
+          return next;
+        });
+      }
+
       // Allow parent to hook into cell changes (for auto-populate)
       onCellValueChangedExtra?.(event);
     },
@@ -170,24 +189,32 @@ export function DataGrid<T extends Record<string, unknown>>({
     [debouncedSave, onCellValueChangedExtra]
   );
 
-  const addRow = useCallback(() => {
+  const addRow = useCallback((position: "top" | "bottom") => {
     const tempId = nextTempId();
     const newRow = {
       ...defaultRow,
       id: tempId,
       __tempId: tempId,
     } as unknown as T;
-    gridApiRef.current?.applyTransaction({ add: [newRow], addIndex: 0 });
+    setTempRows((prev) => {
+      const next = new Map(prev);
+      next.set(tempId, newRow);
+      return next;
+    });
     setStatus(tempId, "dirty");
   }, [defaultRow, setStatus]);
 
-  const deleteRowHandler = useCallback(
+  const strikethroughHandler = useCallback(
     async (data: T) => {
       const rowId = getRowIdFn(data);
       const isNew = rowId.startsWith("__new_");
 
       if (isNew) {
-        gridApiRef.current?.applyTransaction({ remove: [data] });
+        setTempRows((prev) => {
+          const next = new Map(prev);
+          next.delete(rowId);
+          return next;
+        });
         setStatusMap((prev) => {
           const next = new Map(prev);
           next.delete(rowId);
@@ -196,21 +223,18 @@ export function DataGrid<T extends Record<string, unknown>>({
         return;
       }
 
+      const toggled = !(data as Record<string, unknown>).isStrikedThrough;
       try {
-        await onDelete(rowId);
-        gridApiRef.current?.applyTransaction({ remove: [data] });
-        setStatusMap((prev) => {
-          const next = new Map(prev);
-          next.delete(rowId);
-          return next;
-        });
-        toast.success("Row deleted");
+        await onStrikethrough(rowId, toggled);
+        const updated = { ...data, isStrikedThrough: toggled };
+        gridApiRef.current?.applyTransaction({ update: [updated] });
+        toast.success(toggled ? "Row striked through" : "Strikethrough removed");
       } catch {
-        toast.error("Failed to delete");
+        toast.error("Failed to update");
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onDelete]
+    [onStrikethrough]
   );
 
   // Build full column defs with status and actions columns
@@ -239,22 +263,28 @@ export function DataGrid<T extends Record<string, unknown>>({
       filter: false,
       cellRenderer: (params: { data: T }) => {
         if (!params.data) return null;
+        const isStruck = Boolean((params.data as Record<string, unknown>).isStrikedThrough);
         return (
           <button
-            onClick={() => deleteRowHandler(params.data)}
-            className="opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity p-1"
+            onClick={() => strikethroughHandler(params.data)}
+            className={`p-1 ${isStruck ? "opacity-100" : "opacity-0 group-hover:opacity-100 hover:opacity-100"} transition-opacity`}
+            title={isStruck ? "Remove strikethrough" : "Strikethrough row"}
           >
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
           </button>
         );
       },
     };
 
     return [statusCol, ...columnDefs, actionsCol];
-  }, [columnDefs, deleteRowHandler]);
+  }, [columnDefs, strikethroughHandler]);
 
   return (
     <div className="space-y-3">
+      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Row Top
+      </Button>
       <div className="ag-theme-quartz" style={{ height, width: "100%" }}>
         <AgGridReact<T>
           ref={gridRef}
@@ -278,13 +308,14 @@ export function DataGrid<T extends Record<string, unknown>>({
           stopEditingWhenCellsLoseFocus={true}
           undoRedoCellEditing={true}
           rowClass="group"
+          getRowClass={(params) => (params.data as Record<string, unknown>)?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
           suppressClickEdit={false}
         />
       </div>
-      <Button variant="outline" size="sm" onClick={addRow}>
+      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row
+        Add Row Bottom
       </Button>
     </div>
   );

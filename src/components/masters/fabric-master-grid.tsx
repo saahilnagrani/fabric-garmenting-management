@@ -5,7 +5,7 @@ import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
 import { MultiTagEditor } from "@/components/ag-grid/multi-tag-editor";
-import { createFabricMaster, updateFabricMaster, deleteFabricMaster } from "@/actions/fabric-masters";
+import { createFabricMaster, updateFabricMaster } from "@/actions/fabric-masters";
 import { validateFabricMaster } from "@/lib/validations";
 
 type FabricMasterRow = {
@@ -130,7 +130,7 @@ export function FabricMasterGrid({
         };
         return updateFabricMaster(id, payload);
       }}
-      onDelete={deleteFabricMaster}
+      onStrikethrough={async (id, isStrikedThrough) => updateFabricMaster(id, { isStrikedThrough })}
       validate={validateFabricMaster}
       height="500px"
     />

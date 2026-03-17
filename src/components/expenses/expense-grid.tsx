@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { createExpense, updateExpense, deleteExpense } from "@/actions/expenses";
+import { createExpense, updateExpense } from "@/actions/expenses";
 import { validateExpense } from "@/lib/validations";
 import { EXPENSE_TYPE_LABELS, FABRIC_STATUS_LABELS, DELIVERY_LOCATIONS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
-import { Plus, Trash2, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import "../ag-grid/ag-grid-theme.css";
 
@@ -58,6 +58,7 @@ function toRow(e: any): Record<string, unknown> {
     inwardDate: toDateStr(e.inwardDate),
     expectedInward: toDateStr(e.expectedInward),
     actualInward: toDateStr(e.actualInward),
+    isStrikedThrough: Boolean(e.isStrikedThrough),
   };
 }
 
@@ -89,6 +90,7 @@ function toPayload(data: Record<string, unknown>, phaseId?: string): any {
     inwardDate: dateOrNull(data.inwardDate),
     expectedInward: dateOrNull(data.expectedInward),
     actualInward: dateOrNull(data.actualInward),
+    isStrikedThrough: Boolean(data.isStrikedThrough),
   };
   if (phaseId) payload.phaseId = phaseId;
   return payload;
@@ -117,6 +119,7 @@ export function ExpenseGrid({
   const searchParams = useSearchParams();
   const gridApiRef = useRef<GridApi | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
+  const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
 
   const rowData = useMemo((): (Record<string, unknown> & { __status: RowStatus })[] => {
@@ -191,9 +194,10 @@ export function ExpenseGrid({
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
         if (!params.data || String(params.data.id) === "__total") return null;
+        const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleDelete(params.data)} className="opacity-50 hover:opacity-100 p-1">
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
           </button>
         );
       },
@@ -217,12 +221,9 @@ export function ExpenseGrid({
     setStatus(rowId, "saving");
     try {
       if (isNew) {
-        const created = await createExpense(toPayload(data, phaseId));
-        const api = gridApiRef.current;
-        if (api) {
-          api.applyTransaction({ remove: [data] });
-          api.applyTransaction({ add: [{ ...toRow(created), __status: "clean" }] });
-        }
+        await createExpense(toPayload(data, phaseId));
+        setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+        setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
         toast.success("Expense created");
       } else {
         await updateExpense(rowId, toPayload(data));
@@ -246,35 +247,41 @@ export function ExpenseGrid({
     if (!event.data || String(event.data.id) === "__total") return;
     const rowId = String(event.data.id);
     setStatus(rowId, "dirty");
+    // Keep temp rows in sync with grid edits
+    if (rowId.startsWith("__new_")) {
+      setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? { ...event.data } : r));
+    }
     debouncedSave(event.data);
   }
 
-  async function handleDelete(data: Record<string, unknown>) {
+  async function handleStrikethrough(data: Record<string, unknown>) {
     const rowId = String(data.id);
     if (rowId.startsWith("__new_")) {
-      gridApiRef.current?.applyTransaction({ remove: [data] });
+      setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+      setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
       return;
     }
+    const toggled = !data.isStrikedThrough;
     try {
-      await deleteExpense(rowId);
-      gridApiRef.current?.applyTransaction({ remove: [data] });
-      toast.success("Expense deleted");
-    } catch { toast.error("Failed to delete"); }
+      await updateExpense(rowId, { isStrikedThrough: toggled });
+      const updated = { ...data, isStrikedThrough: toggled };
+      gridApiRef.current?.applyTransaction({ update: [updated] });
+      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
+    } catch { toast.error("Failed to update"); }
   }
 
-  function addRow() {
+  function addRow(position: "top" | "bottom") {
     const id = `__new_${++tempId}_${Date.now()}`;
-    gridApiRef.current?.applyTransaction({
-      add: [{
-        id, phaseId, invoiceNumber: "", vendorId: "", specification: "FABRIC_VENDOR",
-        date: "", description: "", quantity: "", amount: null,
-        deliveredAt: "", productNote: "", note: "", garmentBifurcation: "",
-        totalGarments: null, fabricStatus: "",
-        inwardDate: "", expectedInward: "", actualInward: "",
-        __status: "dirty",
-      }],
-      addIndex: 0,
-    });
+    const newRow = {
+      id, phaseId, invoiceNumber: "", vendorId: "", specification: "FABRIC_VENDOR",
+      date: "", description: "", quantity: "", amount: null,
+      deliveredAt: "", productNote: "", note: "", garmentBifurcation: "",
+      totalGarments: null, fabricStatus: "",
+      inwardDate: "", expectedInward: "", actualInward: "",
+      isStrikedThrough: false,
+    };
+    setTempRows((prev) => position === "top" ? [newRow, ...prev] : [...prev, newRow]);
+    setStatus(id, "dirty");
   }
 
   function applyFilter(key: string, value: string | null) {
@@ -284,10 +291,16 @@ export function ExpenseGrid({
     router.push(`/expenses?${params.toString()}`);
   }
 
-  const enrichedData = useMemo(() =>
-    rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || "clean" })),
-    [rowData, statusMap]
-  );
+  const enrichedData = useMemo(() => {
+    const serverRows = rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("clean" as RowStatus) }));
+    const tempEnriched = tempRows.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("dirty" as RowStatus) }));
+    const all = [...tempEnriched, ...serverRows];
+    return all.sort((a, b) => {
+      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      return aStruck - bStruck;
+    });
+  }, [rowData, statusMap, tempRows]);
 
   return (
     <div className="space-y-4">
@@ -308,6 +321,11 @@ export function ExpenseGrid({
         </Select>
       </div>
 
+      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Row Top
+      </Button>
+
       <div className="ag-theme-quartz" style={{ height: "600px", width: "100%" }}>
         <AgGridReact
           rowData={enrichedData}
@@ -321,13 +339,14 @@ export function ExpenseGrid({
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           rowClass="group"
+          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
         />
       </div>
 
-      <Button variant="outline" size="sm" onClick={addRow}>
+      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row
+        Add Row Bottom
       </Button>
     </div>
   );

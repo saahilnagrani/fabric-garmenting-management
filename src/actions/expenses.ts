@@ -12,7 +12,7 @@ export async function getExpenses(phaseId: string, filters?: { vendorId?: string
   return db.expense.findMany({
     where,
     include: { vendor: true },
-    orderBy: { date: "desc" },
+    orderBy: [{ isStrikedThrough: "asc" }, { date: "desc" }],
   });
 }
 

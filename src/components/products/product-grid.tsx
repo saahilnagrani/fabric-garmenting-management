@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { createProduct, updateProduct, deleteProduct } from "@/actions/products";
+import { createProduct, updateProduct } from "@/actions/products";
 import { validateProduct } from "@/lib/validations";
 import { PRODUCT_STATUS_LABELS, GENDER_LABELS } from "@/lib/constants";
 import {
@@ -23,7 +23,7 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { Plus, Trash2, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import "../ag-grid/ag-grid-theme.css";
 
@@ -64,6 +64,7 @@ function toRow(p: any): Record<string, unknown> {
     packagingCost: toNum(p.packagingCost), inwardShipping: toNum(p.inwardShipping),
     mrp: toNum(p.mrp), proposedMrp: toNum(p.proposedMrp), onlineMrp: toNum(p.onlineMrp),
     dp: toNum(p.dp), garmentingAt: s(p.garmentingAt),
+    isStrikedThrough: Boolean(p.isStrikedThrough),
   };
 }
 
@@ -96,6 +97,7 @@ function toPayload(data: Record<string, unknown>, phaseId?: string): any {
     packagingCost: numOrNull(data.packagingCost), inwardShipping: numOrNull(data.inwardShipping),
     mrp: numOrNull(data.mrp), proposedMrp: numOrNull(data.proposedMrp),
     onlineMrp: numOrNull(data.onlineMrp), garmentingAt: strOrNull(data.garmentingAt),
+    isStrikedThrough: Boolean(data.isStrikedThrough),
   };
   if (phaseId) payload.phaseId = phaseId;
   return payload;
@@ -131,6 +133,7 @@ export function ProductGrid({
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const gridApiRef = useRef<GridApi | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
+  const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isAutoPopulating = useRef(false);
 
@@ -226,9 +229,10 @@ export function ProductGrid({
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
         if (!params.data) return null;
+        const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleDelete(params.data)} className="opacity-50 hover:opacity-100 p-1">
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
           </button>
         );
       },
@@ -252,12 +256,9 @@ export function ProductGrid({
     setStatus(rowId, "saving");
     try {
       if (isNew) {
-        const created = await createProduct(toPayload(data, phaseId));
-        const api = gridApiRef.current;
-        if (api) {
-          api.applyTransaction({ remove: [data] });
-          api.applyTransaction({ add: [{ ...toRow(created), __status: "clean" }] });
-        }
+        await createProduct(toPayload(data, phaseId));
+        setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+        setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
         toast.success("Product created");
       } else {
         await updateProduct(rowId, toPayload(data));
@@ -282,6 +283,8 @@ export function ProductGrid({
     const rowId = String(event.data.id);
     setStatus(rowId, "dirty");
 
+    let dataToSave = event.data;
+
     // Auto-populate from ProductMaster when styleNumber changes
     if (event.column.getColId() === "styleNumber" && event.data.styleNumber) {
       const master = productMasters.find((m) => String(m.styleNumber) === event.data.styleNumber);
@@ -292,36 +295,43 @@ export function ProductGrid({
         fields.forEach((f) => { if (master[f] !== undefined && master[f] !== null) merged[f] = toNum(master[f]) ?? String(master[f]); });
         gridApiRef.current?.applyTransaction({ update: [merged] });
         setTimeout(() => { isAutoPopulating.current = false; }, 100);
+        dataToSave = merged;
       }
     }
 
-    debouncedSave(event.data);
+    // Keep temp rows in sync with grid edits
+    if (rowId.startsWith("__new_")) {
+      setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? { ...dataToSave } : r));
+    }
+
+    debouncedSave(dataToSave);
   }
 
-  async function handleDelete(data: Record<string, unknown>) {
+  async function handleStrikethrough(data: Record<string, unknown>) {
     const rowId = String(data.id);
     if (rowId.startsWith("__new_")) {
-      gridApiRef.current?.applyTransaction({ remove: [data] });
+      setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+      setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
       return;
     }
+    const toggled = !data.isStrikedThrough;
     try {
-      await deleteProduct(rowId);
-      gridApiRef.current?.applyTransaction({ remove: [data] });
-      toast.success("Product deleted");
-    } catch { toast.error("Failed to delete"); }
+      await updateProduct(rowId, { isStrikedThrough: toggled });
+      const updated = { ...data, isStrikedThrough: toggled };
+      gridApiRef.current?.applyTransaction({ update: [updated] });
+      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
+    } catch { toast.error("Failed to update"); }
   }
 
-  function addRow() {
+  function addRow(position: "top" | "bottom") {
     const id = `__new_${++tempId}_${Date.now()}`;
-    gridApiRef.current?.applyTransaction({
-      add: [{
-        id, phaseId, date: "15 Nov 2025", styleNumber: "", colour: "", type: "", gender: "MENS", vendorId: vendors[0]?.id || "",
-        fabricName: "", status: "PROCESSING", isRepeat: currentTab === "repeat",
-        sizeXS: 0, sizeS: 0, sizeM: 0, sizeL: 0, sizeXL: 0, sizeXXL: 0,
-        __status: "dirty",
-      }],
-      addIndex: 0,
-    });
+    const newRow = {
+      id, phaseId, date: "15 Nov 2025", styleNumber: "", colour: "", type: "", gender: "MENS", vendorId: vendors[0]?.id || "",
+      fabricName: "", status: "PROCESSING", isRepeat: currentTab === "repeat", isStrikedThrough: false,
+      sizeXS: 0, sizeS: 0, sizeM: 0, sizeL: 0, sizeXL: 0, sizeXXL: 0,
+    };
+    setTempRows((prev) => position === "top" ? [newRow, ...prev] : [...prev, newRow]);
+    setStatus(id, "dirty");
   }
 
   function applyFilter(key: string, value: string | null) {
@@ -339,11 +349,17 @@ export function ProductGrid({
     { key: "repeat", label: "Repeat Designs" },
   ];
 
-  // Enrich with status from statusMap
-  const enrichedData = useMemo(() =>
-    rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || "clean" })),
-    [rowData, statusMap]
-  );
+  // Enrich with status from statusMap, merge temp rows
+  const enrichedData = useMemo(() => {
+    const serverRows = rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("clean" as RowStatus) }));
+    const tempEnriched = tempRows.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("dirty" as RowStatus) }));
+    const all = [...tempEnriched, ...serverRows];
+    return all.sort((a, b) => {
+      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      return aStruck - bStruck;
+    });
+  }, [rowData, statusMap, tempRows]);
 
   return (
     <div className="space-y-4">
@@ -373,6 +389,11 @@ export function ProductGrid({
         </Select>
       </div>
 
+      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Row Top
+      </Button>
+
       <div className="ag-theme-quartz" style={{ height: "650px", width: "100%" }}>
         <AgGridReact
           rowData={enrichedData}
@@ -385,13 +406,14 @@ export function ProductGrid({
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           rowClass="group"
+          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
         />
       </div>
 
-      <Button variant="outline" size="sm" onClick={addRow}>
+      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row
+        Add Row Bottom
       </Button>
     </div>
   );

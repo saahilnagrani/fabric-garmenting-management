@@ -30,7 +30,7 @@
   --ag-cell-horizontal-border: solid 1px #e2e8f0;
 }
 
-/* Header text style – wrap long names */
+/* Header text style – wrap long names, always centred */
 .ag-theme-quartz .ag-header-cell-text {
   font-weight: 600;
   font-size: 11px;
@@ -42,6 +42,12 @@
   overflow: visible;
 }
 
+/* Centre ALL header labels (single-line and wrapped) */
+.ag-theme-quartz .ag-header-cell-label {
+  justify-content: center;
+  text-align: center;
+}
+
 /* Allow header cells to grow for wrapped text */
 .ag-theme-quartz .ag-header-cell-comp-wrapper {
   white-space: normal;
@@ -50,10 +56,6 @@
 /* Centre-align numeric & currency columns (cells + headers) */
 .ag-theme-quartz .ag-right-aligned-cell {
   text-align: center;
-  justify-content: center;
-}
-
-.ag-theme-quartz .ag-right-aligned-header .ag-header-cell-label {
   justify-content: center;
 }
 
@@ -104,4 +106,15 @@
 /* Editable cell cursor */
 .ag-theme-quartz .ag-cell:not(.computed-cell):not(.status-cell) {
   cursor: text;
+}
+
+/* Strikethrough rows */
+.ag-theme-quartz .strikethrough-row {
+  text-decoration: line-through;
+  opacity: 0.45;
+}
+
+.ag-theme-quartz .strikethrough-row.ag-row-odd,
+.ag-theme-quartz .strikethrough-row.ag-row-even {
+  background-color: #fef2f2 !important;
 }

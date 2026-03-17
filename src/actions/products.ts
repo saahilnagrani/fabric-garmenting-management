@@ -32,7 +32,7 @@ export async function getProducts(phaseId: string, filters?: ProductFilters) {
   return db.product.findMany({
     where,
     include: { vendor: true },
-    orderBy: [{ styleNumber: "asc" }, { colour: "asc" }],
+    orderBy: [{ isStrikedThrough: "asc" }, { styleNumber: "asc" }, { colour: "asc" }],
   });
 }
 

@@ -9,11 +9,11 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { createFabricOrder, updateFabricOrder, deleteFabricOrder } from "@/actions/fabric-orders";
+import { createFabricOrder, updateFabricOrder } from "@/actions/fabric-orders";
 import { validateFabricOrder } from "@/lib/validations";
 import { GENDER_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
-import { Plus, Trash2, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import "../ag-grid/ag-grid-theme.css";
 
@@ -48,6 +48,7 @@ function toRow(o: any): Record<string, unknown> {
     quantityShipped: toNum(o.quantityShipped),
     fabricCostTotal: toNum(o.fabricCostTotal),
     isRepeat: Boolean(o.isRepeat),
+    isStrikedThrough: Boolean(o.isStrikedThrough),
   };
 }
 
@@ -70,6 +71,7 @@ function toPayload(data: Record<string, unknown>, phaseId?: string): any {
     quantityShipped: numOrNull(data.quantityShipped),
     fabricCostTotal: numOrNull(data.fabricCostTotal),
     isRepeat: Boolean(data.isRepeat),
+    isStrikedThrough: Boolean(data.isStrikedThrough),
   };
   if (phaseId) payload.phaseId = phaseId;
   return payload;
@@ -102,6 +104,7 @@ export function FabricOrderGrid({
   const searchParams = useSearchParams();
   const gridApiRef = useRef<GridApi | null>(null);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
+  const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const isAutoPopulating = useRef(false);
 
@@ -153,9 +156,10 @@ export function FabricOrderGrid({
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
         if (!params.data) return null;
+        const isStruck = Boolean(params.data.isStrikedThrough);
         return (
-          <button onClick={() => handleDelete(params.data)} className="opacity-50 hover:opacity-100 p-1">
-            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-50 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-muted-foreground"}`} />
           </button>
         );
       },
@@ -179,12 +183,9 @@ export function FabricOrderGrid({
     setStatus(rowId, "saving");
     try {
       if (isNew) {
-        const created = await createFabricOrder(toPayload(data, phaseId));
-        const api = gridApiRef.current;
-        if (api) {
-          api.applyTransaction({ remove: [data] });
-          api.applyTransaction({ add: [{ ...toRow(created), __status: "clean" }] });
-        }
+        await createFabricOrder(toPayload(data, phaseId));
+        setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+        setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
         toast.success("Order created");
       } else {
         await updateFabricOrder(rowId, toPayload(data));
@@ -209,6 +210,8 @@ export function FabricOrderGrid({
     const rowId = String(event.data.id);
     setStatus(rowId, "dirty");
 
+    let dataToSave = event.data;
+
     // Auto-populate from FabricMaster when fabricName changes
     if (event.column.getColId() === "fabricName" && event.data.fabricName) {
       const master = fabricMasters.find((m) => String(m.fabricName) === event.data.fabricName);
@@ -219,36 +222,44 @@ export function FabricOrderGrid({
         if (master.mrp !== undefined && master.mrp !== null) merged.costPerUnit = toNum(master.mrp);
         gridApiRef.current?.applyTransaction({ update: [merged] });
         setTimeout(() => { isAutoPopulating.current = false; }, 100);
+        dataToSave = merged;
       }
     }
 
-    debouncedSave(event.data);
+    // Keep temp rows in sync with grid edits
+    if (rowId.startsWith("__new_")) {
+      setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? { ...dataToSave } : r));
+    }
+
+    debouncedSave(dataToSave);
   }
 
-  async function handleDelete(data: Record<string, unknown>) {
+  async function handleStrikethrough(data: Record<string, unknown>) {
     const rowId = String(data.id);
     if (rowId.startsWith("__new_")) {
-      gridApiRef.current?.applyTransaction({ remove: [data] });
+      setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
+      setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
       return;
     }
+    const toggled = !data.isStrikedThrough;
     try {
-      await deleteFabricOrder(rowId);
-      gridApiRef.current?.applyTransaction({ remove: [data] });
-      toast.success("Order deleted");
-    } catch { toast.error("Failed to delete"); }
+      await updateFabricOrder(rowId, { isStrikedThrough: toggled });
+      const updated = { ...data, isStrikedThrough: toggled };
+      gridApiRef.current?.applyTransaction({ update: [updated] });
+      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
+    } catch { toast.error("Failed to update"); }
   }
 
-  function addRow() {
+  function addRow(position: "top" | "bottom") {
     const id = `__new_${++tempId}_${Date.now()}`;
-    gridApiRef.current?.applyTransaction({
-      add: [{
-        id, phaseId, vendorId: vendors[0]?.id || "", styleNumbers: "", fabricName: "",
-        colour: "", gender: "", billNumber: "", receivedAt: "", availableColour: "",
-        costPerUnit: null, quantityOrdered: null, quantityShipped: null, fabricCostTotal: null,
-        isRepeat: currentTab === "repeat", __status: "dirty",
-      }],
-      addIndex: 0,
-    });
+    const newRow = {
+      id, phaseId, vendorId: vendors[0]?.id || "", styleNumbers: "", fabricName: "",
+      colour: "", gender: "", billNumber: "", receivedAt: "", availableColour: "",
+      costPerUnit: null, quantityOrdered: null, quantityShipped: null, fabricCostTotal: null,
+      isRepeat: currentTab === "repeat", isStrikedThrough: false,
+    };
+    setTempRows((prev) => position === "top" ? [newRow, ...prev] : [...prev, newRow]);
+    setStatus(id, "dirty");
   }
 
   function applyFilter(key: string, value: string | null) {
@@ -264,10 +275,16 @@ export function FabricOrderGrid({
     { key: "repeat", label: "Repeat" },
   ];
 
-  const enrichedData = useMemo(() =>
-    rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || "clean" })),
-    [rowData, statusMap]
-  );
+  const enrichedData = useMemo(() => {
+    const serverRows = rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("clean" as RowStatus) }));
+    const tempEnriched = tempRows.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("dirty" as RowStatus) }));
+    const all = [...tempEnriched, ...serverRows];
+    return all.sort((a, b) => {
+      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+      return aStruck - bStruck;
+    });
+  }, [rowData, statusMap, tempRows]);
 
   return (
     <div className="space-y-4">
@@ -287,6 +304,11 @@ export function FabricOrderGrid({
         </Select>
       </div>
 
+      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+        <Plus className="mr-1.5 h-3.5 w-3.5" />
+        Add Row Top
+      </Button>
+
       <div className="ag-theme-quartz" style={{ height: "600px", width: "100%" }}>
         <AgGridReact
           rowData={enrichedData}
@@ -299,13 +321,14 @@ export function FabricOrderGrid({
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           rowClass="group"
+          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
         />
       </div>
 
-      <Button variant="outline" size="sm" onClick={addRow}>
+      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
         <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row
+        Add Row Bottom
       </Button>
     </div>
   );

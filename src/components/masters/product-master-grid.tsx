@@ -5,7 +5,7 @@ import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
 import { MultiTagEditor } from "@/components/ag-grid/multi-tag-editor";
-import { createProductMaster, updateProductMaster, deleteProductMaster } from "@/actions/product-masters";
+import { createProductMaster, updateProductMaster } from "@/actions/product-masters";
 import { validateProductMaster } from "@/lib/validations";
 import { GENDER_LABELS } from "@/lib/constants";
 import {
@@ -277,7 +277,7 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
         };
         return updateProductMaster(id, payload);
       }}
-      onDelete={deleteProductMaster}
+      onStrikethrough={async (id, isStrikedThrough) => updateProductMaster(id, { isStrikedThrough })}
       validate={validateProductMaster}
       height="600px"
     />

@@ -12,7 +12,7 @@ export async function getFabricOrders(phaseId: string, filters?: { vendorId?: st
   return db.fabricOrder.findMany({
     where,
     include: { vendor: true },
-    orderBy: { createdAt: "desc" },
+    orderBy: [{ isStrikedThrough: "asc" }, { createdAt: "desc" }],
   });
 }
 
