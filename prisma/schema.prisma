@@ -1,0 +1,281 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── AUTH ────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── CORE DOMAIN ─────────────────────────────────────────────────
+
+model Phase {
+  id           String        @id @default(cuid())
+  name         String
+  number       Int           @unique
+  startDate    DateTime?
+  endDate      DateTime?
+  isCurrent    Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  products     Product[]
+  fabricOrders FabricOrder[]
+  expenses     Expense[]
+}
+
+model Vendor {
+  id           String        @id @default(cuid())
+  name         String        @unique
+  type         VendorType
+  contactInfo  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  products      Product[]
+  fabricOrders  FabricOrder[]
+  expenses      Expense[]
+  fabricMasters FabricMaster[]
+}
+
+enum VendorType {
+  FABRIC_SUPPLIER
+  GARMENTING
+  ACCESSORIES
+  BRAND_TAG
+  OTHER
+}
+
+model Product {
+  id      String @id @default(cuid())
+  phaseId String
+  phase   Phase  @relation(fields: [phaseId], references: [id])
+
+  // Identity
+  date          String  @default("15 Nov 2025")
+  styleNumber   String
+  articleNumber  String?
+  skuCode        String?
+  colour         String
+  isRepeat       Boolean @default(false)
+
+  // Classification
+  type          String
+  gender        Gender
+  productName   String?
+
+  // Status
+  status        ProductStatus @default(PROCESSING)
+
+  // Primary Fabric
+  vendorId          String
+  vendor            Vendor @relation(fields: [vendorId], references: [id])
+  fabricName        String
+  fabricGsm         Decimal? @db.Decimal(10, 2)
+  fabricCostPerKg   Decimal? @db.Decimal(10, 2)
+  garmentsPerKg     Decimal? @db.Decimal(10, 2)
+
+  // Secondary Fabric
+  fabric2Name          String?
+  fabric2CostPerKg     Decimal? @db.Decimal(10, 2)
+  fabric2GarmentsPerKg Decimal? @db.Decimal(10, 2)
+
+  // Quantities
+  quantityOrderedKg     Decimal? @db.Decimal(10, 2)
+  quantityShippedKg     Decimal? @db.Decimal(10, 2)
+  garmentNumber         Int?
+  actualGarmentStitched Int?
+
+  // Size Breakdown
+  sizeXS  Int @default(0)
+  sizeS   Int @default(0)
+  sizeM   Int @default(0)
+  sizeL   Int @default(0)
+  sizeXL  Int @default(0)
+  sizeXXL Int @default(0)
+
+  // Garmenting Costs
+  stitchingCost   Decimal? @db.Decimal(10, 2)
+  brandLogoCost   Decimal? @db.Decimal(10, 2)
+  neckTwillCost   Decimal? @db.Decimal(10, 2)
+  reflectorsCost  Decimal? @db.Decimal(10, 2)
+  fusingCost      Decimal? @db.Decimal(10, 2)
+  accessoriesCost Decimal? @db.Decimal(10, 2)
+  brandTagCost    Decimal? @db.Decimal(10, 2)
+  sizeTagCost     Decimal? @db.Decimal(10, 2)
+  packagingCost   Decimal? @db.Decimal(10, 2)
+
+  // Pricing
+  inwardShipping Decimal? @db.Decimal(10, 2)
+  mrp            Decimal? @db.Decimal(10, 2)
+  proposedMrp    Decimal? @db.Decimal(10, 2)
+  onlineMrp      Decimal? @db.Decimal(10, 2)
+  dp             Decimal? @db.Decimal(10, 2)
+
+  // Garment location
+  garmentingAt String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phaseId])
+  @@index([styleNumber])
+  @@index([vendorId])
+  @@index([isRepeat])
+}
+
+enum Gender {
+  MENS
+  WOMENS
+  KIDS
+}
+
+enum ProductStatus {
+  PROCESSING
+  SAMPLE_WITH_ST
+  SAMPLE_READY
+  READY_AT_GARSEM
+  READY_AT_MUMTAZ
+  RECEIVED_AT_WAREHOUSE
+  SHIPPED
+}
+
+model FabricOrder {
+  id       String @id @default(cuid())
+  phaseId  String
+  phase    Phase  @relation(fields: [phaseId], references: [id])
+  vendorId String
+  vendor   Vendor @relation(fields: [vendorId], references: [id])
+
+  gender          Gender?
+  billNumber      String?
+  receivedAt      String?
+
+  styleNumbers    String
+  fabricName      String
+  colour          String
+  availableColour String?
+  costPerUnit     Decimal? @db.Decimal(10, 2)
+
+  quantityOrdered Decimal? @db.Decimal(10, 2)
+  quantityShipped Decimal? @db.Decimal(10, 2)
+  fabricCostTotal Decimal? @db.Decimal(12, 2)
+
+  isRepeat Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phaseId])
+  @@index([vendorId])
+}
+
+model Expense {
+  id       String  @id @default(cuid())
+  phaseId  String
+  phase    Phase   @relation(fields: [phaseId], references: [id])
+  vendorId String?
+  vendor   Vendor? @relation(fields: [vendorId], references: [id])
+
+  invoiceNumber String?
+  specification ExpenseType
+  date          DateTime?
+  description   String?
+  quantity      String?
+  amount        Decimal @db.Decimal(12, 2)
+
+  deliveredAt String?
+  productNote String?
+  note        String?
+
+  garmentBifurcation String?
+  totalGarments      Int?
+
+  fabricStatus   FabricStatus?
+  inwardDate     DateTime?
+  expectedInward DateTime?
+  actualInward   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([phaseId])
+  @@index([vendorId])
+  @@index([specification])
+  @@index([date])
+}
+
+enum ExpenseType {
+  FABRIC_VENDOR
+  GARMENTING
+  BRAND_TAG
+  ACCESSORIES
+  SHIPPING
+  PACKAGING
+  OTHER
+}
+
+enum FabricStatus {
+  FULLY_CONSUMED
+  TO_BE_CONSUMED
+  FULLY_INWARDED
+  PARTIALLY_INWARDED
+}
+
+// ─── MASTER DATA ──────────────────────────────────────────────────
+
+model FabricMaster {
+  id               String   @id @default(cuid())
+  fabricName       String   @unique
+  vendorId         String
+  vendor           Vendor   @relation(fields: [vendorId], references: [id])
+  genders          String[]
+  styleNumbers     String[]
+  coloursAvailable String[]
+  mrp              Decimal? @db.Decimal(10, 2)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([vendorId])
+}
+
+model ProductMaster {
+  id                  String   @id @default(cuid())
+  styleNumber         String   @unique
+  skuCode             String?
+  fabricName          String
+  type                String
+  gender              Gender
+  productName         String?
+  coloursAvailable    String[]
+  colours2Available   String[]
+  garmentsPerKg       Decimal? @db.Decimal(10, 2)
+  garmentsPerKg2      Decimal? @db.Decimal(10, 2)
+  stitchingCost       Decimal? @db.Decimal(10, 2)
+  brandLogoCost       Decimal? @db.Decimal(10, 2)
+  neckTwillCost       Decimal? @db.Decimal(10, 2)
+  reflectorsCost      Decimal? @db.Decimal(10, 2)
+  fusingCost          Decimal? @db.Decimal(10, 2)
+  accessoriesCost     Decimal? @db.Decimal(10, 2)
+  brandTagCost        Decimal? @db.Decimal(10, 2)
+  sizeTagCost         Decimal? @db.Decimal(10, 2)
+  packagingCost       Decimal? @db.Decimal(10, 2)
+  fabricCostPerKg     Decimal? @db.Decimal(10, 2)
+  fabric2CostPerKg    Decimal? @db.Decimal(10, 2)
+  inwardShipping      Decimal? @db.Decimal(10, 2)
+  proposedMrp         Decimal? @db.Decimal(10, 2)
+  onlineMrp           Decimal? @db.Decimal(10, 2)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([styleNumber])
+}
