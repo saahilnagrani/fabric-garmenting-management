@@ -11,7 +11,7 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
-import { createProduct } from "@/actions/products";
+import { createProduct, updateProduct } from "@/actions/products";
 import { GENDER_LABELS, PRODUCT_STATUS_LABELS } from "@/lib/constants";
 import {
   computeTotalGarmenting,
@@ -102,6 +102,44 @@ const emptyForm: FormData = {
   date: "",
 };
 
+function rowToForm(row: Record<string, unknown>): FormData {
+  const s = (v: unknown) => (v !== null && v !== undefined ? String(v) : "");
+  return {
+    styleNumber: s(row.styleNumber),
+    articleNumber: s(row.articleNumber),
+    skuCode: s(row.skuCode),
+    colour: s(row.colour),
+    type: s(row.type),
+    gender: s(row.gender) || "MENS",
+    productName: s(row.productName),
+    vendorId: s(row.vendorId),
+    status: s(row.status) || "PROCESSING",
+    fabricName: s(row.fabricName),
+    fabricGsm: s(row.fabricGsm),
+    fabricCostPerKg: s(row.fabricCostPerKg),
+    garmentsPerKg: s(row.garmentsPerKg),
+    fabric2Name: s(row.fabric2Name),
+    fabric2CostPerKg: s(row.fabric2CostPerKg),
+    fabric2GarmentsPerKg: s(row.fabric2GarmentsPerKg),
+    quantityOrderedKg: s(row.quantityOrderedKg),
+    quantityShippedKg: s(row.quantityShippedKg),
+    stitchingCost: s(row.stitchingCost),
+    brandLogoCost: s(row.brandLogoCost),
+    neckTwillCost: s(row.neckTwillCost),
+    reflectorsCost: s(row.reflectorsCost),
+    fusingCost: s(row.fusingCost),
+    accessoriesCost: s(row.accessoriesCost),
+    brandTagCost: s(row.brandTagCost),
+    sizeTagCost: s(row.sizeTagCost),
+    packagingCost: s(row.packagingCost),
+    inwardShipping: s(row.inwardShipping),
+    mrp: s(row.mrp),
+    garmentingAt: s(row.garmentingAt),
+    isRepeat: Boolean(row.isRepeat),
+    date: s(row.date),
+  };
+}
+
 export function ProductOrderSheet({
   open,
   onOpenChange,
@@ -109,6 +147,7 @@ export function ProductOrderSheet({
   phaseId,
   productMasters,
   isRepeatTab,
+  editingRow = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -116,6 +155,7 @@ export function ProductOrderSheet({
   phaseId: string;
   productMasters: ProductMasterType[];
   isRepeatTab: boolean;
+  editingRow?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm });
@@ -123,13 +163,19 @@ export function ProductOrderSheet({
   const [suggestions, setSuggestions] = useState<ProductMasterType[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const isEditing = editingRow !== null && editingRow !== undefined;
+
   useEffect(() => {
     if (open) {
-      setForm({ ...emptyForm, isRepeat: isRepeatTab, vendorId: vendors[0]?.id || "" });
+      if (editingRow) {
+        setForm(rowToForm(editingRow));
+      } else {
+        setForm({ ...emptyForm, isRepeat: isRepeatTab, vendorId: vendors[0]?.id || "" });
+      }
       setSuggestions([]);
       setShowSuggestions(false);
     }
-  }, [open, isRepeatTab, vendors]);
+  }, [open, isRepeatTab, vendors, editingRow]);
 
   function updateField(field: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -224,8 +270,8 @@ export function ProductOrderSheet({
     setSubmitting(true);
     try {
       const numOrNull = (v: string) => toNum(v);
-      await createProduct({
-        phaseId,
+      const payload = {
+        phaseId: isEditing ? (editingRow.phaseId as string) : phaseId,
         date: form.date || new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
         styleNumber: form.styleNumber,
         articleNumber: form.articleNumber || null,
@@ -246,9 +292,14 @@ export function ProductOrderSheet({
         fabric2GarmentsPerKg: numOrNull(form.fabric2GarmentsPerKg),
         quantityOrderedKg: numOrNull(form.quantityOrderedKg),
         quantityShippedKg: numOrNull(form.quantityShippedKg),
-        garmentNumber: null,
-        actualGarmentStitched: null,
-        sizeXS: 0, sizeS: 0, sizeM: 0, sizeL: 0, sizeXL: 0, sizeXXL: 0,
+        garmentNumber: isEditing ? (editingRow.garmentNumber ?? null) : null,
+        actualGarmentStitched: isEditing ? (editingRow.actualGarmentStitched ?? null) : null,
+        sizeXS: isEditing ? (editingRow.sizeXS ?? 0) : 0,
+        sizeS: isEditing ? (editingRow.sizeS ?? 0) : 0,
+        sizeM: isEditing ? (editingRow.sizeM ?? 0) : 0,
+        sizeL: isEditing ? (editingRow.sizeL ?? 0) : 0,
+        sizeXL: isEditing ? (editingRow.sizeXL ?? 0) : 0,
+        sizeXXL: isEditing ? (editingRow.sizeXXL ?? 0) : 0,
         stitchingCost: numOrNull(form.stitchingCost),
         brandLogoCost: numOrNull(form.brandLogoCost),
         neckTwillCost: numOrNull(form.neckTwillCost),
@@ -260,16 +311,23 @@ export function ProductOrderSheet({
         packagingCost: numOrNull(form.packagingCost),
         inwardShipping: numOrNull(form.inwardShipping),
         mrp: numOrNull(form.mrp),
-        proposedMrp: null,
-        onlineMrp: null,
+        proposedMrp: isEditing ? (editingRow.proposedMrp ?? null) : null,
+        onlineMrp: isEditing ? (editingRow.onlineMrp ?? null) : null,
         garmentingAt: form.garmentingAt || null,
-        isStrikedThrough: false,
-      });
-      toast.success("Product order created");
+        isStrikedThrough: isEditing ? Boolean(editingRow.isStrikedThrough) : false,
+      };
+
+      if (isEditing && editingRow.id) {
+        await updateProduct(editingRow.id as string, payload);
+        toast.success("Product order updated");
+      } else {
+        await createProduct(payload);
+        toast.success("Product order created");
+      }
       onOpenChange(false);
       router.refresh();
     } catch {
-      toast.error("Failed to create product order");
+      toast.error(isEditing ? "Failed to update product order" : "Failed to create product order");
     } finally {
       setSubmitting(false);
     }
@@ -288,25 +346,27 @@ export function ProductOrderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-xl overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>New Product Order</SheetTitle>
+          <SheetTitle>{isEditing ? "Edit Product Order" : "New Product Order"}</SheetTitle>
           <SheetDescription>
-            Enter Style # to auto-populate from Products Master DB
+            {isEditing
+              ? "Update the product order details below"
+              : "Enter Style # to auto-populate from Products Master DB"}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-4 px-4 overflow-y-auto">
-          {/* Primary field - Style # with autocomplete */}
+          {/* Primary field - Style # with autocomplete (create mode only) */}
           <div className="space-y-1 relative">
             <Label className="text-xs font-semibold">Style # *</Label>
             <Input
               value={form.styleNumber}
-              onChange={(e) => handleStyleNumberChange(e.target.value)}
-              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+              onChange={(e) => isEditing ? updateField("styleNumber", e.target.value) : handleStyleNumberChange(e.target.value)}
+              onFocus={() => { if (!isEditing && suggestions.length > 0) setShowSuggestions(true); }}
               onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              placeholder="Start typing to search..."
+              placeholder={isEditing ? "" : "Start typing to search..."}
               autoFocus
             />
-            {showSuggestions && (
+            {!isEditing && showSuggestions && (
               <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {suggestions.map((m, i) => (
                   <button
@@ -527,10 +587,10 @@ export function ProductOrderSheet({
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
+                {isEditing ? "Updating..." : "Creating..."}
               </>
             ) : (
-              "Create Product Order"
+              isEditing ? "Update Product Order" : "Create Product Order"
             )}
           </Button>
         </SheetFooter>

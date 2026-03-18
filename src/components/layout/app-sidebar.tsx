@@ -11,6 +11,7 @@ import {
   Layers,
   BookOpen,
   ClipboardList,
+  List,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +36,10 @@ const navItems = [
   { title: "Products Master DB", href: "/product-masters", icon: ClipboardList },
 ];
 
+const listItems = [
+  { title: "Type", href: "/lists/types", icon: List },
+];
+
 export function AppSidebar() {
   const pathname = usePathname();
 
@@ -51,6 +56,24 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    render={<Link href={item.href} />}
+                    isActive={pathname.startsWith(item.href)}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+        <SidebarGroup>
+          <SidebarGroupLabel>Lists</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {listItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     render={<Link href={item.href} />}

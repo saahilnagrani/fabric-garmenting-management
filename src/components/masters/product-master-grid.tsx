@@ -1,10 +1,9 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
-import { MultiTagEditor } from "@/components/ag-grid/multi-tag-editor";
 import { createProductMaster, updateProductMaster } from "@/actions/product-masters";
 import { validateProductMaster } from "@/lib/validations";
 import { GENDER_LABELS } from "@/lib/constants";
@@ -17,36 +16,9 @@ import {
   computeProfitMargin,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-
-type ProductMasterRow = {
-  id: string;
-  skuCode: string;
-  styleNumber: string;
-  articleNumber: string;
-  fabricName: string;
-  type: string;
-  gender: string;
-  productName: string;
-  coloursAvailable: string[];
-  colours2Available: string[];
-  garmentsPerKg: number | null;
-  garmentsPerKg2: number | null;
-  stitchingCost: number | null;
-  brandLogoCost: number | null;
-  neckTwillCost: number | null;
-  reflectorsCost: number | null;
-  fusingCost: number | null;
-  accessoriesCost: number | null;
-  brandTagCost: number | null;
-  sizeTagCost: number | null;
-  packagingCost: number | null;
-  fabricCostPerKg: number | null;
-  fabric2CostPerKg: number | null;
-  inwardShipping: number | null;
-  proposedMrp: number | null;
-  onlineMrp: number | null;
-  [key: string]: unknown;
-};
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { ProductMasterSheet, type ProductMasterRow } from "./product-master-sheet";
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -54,7 +26,12 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
+type FabricData = { name: string; mrp: number | null };
+
+export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] }: { masters: unknown[]; productTypes?: string[]; fabricData?: FabricData[] }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<ProductMasterRow | null>(null);
+
   const rowData: ProductMasterRow[] = useMemo(
     () =>
       (masters as Record<string, unknown>[]).map((m) => {
@@ -65,6 +42,7 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
           styleNumber: s(m.styleNumber),
           articleNumber: s(m.articleNumber),
           fabricName: s(m.fabricName),
+          fabric2Name: s(m.fabric2Name),
           type: s(m.type),
           gender: s(m.gender),
           productName: s(m.productName),
@@ -91,7 +69,6 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
     [masters]
   );
 
-  const genderValues = Object.keys(GENDER_LABELS);
   const genderLabels = GENDER_LABELS;
 
   const numCol = (field: keyof ProductMasterRow, headerName: string, width = 80): ColDef<ProductMasterRow> => ({
@@ -99,88 +76,90 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
     headerName,
     minWidth: width,
     type: "numericColumn",
-    valueParser: (p) => toNum(p.newValue),
+    editable: false,
   });
 
   const columnDefs = useMemo<ColDef<ProductMasterRow>[]>(
     () => [
-      { field: "skuCode", headerName: "SKU", pinned: "left", minWidth: 120 },
-      { field: "styleNumber", headerName: "Style #", minWidth: 100 },
-      { field: "articleNumber", headerName: "Article #", minWidth: 100 },
-      { field: "fabricName", headerName: "Fabric Name", minWidth: 120 },
-      { field: "type", headerName: "Type", minWidth: 100 },
+      { field: "skuCode", headerName: "SKU", pinned: "left", minWidth: 70, editable: false },
+      { field: "styleNumber", headerName: "Style #", minWidth: 60, editable: false },
+      { field: "articleNumber", headerName: "Article #", minWidth: 60, editable: false },
+      { field: "fabricName", headerName: "Fabric Name", minWidth: 70, editable: false },
+      { field: "fabric2Name", headerName: "2nd Fabric Name", minWidth: 70, editable: false },
+      { field: "type", headerName: "Type", minWidth: 60, editable: false },
       {
         field: "gender",
         headerName: "Gender",
-        minWidth: 90,
-        cellEditor: "agSelectCellEditor",
-        cellEditorParams: { values: genderValues },
+        minWidth: 60,
+        editable: false,
         valueFormatter: (p) => genderLabels[p.value] || p.value || "",
       },
-      { field: "productName", headerName: "Product Name", minWidth: 130 },
+      { field: "productName", headerName: "Product Name", minWidth: 70, editable: false },
       {
         field: "coloursAvailable",
         headerName: "Colours (Primary)",
-        minWidth: 180,
+        minWidth: 80,
+        editable: false,
         cellRenderer: MultiTagRenderer,
-        cellEditor: MultiTagEditor,
       },
       {
         field: "colours2Available",
         headerName: "Colours (2nd)",
-        minWidth: 150,
+        minWidth: 80,
+        editable: false,
         cellRenderer: MultiTagRenderer,
-        cellEditor: MultiTagEditor,
       },
-      numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)", 140),
-      numCol("garmentsPerKg2", "No of Garments/kg (Fabric 2)", 140),
-      numCol("stitchingCost", "Stitching Cost (Rs)", 110),
-      numCol("brandLogoCost", "Logo Cost (Rs)", 95),
-      numCol("neckTwillCost", "Neck Twill Cost (Rs)", 110),
-      numCol("reflectorsCost", "Reflectors Cost (Rs)", 110),
-      numCol("fusingCost", "Fusing Cost (Rs)", 100),
-      numCol("accessoriesCost", "Accessories Cost (Rs)", 115),
-      numCol("brandTagCost", "Brand Tag Cost (Rs)", 110),
-      numCol("sizeTagCost", "Size Tag Cost (Rs)", 105),
-      numCol("packagingCost", "Packaging Cost (Rs)", 110),
+      numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)"),
+      numCol("garmentsPerKg2", "No of Garments/kg (Fabric 2)"),
+      numCol("stitchingCost", "Stitching Cost (Rs)"),
+      numCol("brandLogoCost", "Logo Cost (Rs)"),
+      numCol("neckTwillCost", "Neck Twill Cost (Rs)"),
+      numCol("reflectorsCost", "Reflectors Cost (Rs)"),
+      numCol("fusingCost", "Fusing Cost (Rs)"),
+      numCol("accessoriesCost", "Accessories Cost (Rs)"),
+      numCol("brandTagCost", "Brand Tag Cost (Rs)"),
+      numCol("sizeTagCost", "Size Tag Cost (Rs)"),
+      numCol("packagingCost", "Packaging Cost (Rs)"),
       {
         headerName: "Total Garmenting Cost (Rs)",
-        minWidth: 130,
+        minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeTotalGarmenting(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("fabricCostPerKg", "Fabric 1 Cost/kg", 100),
-      numCol("fabric2CostPerKg", "Fabric 2 Cost/kg", 100),
+      numCol("fabricCostPerKg", "Fabric 1 Cost/kg"),
+      numCol("fabric2CostPerKg", "Fabric 2 Cost/kg"),
       {
         headerName: "Fabric Cost per Piece (Rs)",
-        minWidth: 125,
+        minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeFabricCostPerPiece(p.data) : 0),
+        valueGetter: (p) => (p.data ? computeFabricCostPerPiece({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
         headerName: "Total Cost per piece (Rs)",
-        minWidth: 125,
+        minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeTotalCost(p.data) : 0),
+        valueGetter: (p) => (p.data ? computeTotalCost({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("inwardShipping", "Shipping Cost per piece (Rs)", 125),
+      numCol("inwardShipping", "Shipping Cost per piece (Rs)"),
       {
         headerName: "Total Landed Cost per piece (Rs)",
-        minWidth: 145,
+        minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeTotalLandedCost(p.data) : 0),
+        valueGetter: (p) => (p.data ? computeTotalLandedCost({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
+      numCol("proposedMrp", "Proposed MRP (Rs)"),
+      numCol("onlineMrp", "Online MRP (Rs)"),
       {
         headerName: "Dealer Price (50% off)",
-        minWidth: 115,
+        minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeDealerPrice(p.data.proposedMrp) : 0),
@@ -188,13 +167,13 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
       },
       {
         headerName: "Profit Margin (%)",
-        minWidth: 100,
+        minWidth: 60,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => {
           if (!p.data) return 0;
           // Use proposedMrp for PM calculation in masters
-          const d = { ...p.data, mrp: p.data.proposedMrp };
+          const d = { ...p.data, mrp: p.data.proposedMrp, fabric2GarmentsPerKg: p.data.garmentsPerKg2 };
           return computeProfitMargin(d);
         },
         valueFormatter: (p) => formatPercent(p.value),
@@ -216,18 +195,39 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
     colours2Available: [],
   };
 
+  function handleRowClicked(data: ProductMasterRow) {
+    setEditingRow(data);
+    setSheetOpen(true);
+  }
+
+  function handleAddNew() {
+    setEditingRow(null);
+    setSheetOpen(true);
+  }
+
   return (
-    <DataGrid<ProductMasterRow>
-      gridId="product-masters"
-      rowData={rowData}
-      columnDefs={columnDefs}
-      defaultRow={defaultRow}
-      onCreate={async (data) => {
+    <>
+      <div className="flex items-center gap-2 mb-3">
+        <Button variant="outline" size="sm" onClick={handleAddNew}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Add Product
+        </Button>
+      </div>
+      <DataGrid<ProductMasterRow>
+        gridId="product-masters"
+        rowData={rowData}
+        columnDefs={columnDefs}
+        defaultRow={defaultRow}
+        defaultSort={[{ colId: "articleNumber", sort: "desc" }]}
+        hideAddRowButtons
+        onRowClicked={handleRowClicked}
+        onCreate={async (data) => {
         const payload = {
           skuCode: data.skuCode,
           styleNumber: data.styleNumber,
           articleNumber: data.articleNumber || null,
           fabricName: data.fabricName,
+          fabric2Name: data.fabric2Name || null,
           type: data.type,
           gender: data.gender || "MENS",
           productName: data.productName || null,
@@ -258,6 +258,7 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
           styleNumber: data.styleNumber,
           articleNumber: data.articleNumber || null,
           fabricName: data.fabricName,
+          fabric2Name: data.fabric2Name || null,
           type: data.type,
           gender: data.gender || "MENS",
           productName: data.productName || null,
@@ -286,5 +287,13 @@ export function ProductMasterGrid({ masters }: { masters: unknown[] }) {
       validate={validateProductMaster}
       height="600px"
     />
+      <ProductMasterSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        editingRow={editingRow}
+        productTypes={productTypes}
+        fabricData={fabricData}
+      />
+    </>
   );
 }

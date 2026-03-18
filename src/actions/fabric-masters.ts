@@ -24,6 +24,30 @@ export async function updateFabricMaster(id: string, data: any) {
   return master;
 }
 
+export async function getFabricNames(): Promise<string[]> {
+  const fabrics = await db.fabricMaster.findMany({
+    select: { fabricName: true },
+    orderBy: { fabricName: "asc" },
+    distinct: ["fabricName"],
+  });
+  return fabrics.map((f) => f.fabricName);
+}
+
+export async function getFabricNamesMrp(): Promise<{ name: string; mrp: number | null }[]> {
+  const fabrics = await db.fabricMaster.findMany({
+    select: { fabricName: true, mrp: true },
+    orderBy: { fabricName: "asc" },
+  });
+  // Deduplicate by name, keeping the first MRP found
+  const seen = new Map<string, number | null>();
+  for (const f of fabrics) {
+    if (!seen.has(f.fabricName)) {
+      seen.set(f.fabricName, f.mrp ? Number(f.mrp) : null);
+    }
+  }
+  return Array.from(seen.entries()).map(([name, mrp]) => ({ name, mrp }));
+}
+
 export async function deleteFabricMaster(id: string) {
   await db.fabricMaster.delete({ where: { id } });
   revalidatePath("/fabric-masters");

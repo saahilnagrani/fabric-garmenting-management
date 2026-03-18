@@ -1,23 +1,14 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
-import { MultiTagEditor } from "@/components/ag-grid/multi-tag-editor";
 import { createFabricMaster, updateFabricMaster } from "@/actions/fabric-masters";
 import { validateFabricMaster } from "@/lib/validations";
-
-type FabricMasterRow = {
-  id: string;
-  fabricName: string;
-  vendorId: string;
-  genders: string[];
-  styleNumbers: string[];
-  coloursAvailable: string[];
-  mrp: number | null;
-  [key: string]: unknown;
-};
+import { Button } from "@/components/ui/button";
+import { Plus } from "lucide-react";
+import { FabricMasterSheet, type FabricMasterRow } from "./fabric-master-sheet";
 
 type Vendor = { id: string; name: string };
 
@@ -34,6 +25,9 @@ export function FabricMasterGrid({
   masters: unknown[];
   vendors: Vendor[];
 }) {
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState<FabricMasterRow | null>(null);
+
   const rowData: FabricMasterRow[] = useMemo(
     () =>
       (masters as Record<string, unknown>[]).map((m) => ({
@@ -49,47 +43,45 @@ export function FabricMasterGrid({
   );
 
   const columnDefs = useMemo<ColDef<FabricMasterRow>[]>(() => {
-    const vendorValues = vendors.map((v) => v.id);
     const vendorLabels: Record<string, string> = {};
     vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
 
     return [
-      { field: "fabricName", headerName: "Fabric Name", pinned: "left", minWidth: 150 },
+      { field: "fabricName", headerName: "Fabric Name", pinned: "left", minWidth: 150, editable: false },
       {
         field: "vendorId",
         headerName: "Vendor",
         minWidth: 130,
-        cellEditor: "agSelectCellEditor",
-        cellEditorParams: { values: vendorValues },
+        editable: false,
         valueFormatter: (p) => vendorLabels[p.value] || p.value || "",
       },
       {
         field: "genders",
         headerName: "Genders",
         minWidth: 120,
+        editable: false,
         cellRenderer: MultiTagRenderer,
-        cellEditor: MultiTagEditor,
       },
       {
         field: "styleNumbers",
         headerName: "Style Numbers",
         minWidth: 180,
+        editable: false,
         cellRenderer: MultiTagRenderer,
-        cellEditor: MultiTagEditor,
       },
       {
         field: "coloursAvailable",
         headerName: "Colours Available",
         minWidth: 200,
+        editable: false,
         cellRenderer: MultiTagRenderer,
-        cellEditor: MultiTagEditor,
       },
       {
         field: "mrp",
         headerName: "MRP",
         minWidth: 90,
         type: "numericColumn",
-        valueParser: (p) => toNum(p.newValue),
+        editable: false,
       },
     ];
   }, [vendors]);
@@ -103,37 +95,64 @@ export function FabricMasterGrid({
     mrp: null,
   };
 
+  function handleRowClicked(data: FabricMasterRow) {
+    setEditingRow(data);
+    setSheetOpen(true);
+  }
+
+  function handleAddNew() {
+    setEditingRow(null);
+    setSheetOpen(true);
+  }
+
   return (
-    <DataGrid<FabricMasterRow>
-      gridId="fabric-masters"
-      rowData={rowData}
-      columnDefs={columnDefs}
-      defaultRow={defaultRow}
-      onCreate={async (data) => {
-        const payload = {
-          fabricName: data.fabricName,
-          vendorId: data.vendorId,
-          genders: data.genders || [],
-          styleNumbers: data.styleNumbers || [],
-          coloursAvailable: data.coloursAvailable || [],
-          mrp: toNum(data.mrp),
-        };
-        return createFabricMaster(payload);
-      }}
-      onSave={async (id, data) => {
-        const payload = {
-          fabricName: data.fabricName,
-          vendorId: data.vendorId,
-          genders: data.genders || [],
-          styleNumbers: data.styleNumbers || [],
-          coloursAvailable: data.coloursAvailable || [],
-          mrp: toNum(data.mrp),
-        };
-        return updateFabricMaster(id, payload);
-      }}
-      onStrikethrough={async (id, isStrikedThrough) => updateFabricMaster(id, { isStrikedThrough })}
-      validate={validateFabricMaster}
-      height="500px"
-    />
+    <>
+      <div className="flex items-center gap-2 mb-3">
+        <Button variant="outline" size="sm" onClick={handleAddNew}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Add Fabric
+        </Button>
+      </div>
+      <DataGrid<FabricMasterRow>
+        gridId="fabric-masters"
+        rowData={rowData}
+        columnDefs={columnDefs}
+        defaultRow={defaultRow}
+        defaultSort={[{ colId: "fabricName", sort: "asc" }]}
+        hideAddRowButtons
+        onRowClicked={handleRowClicked}
+        onCreate={async (data) => {
+          const payload = {
+            fabricName: data.fabricName,
+            vendorId: data.vendorId,
+            genders: data.genders || [],
+            styleNumbers: data.styleNumbers || [],
+            coloursAvailable: data.coloursAvailable || [],
+            mrp: toNum(data.mrp),
+          };
+          return createFabricMaster(payload);
+        }}
+        onSave={async (id, data) => {
+          const payload = {
+            fabricName: data.fabricName,
+            vendorId: data.vendorId,
+            genders: data.genders || [],
+            styleNumbers: data.styleNumbers || [],
+            coloursAvailable: data.coloursAvailable || [],
+            mrp: toNum(data.mrp),
+          };
+          return updateFabricMaster(id, payload);
+        }}
+        onStrikethrough={async (id, isStrikedThrough) => updateFabricMaster(id, { isStrikedThrough })}
+        validate={validateFabricMaster}
+        height="500px"
+      />
+      <FabricMasterSheet
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+        editingRow={editingRow}
+        vendors={vendors}
+      />
+    </>
   );
 }

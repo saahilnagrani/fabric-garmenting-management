@@ -1,8 +1,14 @@
 import { getProductMasters } from "@/actions/product-masters";
+import { getProductTypes } from "@/actions/product-types";
+import { getFabricNamesMrp } from "@/actions/fabric-masters";
 import { ProductMasterGrid } from "@/components/masters/product-master-grid";
 
 export default async function ProductMastersPage() {
-  const masters = await getProductMasters();
+  const [masters, types, fabricData] = await Promise.all([
+    getProductMasters(),
+    getProductTypes(),
+    getFabricNamesMrp(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -12,7 +18,11 @@ export default async function ProductMastersPage() {
           {masters.length} product templates. These defaults auto-populate when adding products.
         </p>
       </div>
-      <ProductMasterGrid masters={JSON.parse(JSON.stringify(masters))} />
+      <ProductMasterGrid
+        masters={JSON.parse(JSON.stringify(masters))}
+        productTypes={types.map((t) => t.name)}
+        fabricData={fabricData}
+      />
     </div>
   );
 }

@@ -50,7 +50,7 @@ export function PhaseGrid({ phases }: { phases: unknown[] }) {
           return isNaN(n) ? null : Math.round(n);
         },
       },
-      { field: "startDate", headerName: "Start Date", minWidth: 130, flex: 1, cellEditor: DateCellEditor },
+      { field: "startDate", headerName: "Start Date", minWidth: 130, flex: 1, cellEditor: DateCellEditor, cellEditorPopup: true },
       {
         field: "isCurrent",
         headerName: "Status",

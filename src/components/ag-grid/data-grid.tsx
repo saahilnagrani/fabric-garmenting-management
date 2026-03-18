@@ -2,10 +2,12 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
-import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent } from "ag-grid-community";
+import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent, type ColumnState, type ColumnPinnedType, type RowClickedEvent } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { useCustomColumns } from "@/hooks/use-custom-columns";
+import { AddColumnButton } from "./add-column-dialog";
 import "./ag-grid-theme.css";
 
 // Register all community modules
@@ -28,6 +30,9 @@ type DataGridProps<T extends Record<string, unknown>> = {
   autoHeight?: boolean;
   onCellValueChangedExtra?: (event: CellValueChangedEvent<T>) => void;
   showStrikethrough?: boolean;
+  defaultSort?: { colId: string; sort: "asc" | "desc" }[];
+  hideAddRowButtons?: boolean;
+  onRowClicked?: (data: T) => void;
 };
 
 let tempIdCounter = 0;
@@ -59,6 +64,9 @@ export function DataGrid<T extends Record<string, unknown>>({
   autoHeight = false,
   onCellValueChangedExtra,
   showStrikethrough = true,
+  defaultSort,
+  hideAddRowButtons = false,
+  onRowClicked,
 }: DataGridProps<T>) {
   const gridRef = useRef<AgGridReact<T>>(null);
   const gridApiRef = useRef<GridApi<T> | null>(null);
@@ -69,7 +77,13 @@ export function DataGrid<T extends Record<string, unknown>>({
   const isAutoPopulating = useRef(false);
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
+  // Custom columns
+  const { columns: customColumns, addColumn, removeColumn, setCellValue: setCustomCellValue, enrichRowData } = useCustomColumns(gridId);
+
   const colStateKey = `ag-grid-col-state-${gridId}`;
+
+  // Check if saved state exists (for autoSizeStrategy)
+  const hasSavedColState = typeof window !== "undefined" && !!localStorage.getItem(colStateKey);
 
   const saveColumnState = useCallback(() => {
     if (!gridApiRef.current) return;
@@ -89,7 +103,7 @@ export function DataGrid<T extends Record<string, unknown>>({
     return (data as Record<string, unknown>).id as string || (data as Record<string, unknown>).__tempId as string;
   }
 
-  // Enrich row data with status for rendering
+  // Enrich row data with status and custom columns
   const enrichedData = useMemo(() => {
     const topEnriched = topTempRows.map((row) => ({
       ...row,
@@ -104,33 +118,74 @@ export function DataGrid<T extends Record<string, unknown>>({
       __status: statusMap.get(getRowIdFn(row)) || ("clean" as RowStatus),
     }));
     const all = [...topEnriched, ...serverEnriched, ...bottomEnriched];
-    return all.sort((a, b) => {
+    const sorted = all.sort((a, b) => {
       const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
       const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
       return aStruck - bStruck;
     });
+    return enrichRowData(sorted);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rowData, statusMap, topTempRows, bottomTempRows]);
+  }, [rowData, statusMap, topTempRows, bottomTempRows, enrichRowData]);
 
   const onGridReady = useCallback((params: GridReadyEvent<T>) => {
     gridApiRef.current = params.api;
     const saved = localStorage.getItem(colStateKey);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        // Preserve pinned settings from column defs so code-defined pins persist
-        const pinnedMap: Record<string, string | null> = {};
-        columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field as string] = col.pinned as string; });
-        const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
-          if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
-          return cs;
-        });
-        params.api.applyColumnState({ state: merged, applyOrder: true });
+        const parsed: ColumnState[] = JSON.parse(saved);
+
+        // Build a fingerprint of the current column defs to detect changes
+        const allColFields = params.api.getColumns()?.map((c) => c.getColId()) || [];
+        const currentFingerprint = allColFields.join("|");
+        const savedFingerprint = localStorage.getItem(colStateKey + "-fingerprint");
+
+        // Preserve pinned settings from column defs
+        const pinnedMap: Record<string, ColumnPinnedType> = {};
+        columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field as string] = col.pinned as ColumnPinnedType; });
+
+        if (currentFingerprint !== savedFingerprint) {
+          // Columns changed: use code-defined order, apply saved widths where possible
+          const savedWidthMap = new Map<string, number>();
+          parsed.forEach((cs) => { if (cs.colId && cs.width) savedWidthMap.set(cs.colId, cs.width); });
+          const merged = allColFields.map((colId) => {
+            const entry: ColumnState = { colId };
+            if (savedWidthMap.has(colId)) entry.width = savedWidthMap.get(colId);
+            if (pinnedMap[colId] !== undefined) entry.pinned = pinnedMap[colId];
+            return entry;
+          });
+          params.api.applyColumnState({ state: merged, applyOrder: true });
+          // Persist clean state and fingerprint
+          localStorage.setItem(colStateKey, JSON.stringify(params.api.getColumnState()));
+          localStorage.setItem(colStateKey + "-fingerprint", currentFingerprint);
+        } else {
+          // Columns unchanged: restore saved order and widths exactly
+          const merged = parsed.map((cs) => {
+            if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
+            return cs;
+          });
+          params.api.applyColumnState({ state: merged, applyOrder: true });
+        }
       } catch {
         // Ignore invalid saved state
       }
+    } else {
+      // No saved state — store initial fingerprint
+      const allColFields = params.api.getColumns()?.map((c) => c.getColId()) || [];
+      localStorage.setItem(colStateKey + "-fingerprint", allColFields.join("|"));
     }
-  }, [colStateKey, columnDefs]);
+
+    // Always apply default sort if no sort is currently set
+    if (defaultSort) {
+      const currentState = params.api.getColumnState();
+      const hasSort = currentState.some((cs) => cs.sort);
+      if (!hasSort) {
+        params.api.applyColumnState({
+          state: defaultSort.map((s) => ({ colId: s.colId, sort: s.sort })),
+          defaultState: { sort: null },
+        });
+      }
+    }
+  }, [colStateKey, columnDefs, defaultSort]);
 
   const setStatus = useCallback((id: string, status: RowStatus) => {
     setStatusMap((prev) => {
@@ -163,6 +218,10 @@ export function DataGrid<T extends Record<string, unknown>>({
           const cleanData = { ...data };
           delete (cleanData as Record<string, unknown>).__tempId;
           delete (cleanData as Record<string, unknown>).__status;
+          // Remove custom column fields before saving to DB
+          Object.keys(cleanData).forEach((k) => {
+            if (k.startsWith("__custom_")) delete (cleanData as Record<string, unknown>)[k];
+          });
           await onCreate(cleanData);
           setTopTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
           setBottomTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
@@ -175,6 +234,10 @@ export function DataGrid<T extends Record<string, unknown>>({
         } else {
           const cleanData = { ...data };
           delete (cleanData as Record<string, unknown>).__status;
+          // Remove custom column fields before saving to DB
+          Object.keys(cleanData).forEach((k) => {
+            if (k.startsWith("__custom_")) delete (cleanData as Record<string, unknown>)[k];
+          });
           await onSave(rowId, cleanData);
           setStatus(rowId, "clean");
         }
@@ -207,7 +270,15 @@ export function DataGrid<T extends Record<string, unknown>>({
       if (isAutoPopulating.current) return;
       if (!event.data) return;
 
+      const colId = event.column.getColId();
       const rowId = getRowIdFn(event.data);
+
+      // Handle custom column edits - save to localStorage, not DB
+      if (colId.startsWith("__custom_")) {
+        setCustomCellValue(rowId, colId, String(event.newValue ?? ""));
+        return;
+      }
+
       setStatus(rowId, "dirty");
       debouncedSave(event.data);
 
@@ -221,7 +292,7 @@ export function DataGrid<T extends Record<string, unknown>>({
       onCellValueChangedExtra?.(event);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [debouncedSave, onCellValueChangedExtra]
+    [debouncedSave, onCellValueChangedExtra, setCustomCellValue]
   );
 
   const addRow = useCallback((position: "top" | "bottom") => {
@@ -269,7 +340,7 @@ export function DataGrid<T extends Record<string, unknown>>({
     [onStrikethrough]
   );
 
-  // Build full column defs with status and optionally actions columns
+  // Build full column defs with status, custom columns, and optionally actions
   const fullColumnDefs = useMemo<ColDef<T>[]>(() => {
     const statusCol: ColDef<T> = {
       headerName: "",
@@ -285,7 +356,20 @@ export function DataGrid<T extends Record<string, unknown>>({
       cellClass: "status-cell",
     };
 
-    const cols: ColDef<T>[] = [statusCol, ...columnDefs];
+    // Custom column defs — filter out any that conflict with code-defined columns (by field or header name)
+    const definedFields = new Set(columnDefs.map((c) => c.field).filter(Boolean));
+    const definedHeaders = new Set(columnDefs.map((c) => c.headerName?.toLowerCase()).filter(Boolean));
+    const customColDefs: ColDef<T>[] = customColumns
+      .filter((c) => !definedFields.has(c.field) && !definedHeaders.has(c.headerName.toLowerCase()))
+      .map((c) => ({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        field: c.field as any,
+        headerName: c.headerName,
+        minWidth: 100,
+        editable: true,
+      }));
+
+    const cols: ColDef<T>[] = [statusCol, ...columnDefs, ...customColDefs];
 
     if (showStrikethrough) {
       const actionsCol: ColDef<T> = {
@@ -314,14 +398,33 @@ export function DataGrid<T extends Record<string, unknown>>({
     }
 
     return cols;
-  }, [columnDefs, strikethroughHandler, showStrikethrough]);
+  }, [columnDefs, strikethroughHandler, showStrikethrough, customColumns]);
+
+  const handleRowClicked = useCallback((event: RowClickedEvent<T>) => {
+    if (!onRowClicked || !event.data) return;
+    // Don't trigger if clicking the status or action columns
+    const colId = event.event?.target instanceof HTMLElement
+      ? event.event.target.closest('[col-id]')?.getAttribute('col-id')
+      : null;
+    if (colId === '__status' || colId === '0') return; // 0 is the actions column index
+    onRowClicked(event.data);
+  }, [onRowClicked]);
 
   return (
     <div className="space-y-3">
-      <Button variant="outline" size="sm" onClick={() => addRow("top")}>
-        <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row Top
-      </Button>
+      {!hideAddRowButtons && (
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => addRow("top")}>
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            Add Row Top
+          </Button>
+          <AddColumnButton
+            columns={customColumns}
+            onAdd={addColumn}
+            onRemove={removeColumn}
+          />
+        </div>
+      )}
       <div className="ag-theme-quartz" style={autoHeight ? { width: "100%", maxHeight: height } : { height, width: "100%" }}>
         <AgGridReact<T>
           ref={gridRef}
@@ -331,6 +434,7 @@ export function DataGrid<T extends Record<string, unknown>>({
           onCellValueChanged={onCellValueChanged}
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
+          onSortChanged={saveColumnState}
           getRowId={(params) => getRowIdFn(params.data)}
           defaultColDef={{
             editable: true,
@@ -342,7 +446,7 @@ export function DataGrid<T extends Record<string, unknown>>({
             wrapHeaderText: true,
             autoHeaderHeight: true,
           }}
-          autoSizeStrategy={{ type: "fitCellContents" }}
+          autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents", skipHeader: true }}
           pinnedBottomRowData={pinnedBottomRowData}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
@@ -352,12 +456,15 @@ export function DataGrid<T extends Record<string, unknown>>({
           animateRows={false}
           suppressClickEdit={false}
           domLayout={autoHeight ? "autoHeight" : "normal"}
+          onRowClicked={onRowClicked ? handleRowClicked : undefined}
         />
       </div>
-      <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
-        <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Row Bottom
-      </Button>
+      {!hideAddRowButtons && (
+        <Button variant="outline" size="sm" onClick={() => addRow("bottom")}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Add Row Bottom
+        </Button>
+      )}
     </div>
   );
 }

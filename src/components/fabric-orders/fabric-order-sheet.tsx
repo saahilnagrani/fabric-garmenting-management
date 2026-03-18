@@ -11,7 +11,7 @@ import {
 import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
-import { createFabricOrder } from "@/actions/fabric-orders";
+import { createFabricOrder, updateFabricOrder } from "@/actions/fabric-orders";
 import { GENDER_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -66,6 +66,7 @@ export function FabricOrderSheet({
   phaseId,
   fabricMasters,
   isRepeatTab,
+  editingRow = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -73,6 +74,7 @@ export function FabricOrderSheet({
   phaseId: string;
   fabricMasters: FabricMasterType[];
   isRepeatTab: boolean;
+  editingRow?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm, isRepeat: isRepeatTab });
@@ -80,14 +82,35 @@ export function FabricOrderSheet({
   const [suggestions, setSuggestions] = useState<FabricMasterType[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const isEditing = editingRow !== null && editingRow !== undefined;
+
   // Reset form when sheet opens
   useEffect(() => {
     if (open) {
-      setForm({ ...emptyForm, isRepeat: isRepeatTab, vendorId: vendors[0]?.id || "" });
+      if (editingRow) {
+        setForm({
+          fabricName: String(editingRow.fabricName ?? ""),
+          vendorId: String(editingRow.vendorId ?? vendors[0]?.id ?? ""),
+          styleNumbers: String(editingRow.styleNumbers ?? ""),
+          colour: String(editingRow.colour ?? ""),
+          availableColour: String(editingRow.availableColour ?? ""),
+          gender: String(editingRow.gender ?? ""),
+          billNumber: String(editingRow.billNumber ?? ""),
+          receivedAt: String(editingRow.receivedAt ?? ""),
+          orderDate: String(editingRow.orderDate ?? ""),
+          costPerUnit: editingRow.costPerUnit != null ? String(editingRow.costPerUnit) : "",
+          quantityOrdered: editingRow.quantityOrdered != null ? String(editingRow.quantityOrdered) : "",
+          quantityShipped: editingRow.quantityShipped != null ? String(editingRow.quantityShipped) : "",
+          fabricCostTotal: editingRow.fabricCostTotal != null ? String(editingRow.fabricCostTotal) : "",
+          isRepeat: Boolean(editingRow.isRepeat),
+        });
+      } else {
+        setForm({ ...emptyForm, isRepeat: isRepeatTab, vendorId: vendors[0]?.id || "" });
+      }
       setSuggestions([]);
       setShowSuggestions(false);
     }
-  }, [open, isRepeatTab, vendors]);
+  }, [open, isRepeatTab, vendors, editingRow]);
 
   function updateField(field: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -132,8 +155,7 @@ export function FabricOrderSheet({
 
     setSubmitting(true);
     try {
-      await createFabricOrder({
-        phaseId,
+      const payload = {
         vendorId: form.vendorId,
         styleNumbers: form.styleNumbers,
         fabricName: form.fabricName,
@@ -149,12 +171,19 @@ export function FabricOrderSheet({
         fabricCostTotal: toNum(form.fabricCostTotal),
         isRepeat: form.isRepeat,
         isStrikedThrough: false,
-      });
-      toast.success("Fabric order created");
+      };
+
+      if (isEditing && editingRow?.id) {
+        await updateFabricOrder(String(editingRow.id), payload);
+        toast.success("Fabric order updated");
+      } else {
+        await createFabricOrder({ ...payload, phaseId });
+        toast.success("Fabric order created");
+      }
       onOpenChange(false);
       router.refresh();
     } catch {
-      toast.error("Failed to create fabric order");
+      toast.error(isEditing ? "Failed to update fabric order" : "Failed to create fabric order");
     } finally {
       setSubmitting(false);
     }
@@ -169,9 +198,11 @@ export function FabricOrderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-lg overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>New Fabric Order</SheetTitle>
+          <SheetTitle>{isEditing ? "Edit Fabric Order" : "New Fabric Order"}</SheetTitle>
           <SheetDescription>
-            Enter fabric name to auto-populate from Fabrics Master DB
+            {isEditing
+              ? "Update the fabric order details below"
+              : "Enter fabric name to auto-populate from Fabrics Master DB"}
           </SheetDescription>
         </SheetHeader>
 
@@ -187,7 +218,7 @@ export function FabricOrderSheet({
               placeholder="Start typing to search..."
               autoFocus
             />
-            {showSuggestions && (
+            {showSuggestions && !isEditing && (
               <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {suggestions.map((m, i) => (
                   <button
@@ -318,10 +349,10 @@ export function FabricOrderSheet({
             {submitting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating...
+                {isEditing ? "Updating..." : "Creating..."}
               </>
             ) : (
-              "Create Fabric Order"
+              isEditing ? "Update Fabric Order" : "Create Fabric Order"
             )}
           </Button>
         </SheetFooter>

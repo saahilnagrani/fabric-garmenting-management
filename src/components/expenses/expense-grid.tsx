@@ -184,7 +184,7 @@ export function ExpenseGrid({
     { field: "invoiceNumber", headerName: "Invoice #", minWidth: 100, editable: true },
     { field: "vendorId", headerName: "Vendor", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "specification", headerName: "Type", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: typeValues }, valueFormatter: (p) => EXPENSE_TYPE_LABELS[p.value] || p.value || "" },
-    { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
+    { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
     { field: "description", headerName: "Description", minWidth: 150, editable: true },
     { field: "quantity", headerName: "Qty", minWidth: 90, editable: true },
     {
@@ -201,9 +201,9 @@ export function ExpenseGrid({
       valueParser: (p) => toNum(p.newValue),
     },
     { field: "fabricStatus", headerName: "Fabric Status", minWidth: 130, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: fabricStatusValues }, valueFormatter: (p) => FABRIC_STATUS_LABELS[p.value] || p.value || "" },
-    { field: "inwardDate", headerName: "Inward Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
-    { field: "expectedInward", headerName: "Exp Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor },
-    { field: "actualInward", headerName: "Act Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor },
+    { field: "inwardDate", headerName: "Inward Date", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
+    { field: "expectedInward", headerName: "Exp Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
+    { field: "actualInward", headerName: "Act Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
     // Actions
     {
       headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,

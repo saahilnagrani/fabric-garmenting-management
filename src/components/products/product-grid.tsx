@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { ColDef, CellValueChangedEvent, GridApi, GridReadyEvent } from "ag-grid-community";
+import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, RowClickedEvent } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
@@ -10,8 +10,7 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import { createProduct, updateProduct } from "@/actions/products";
-import { validateProduct } from "@/lib/validations";
+import { updateProduct } from "@/actions/products";
 import { PRODUCT_STATUS_LABELS, GENDER_LABELS } from "@/lib/constants";
 import {
   computeTotalGarmenting,
@@ -23,10 +22,11 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough, Check } from "lucide-react";
 import { toast } from "sonner";
-import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
 import { ProductOrderSheet } from "./product-order-sheet";
+import { useCustomColumns } from "@/hooks/use-custom-columns";
+import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -70,52 +70,7 @@ function toRow(p: any): Record<string, unknown> {
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function toPayload(data: Record<string, unknown>, phaseId?: string): any {
-  const numOrNull = (v: unknown) => toNum(v);
-  const intOrNull = (v: unknown) => { const n = toNum(v); return n !== null ? Math.round(n) : null; };
-  const strOrNull = (v: unknown) => (v ? String(v) : null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const payload: any = {
-    date: String(data.date || "15 Nov 2025"),
-    styleNumber: String(data.styleNumber), articleNumber: strOrNull(data.articleNumber),
-    skuCode: strOrNull(data.skuCode), colour: String(data.colour || ""),
-    isRepeat: Boolean(data.isRepeat), type: String(data.type || ""),
-    gender: String(data.gender || "MENS"), productName: strOrNull(data.productName),
-    status: String(data.status || "PROCESSING"), vendorId: String(data.vendorId || ""),
-    fabricName: String(data.fabricName || ""), fabricGsm: numOrNull(data.fabricGsm),
-    fabricCostPerKg: numOrNull(data.fabricCostPerKg), garmentsPerKg: numOrNull(data.garmentsPerKg),
-    fabric2Name: strOrNull(data.fabric2Name), fabric2CostPerKg: numOrNull(data.fabric2CostPerKg),
-    fabric2GarmentsPerKg: numOrNull(data.fabric2GarmentsPerKg),
-    quantityOrderedKg: numOrNull(data.quantityOrderedKg), quantityShippedKg: numOrNull(data.quantityShippedKg),
-    garmentNumber: intOrNull(data.garmentNumber), actualGarmentStitched: intOrNull(data.actualGarmentStitched),
-    sizeXS: intOrNull(data.sizeXS) ?? 0, sizeS: intOrNull(data.sizeS) ?? 0,
-    sizeM: intOrNull(data.sizeM) ?? 0, sizeL: intOrNull(data.sizeL) ?? 0,
-    sizeXL: intOrNull(data.sizeXL) ?? 0, sizeXXL: intOrNull(data.sizeXXL) ?? 0,
-    stitchingCost: numOrNull(data.stitchingCost), brandLogoCost: numOrNull(data.brandLogoCost),
-    neckTwillCost: numOrNull(data.neckTwillCost), reflectorsCost: numOrNull(data.reflectorsCost),
-    fusingCost: numOrNull(data.fusingCost), accessoriesCost: numOrNull(data.accessoriesCost),
-    brandTagCost: numOrNull(data.brandTagCost), sizeTagCost: numOrNull(data.sizeTagCost),
-    packagingCost: numOrNull(data.packagingCost), inwardShipping: numOrNull(data.inwardShipping),
-    mrp: numOrNull(data.mrp), proposedMrp: numOrNull(data.proposedMrp),
-    onlineMrp: numOrNull(data.onlineMrp), garmentingAt: strOrNull(data.garmentingAt),
-    isStrikedThrough: Boolean(data.isStrikedThrough),
-  };
-  if (phaseId) payload.phaseId = phaseId;
-  return payload;
-}
-
-type RowStatus = "clean" | "dirty" | "saving" | "error";
-
-function StatusCellRenderer(props: { data: { __status?: RowStatus } }) {
-  const status = props.data?.__status;
-  if (status === "saving") return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />;
-  if (status === "error") return <AlertCircle className="h-3 w-3 text-destructive" />;
-  if (status === "dirty") return <div className="h-2 w-2 rounded-full bg-yellow-400" />;
-  return <Check className="h-3 w-3 text-green-500 opacity-0 group-hover:opacity-100" />;
-}
-
-let tempId = 0;
+const COL_STATE_KEY = "ag-grid-col-state-products";
 
 export function ProductGrid({
   products,
@@ -134,17 +89,20 @@ export function ProductGrid({
   const searchParams = useSearchParams();
   const [search, setSearch] = useState(searchParams.get("search") || "");
   const gridApiRef = useRef<GridApi | null>(null);
-  const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
-  const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
-  const isAutoPopulating = useRef(false);
+  const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Custom columns
+  const { columns: customColumns, addColumn, removeColumn, enrichRowData } = useCustomColumns("products");
+
+  // Check if saved state exists (for autoSizeStrategy)
+  const hasSavedColState = typeof window !== "undefined" && !!localStorage.getItem(COL_STATE_KEY);
 
   const saveColumnState = useCallback(() => {
     if (!gridApiRef.current) return;
     const state = gridApiRef.current.getColumnState();
-    localStorage.setItem("ag-grid-col-state-products", JSON.stringify(state));
+    localStorage.setItem(COL_STATE_KEY, JSON.stringify(state));
   }, []);
 
   const saveColumnStateDebounced = useCallback(() => {
@@ -154,23 +112,15 @@ export function ProductGrid({
     }, 300);
   }, [saveColumnState]);
 
-  const rowData = useMemo((): (Record<string, unknown> & { __status: RowStatus })[] => {
-    return (products as Record<string, unknown>[]).map((p) => ({
-      ...toRow(p),
-      __status: "clean" as RowStatus,
-    }));
+  const rowData = useMemo((): Record<string, unknown>[] => {
+    return (products as Record<string, unknown>[]).map((p) => toRow(p));
   }, [products]);
 
-  const vendorValues = vendors.map((v) => v.id);
   const vendorLabels: Record<string, string> = {};
   vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
 
-  const genderValues = Object.keys(GENDER_LABELS);
-  const statusValues = Object.keys(PRODUCT_STATUS_LABELS);
-
   const numCol = (field: string, headerName: string, w = 70): ColDef => ({
-    field, headerName, minWidth: w, type: "numericColumn", editable: true,
-    valueParser: (p) => toNum(p.newValue),
+    field, headerName, minWidth: w, type: "numericColumn", editable: false,
   });
 
   // Helper: expected garments = garmentsPerKg * quantityShippedKg
@@ -178,18 +128,17 @@ export function ProductGrid({
   const expectedGarments = (data: any): number =>
     (toNum(data?.garmentsPerKg) || 0) * (toNum(data?.quantityShippedKg) || 0);
 
-  const columnDefs = useMemo<ColDef[]>(() => [
-    { headerName: "", field: "__status", width: 40, maxWidth: 40, pinned: "left", editable: false, sortable: false, cellRenderer: StatusCellRenderer, cellClass: "status-cell" },
-    { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 90, editable: true },
-    { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor },
-    { field: "skuCode", headerName: "SKU", minWidth: 90, editable: true },
-    { field: "articleNumber", headerName: "Art #", minWidth: 80, editable: true },
-    { field: "colour", headerName: "Colour", minWidth: 90, editable: true },
-    { field: "productName", headerName: "Product", minWidth: 110, editable: true },
-    { field: "type", headerName: "Type", minWidth: 90, editable: true },
-    { field: "gender", headerName: "Gender", minWidth: 85, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: genderValues }, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
-    { field: "vendorId", headerName: "Vendor", minWidth: 110, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
-    { field: "status", headerName: "Status", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: statusValues }, valueFormatter: (p) => PRODUCT_STATUS_LABELS[p.value] || p.value || "" },
+  const baseColumnDefs = useMemo<ColDef[]>(() => [
+    { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 90, editable: false },
+    { field: "date", headerName: "Date", minWidth: 130, editable: false },
+    { field: "skuCode", headerName: "SKU", minWidth: 90, editable: false },
+    { field: "articleNumber", headerName: "Art #", minWidth: 80, editable: false },
+    { field: "colour", headerName: "Colour", minWidth: 90, editable: false },
+    { field: "productName", headerName: "Product", minWidth: 110, editable: false },
+    { field: "type", headerName: "Type", minWidth: 90, editable: false },
+    { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
+    { field: "vendorId", headerName: "Vendor", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
+    { field: "status", headerName: "Status", minWidth: 120, editable: false, valueFormatter: (p) => PRODUCT_STATUS_LABELS[p.value] || p.value || "" },
     {
       field: "isRepeat", headerName: "Repeat", minWidth: 65, editable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
@@ -197,31 +146,19 @@ export function ProductGrid({
         const checked = Boolean(params.data.isRepeat);
         return (
           <div className="flex items-center justify-center h-full">
-            <button
-              onClick={() => {
-                const rowId = String(params.data.id);
-                const updated = { ...params.data, isRepeat: !checked };
-                gridApiRef.current?.applyTransaction({ update: [updated] });
-                setStatus(rowId, "dirty");
-                if (rowId.startsWith("__new_")) {
-                  setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? updated : r));
-                }
-                debouncedSave(updated);
-              }}
-              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors ${checked ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
-            >
+            <div className={`h-4 w-4 rounded border flex items-center justify-center ${checked ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}>
               {checked && <Check className="h-3 w-3 text-white" />}
-            </button>
+            </div>
           </div>
         );
       },
     },
     // Fabric
-    { field: "fabricName", headerName: "Fabric Name", minWidth: 110, editable: true },
+    { field: "fabricName", headerName: "Fabric Name", minWidth: 110, editable: false },
     numCol("fabricGsm", "GSM", 65),
     numCol("fabricCostPerKg", "Fabric 1 Cost/kg", 100),
     numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)", 140),
-    { field: "fabric2Name", headerName: "Fabric 2 Name", minWidth: 110, editable: true },
+    { field: "fabric2Name", headerName: "Fabric 2 Name", minWidth: 110, editable: false },
     numCol("fabric2CostPerKg", "Fabric 2 Cost/kg", 100),
     numCol("fabric2GarmentsPerKg", "No of Garments/kg (Fabric 2)", 140),
     // Quantities
@@ -231,7 +168,7 @@ export function ProductGrid({
     { headerName: "Expected No. Of Garments", minWidth: 130, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? expectedGarments(p.data) : 0 },
     { headerName: "Actual No. of Garments", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalSizeCount(p.data) : 0 },
     numCol("actualGarmentStitched", "Stitched", 75),
-    // Sizes – Expected then Actual for each size
+    // Sizes
     { headerName: "Expected XS", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: () => 0 },
     numCol("sizeXS", "Actual XS", 65),
     { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 8) : 0 },
@@ -265,115 +202,62 @@ export function ProductGrid({
     numCol("mrp", "MRP", 75),
     { headerName: "Dealer Price (50% off)", minWidth: 115, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeDealerPrice(p.data.mrp) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Profit Margin (%)", minWidth: 100, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeProfitMargin(p.data) : 0, valueFormatter: (p) => formatPercent(p.value) },
-    { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: true },
-    // Actions
-    {
-      headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
-      cellRenderer: (params: { data: Record<string, unknown> }) => {
-        if (!params.data) return null;
-        const isStruck = Boolean(params.data.isStrikedThrough);
-        return (
-          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
-          </button>
-        );
-      },
-    },
+    { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], []);
 
-  function setStatus(id: string, status: RowStatus) {
-    setStatusMap((prev) => { const next = new Map(prev); next.set(id, status); return next; });
-  }
+  // Merge custom columns and actions column
+  const columnDefs = useMemo<ColDef[]>(() => {
+    const customColDefs: ColDef[] = customColumns.map((c) => ({
+      field: c.field,
+      headerName: c.headerName,
+      minWidth: 100,
+      editable: false,
+    }));
 
-  const saveRow = useCallback(async (data: Record<string, unknown>) => {
-    const rowId = String(data.id);
-    const isNew = rowId.startsWith("__new_");
-
-    if (validateProduct(data)) {
-      setStatus(rowId, "error");
-      return;
-    }
-
-    setStatus(rowId, "saving");
-    try {
-      if (isNew) {
-        await createProduct(toPayload(data, phaseId));
-        setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
-        setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
-        toast.success("Product created");
-      } else {
-        await updateProduct(rowId, toPayload(data));
-        setStatus(rowId, "clean");
-      }
-    } catch {
-      setStatus(rowId, "error");
-      toast.error("Failed to save");
-    }
+    return [
+      ...baseColumnDefs,
+      ...customColDefs,
+      // Actions
+      {
+        headerName: "", field: "__actions", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
+        cellRenderer: (params: { data: Record<string, unknown> }) => {
+          if (!params.data) return null;
+          const isStruck = Boolean(params.data.isStrikedThrough);
+          return (
+            <button onClick={(e) => { e.stopPropagation(); handleStrikethrough(params.data); }} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
+              <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
+            </button>
+          );
+        },
+      },
+    ];
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phaseId]);
-
-  function debouncedSave(data: Record<string, unknown>) {
-    const rowId = String(data.id);
-    const existing = saveTimers.current.get(rowId);
-    if (existing) clearTimeout(existing);
-    saveTimers.current.set(rowId, setTimeout(() => { saveTimers.current.delete(rowId); saveRow(data); }, 800));
-  }
-
-  function onCellValueChanged(event: CellValueChangedEvent) {
-    if (isAutoPopulating.current || !event.data) return;
-    const rowId = String(event.data.id);
-    setStatus(rowId, "dirty");
-
-    let dataToSave = event.data;
-
-    // Auto-populate from ProductMaster when styleNumber changes
-    if (event.column.getColId() === "styleNumber" && event.data.styleNumber) {
-      const master = productMasters.find((m) => String(m.styleNumber) === event.data.styleNumber);
-      if (master) {
-        isAutoPopulating.current = true;
-        const merged = { ...event.data };
-        const fields = ["fabricName", "type", "gender", "productName", "garmentsPerKg", "stitchingCost", "brandLogoCost", "neckTwillCost", "reflectorsCost", "fusingCost", "accessoriesCost", "brandTagCost", "sizeTagCost", "packagingCost", "fabricCostPerKg", "fabric2CostPerKg", "inwardShipping", "proposedMrp", "onlineMrp"];
-        fields.forEach((f) => { if (master[f] !== undefined && master[f] !== null) merged[f] = toNum(master[f]) ?? String(master[f]); });
-        gridApiRef.current?.applyTransaction({ update: [merged] });
-        setTimeout(() => { isAutoPopulating.current = false; }, 100);
-        dataToSave = merged;
-      }
-    }
-
-    // Keep temp rows in sync with grid edits
-    if (rowId.startsWith("__new_")) {
-      setTempRows((prev) => prev.map((r) => String(r.id) === rowId ? { ...dataToSave } : r));
-    }
-
-    debouncedSave(dataToSave);
-  }
+  }, [baseColumnDefs, customColumns]);
 
   async function handleStrikethrough(data: Record<string, unknown>) {
     const rowId = String(data.id);
-    if (rowId.startsWith("__new_")) {
-      setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
-      setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
-      return;
-    }
     const toggled = !data.isStrikedThrough;
     try {
       await updateProduct(rowId, { isStrikedThrough: toggled });
-      const updated = { ...data, isStrikedThrough: toggled };
-      gridApiRef.current?.applyTransaction({ update: [updated] });
       toast.success(toggled ? "Row striked through" : "Strikethrough removed");
+      router.refresh();
     } catch { toast.error("Failed to update"); }
   }
 
-  function addRow(position: "top" | "bottom") {
-    const id = `__new_${++tempId}_${Date.now()}`;
-    const newRow = {
-      id, phaseId, date: "15 Nov 2025", styleNumber: "", colour: "", type: "", gender: "MENS", vendorId: vendors[0]?.id || "",
-      fabricName: "", status: "PROCESSING", isRepeat: currentTab === "repeat", isStrikedThrough: false,
-      sizeXS: 0, sizeS: 0, sizeM: 0, sizeL: 0, sizeXL: 0, sizeXXL: 0,
-    };
-    setTempRows((prev) => position === "top" ? [newRow, ...prev] : [...prev, newRow]);
-    setStatus(id, "dirty");
+  function handleRowClicked(event: RowClickedEvent) {
+    // Skip if clicking the actions column (strikethrough button)
+    const target = event.event?.target as HTMLElement | null;
+    if (target?.closest("[col-id='__actions']")) return;
+    if (event.data) {
+      setEditingRow(event.data);
+      setSheetOpen(true);
+    }
+  }
+
+  function handleAddNew() {
+    setEditingRow(null);
+    setSheetOpen(true);
   }
 
   function applyFilter(key: string, value: string | null) {
@@ -391,17 +275,14 @@ export function ProductGrid({
     { key: "repeat", label: "Repeat Designs" },
   ];
 
-  // Enrich with status from statusMap, merge temp rows
   const enrichedData = useMemo(() => {
-    const serverRows = rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("clean" as RowStatus) }));
-    const tempEnriched = tempRows.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("dirty" as RowStatus) }));
-    const all = [...tempEnriched, ...serverRows];
-    return all.sort((a, b) => {
-      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
-      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
+    const sorted = [...rowData].sort((a, b) => {
+      const aStruck = a.isStrikedThrough ? 1 : 0;
+      const bStruck = b.isStrikedThrough ? 1 : 0;
       return aStruck - bStruck;
     });
-  }, [rowData, statusMap, tempRows]);
+    return enrichRowData(sorted);
+  }, [rowData, enrichRowData]);
 
   return (
     <div className="space-y-4">
@@ -435,10 +316,17 @@ export function ProductGrid({
         </Select>
       </div>
 
-      <Button variant="outline" size="sm" onClick={() => setSheetOpen(true)}>
-        <Plus className="mr-1.5 h-3.5 w-3.5" />
-        Add Product Order
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" onClick={handleAddNew}>
+          <Plus className="mr-1.5 h-3.5 w-3.5" />
+          Add Product Order
+        </Button>
+        <AddColumnButton
+          columns={customColumns}
+          onAdd={addColumn}
+          onRemove={removeColumn}
+        />
+      </div>
 
       <ProductOrderSheet
         open={sheetOpen}
@@ -447,6 +335,7 @@ export function ProductGrid({
         phaseId={phaseId}
         productMasters={productMasters}
         isRepeatTab={currentTab === "repeat"}
+        editingRow={editingRow}
       />
 
       <div className="ag-theme-quartz" style={{ height: "650px", width: "100%" }}>
@@ -455,30 +344,38 @@ export function ProductGrid({
           columnDefs={columnDefs}
           onGridReady={(e: GridReadyEvent) => {
             gridApiRef.current = e.api;
-            const saved = localStorage.getItem("ag-grid-col-state-products");
+            const saved = localStorage.getItem(COL_STATE_KEY);
             if (saved) {
               try {
-                const parsed = JSON.parse(saved);
-                const pinnedMap: Record<string, string | null> = {};
-                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as string; });
-                const merged = parsed.map((cs: { colId?: string; pinned?: string | null }) => {
+                const parsed: ColumnState[] = JSON.parse(saved);
+                const pinnedMap: Record<string, ColumnPinnedType> = {};
+                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as ColumnPinnedType; });
+                const merged = parsed.map((cs) => {
                   if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
                   return cs;
                 });
                 e.api.applyColumnState({ state: merged, applyOrder: true });
               } catch {
-                // Ignore invalid saved state
+                // ignore
               }
             }
+            // Always apply default sort if no sort is currently set
+            const currentState = e.api.getColumnState();
+            const hasSort = currentState.some((cs) => cs.sort);
+            if (!hasSort) {
+              e.api.applyColumnState({
+                state: [{ colId: "date", sort: "desc" }],
+                defaultState: { sort: null },
+              });
+            }
           }}
-          onCellValueChanged={onCellValueChanged}
+          onRowClicked={handleRowClicked}
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
+          onSortChanged={saveColumnState}
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: true, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
-          autoSizeStrategy={{ type: "fitCellContents" }}
-          singleClickEdit={true}
-          stopEditingWhenCellsLoseFocus={true}
+          defaultColDef={{ editable: false, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
           getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}

@@ -59,7 +59,7 @@ export function computeTotalLandedCost(product: Parameters<typeof computeTotalCo
 }
 
 export function computeDealerPrice(mrp: NumberLike): number {
-  return toNum(mrp) * 0.5;
+  return (toNum(mrp) + 1) / 2;
 }
 
 export function computeProfitMargin(product: Parameters<typeof computeTotalLandedCost>[0] & {
