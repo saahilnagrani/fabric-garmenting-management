@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent, type ColumnState, type ColumnPinnedType, type RowClickedEvent } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
-import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus, Strikethrough } from "lucide-react";
 import { toast } from "sonner";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "./add-column-dialog";
@@ -38,15 +38,6 @@ type DataGridProps<T extends Record<string, unknown>> = {
 let tempIdCounter = 0;
 function nextTempId() {
   return `__new_${++tempIdCounter}_${Date.now()}`;
-}
-
-// Status cell renderer
-function StatusCellRenderer(props: { data: { __status?: RowStatus } }) {
-  const status = props.data?.__status;
-  if (status === "saving") return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />;
-  if (status === "error") return <AlertCircle className="h-3 w-3 text-destructive" />;
-  if (status === "dirty") return <div className="h-2 w-2 rounded-full bg-yellow-400" />;
-  return <Check className="h-3 w-3 text-green-500 opacity-0 group-hover:opacity-100" />;
 }
 
 export function DataGrid<T extends Record<string, unknown>>({
@@ -144,15 +135,31 @@ export function DataGrid<T extends Record<string, unknown>>({
         columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field as string] = col.pinned as ColumnPinnedType; });
 
         if (currentFingerprint !== savedFingerprint) {
-          // Columns changed: use code-defined order, apply saved widths where possible
-          const savedWidthMap = new Map<string, number>();
-          parsed.forEach((cs) => { if (cs.colId && cs.width) savedWidthMap.set(cs.colId, cs.width); });
-          const merged = allColFields.map((colId) => {
-            const entry: ColumnState = { colId };
-            if (savedWidthMap.has(colId)) entry.width = savedWidthMap.get(colId);
-            if (pinnedMap[colId] !== undefined) entry.pinned = pinnedMap[colId];
-            return entry;
+          // Columns changed: preserve saved order & widths, append new columns at their code-defined position
+          const savedColIds = parsed.map((cs) => cs.colId).filter(Boolean) as string[];
+          const savedMap = new Map<string, ColumnState>();
+          parsed.forEach((cs) => { if (cs.colId) savedMap.set(cs.colId, cs); });
+
+          const currentSet = new Set(allColFields);
+          // Start with saved columns that still exist (preserves user's order)
+          const merged: ColumnState[] = savedColIds
+            .filter((colId) => currentSet.has(colId))
+            .map((colId) => {
+              const entry = { ...savedMap.get(colId)! };
+              if (pinnedMap[colId] !== undefined) entry.pinned = pinnedMap[colId];
+              return entry;
+            });
+
+          // Append any new columns (ones not in saved state) at the end
+          const mergedSet = new Set(merged.map((cs) => cs.colId));
+          allColFields.forEach((colId) => {
+            if (!mergedSet.has(colId)) {
+              const entry: ColumnState = { colId };
+              if (pinnedMap[colId] !== undefined) entry.pinned = pinnedMap[colId];
+              merged.push(entry);
+            }
           });
+
           params.api.applyColumnState({ state: merged, applyOrder: true });
           // Persist clean state and fingerprint
           localStorage.setItem(colStateKey, JSON.stringify(params.api.getColumnState()));
@@ -340,22 +347,8 @@ export function DataGrid<T extends Record<string, unknown>>({
     [onStrikethrough]
   );
 
-  // Build full column defs with status, custom columns, and optionally actions
+  // Build full column defs with custom columns and optionally actions
   const fullColumnDefs = useMemo<ColDef<T>[]>(() => {
-    const statusCol: ColDef<T> = {
-      headerName: "",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      field: "__status" as any,
-      width: 40,
-      maxWidth: 40,
-      pinned: "left",
-      editable: false,
-      sortable: false,
-      filter: false,
-      cellRenderer: StatusCellRenderer,
-      cellClass: "status-cell",
-    };
-
     // Custom column defs — filter out any that conflict with code-defined columns (by field or header name)
     const definedFields = new Set(columnDefs.map((c) => c.field).filter(Boolean));
     const definedHeaders = new Set(columnDefs.map((c) => c.headerName?.toLowerCase()).filter(Boolean));
@@ -369,7 +362,7 @@ export function DataGrid<T extends Record<string, unknown>>({
         editable: true,
       }));
 
-    const cols: ColDef<T>[] = [statusCol, ...columnDefs, ...customColDefs];
+    const cols: ColDef<T>[] = [...columnDefs, ...customColDefs];
 
     if (showStrikethrough) {
       const actionsCol: ColDef<T> = {
@@ -402,11 +395,11 @@ export function DataGrid<T extends Record<string, unknown>>({
 
   const handleRowClicked = useCallback((event: RowClickedEvent<T>) => {
     if (!onRowClicked || !event.data) return;
-    // Don't trigger if clicking the status or action columns
+    // Don't trigger if clicking the action column
     const colId = event.event?.target instanceof HTMLElement
       ? event.event.target.closest('[col-id]')?.getAttribute('col-id')
       : null;
-    if (colId === '__status' || colId === '0') return; // 0 is the actions column index
+    if (colId === '0') return; // 0 is the actions column index
     onRowClicked(event.data);
   }, [onRowClicked]);
 

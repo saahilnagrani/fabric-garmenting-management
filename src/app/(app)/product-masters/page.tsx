@@ -13,9 +13,9 @@ export default async function ProductMastersPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Products Master DB</h1>
+        <h1 className="text-2xl font-bold">SKU Master DB</h1>
         <p className="text-sm text-muted-foreground">
-          {masters.length} product templates. These defaults auto-populate when adding products.
+          {masters.length} SKU templates. These defaults auto-populate when creating SKU/Style orders.
         </p>
       </div>
       <ProductMasterGrid

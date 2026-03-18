@@ -33,7 +33,7 @@ export default async function ProductsPage({
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">Products</h1>
+        <h1 className="text-2xl font-bold">SKU/Style Orders</h1>
         <p className="text-sm text-muted-foreground">
           {products.length} products in {phase.name}
         </p>

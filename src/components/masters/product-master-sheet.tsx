@@ -317,9 +317,9 @@ export function ProductMasterSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="sm:max-w-xl overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{isEdit ? "Edit Product Master" : "New Product Master"}</SheetTitle>
+          <SheetTitle>{isEdit ? "Edit SKU/Style" : "New SKU/Style"}</SheetTitle>
           <SheetDescription>
-            {isEdit ? "Update product template details" : "Add a new product template to the master database"}
+            {isEdit ? "Update SKU/Style template details" : "Add a new SKU/Style to the master database"}
           </SheetDescription>
         </SheetHeader>
 
@@ -520,7 +520,7 @@ export function ProductMasterSheet({
                 {isEdit ? "Updating..." : "Creating..."}
               </>
             ) : (
-              isEdit ? "Update Product Master" : "Create Product Master"
+              isEdit ? "Update SKU/Style" : "Create SKU/Style"
             )}
           </Button>
         </SheetFooter>

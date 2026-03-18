@@ -210,7 +210,7 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
       <div className="flex items-center gap-2 mb-3">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add Product
+          Add SKU/Style
         </Button>
       </div>
       <DataGrid<ProductMasterRow>
