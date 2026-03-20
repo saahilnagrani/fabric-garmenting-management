@@ -316,7 +316,8 @@ export function DataGrid<T extends Record<string, unknown>>({
     const definedFields = new Set(columnDefs.map((c) => c.field).filter(Boolean));
     const definedHeaders = new Set(columnDefs.map((c) => c.headerName?.toLowerCase()).filter(Boolean));
     const customColDefs: ColDef<T>[] = customColumns
-      .filter((c) => !definedFields.has(c.field) && !definedHeaders.has(c.headerName.toLowerCase()))
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((c) => !definedFields.has(c.field as any) && !definedHeaders.has(c.headerName.toLowerCase()))
       .map((c) => ({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         field: c.field as any,
