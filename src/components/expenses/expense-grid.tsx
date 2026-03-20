@@ -13,9 +13,11 @@ import { createExpense, updateExpense } from "@/actions/expenses";
 import { validateExpense } from "@/lib/validations";
 import { EXPENSE_TYPE_LABELS, FABRIC_STATUS_LABELS, DELIVERY_LOCATIONS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
-import { Plus, Strikethrough, Loader2, Check, AlertCircle } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
+import { ExpenseDetailSheet } from "./expense-detail-sheet";
+import type { RowClickedEvent } from "ag-grid-community";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -46,6 +48,7 @@ function toRow(e: any): Record<string, unknown> {
     invoiceNumber: s(e.invoiceNumber),
     vendorId: s(e.vendorId),
     specification: s(e.specification) || "FABRIC_VENDOR",
+    sourceType: s(e.sourceType) || "MANUAL",
     date: toDateStr(e.date),
     description: s(e.description),
     quantity: s(e.quantity),
@@ -97,14 +100,6 @@ function toPayload(data: Record<string, unknown>, phaseId?: string): any {
   return payload;
 }
 
-function StatusCellRenderer(props: { data: { __status?: RowStatus } }) {
-  const status = props.data?.__status;
-  if (status === "saving") return <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />;
-  if (status === "error") return <AlertCircle className="h-3 w-3 text-destructive" />;
-  if (status === "dirty") return <div className="h-2 w-2 rounded-full bg-yellow-400" />;
-  return <Check className="h-3 w-3 text-green-500 opacity-0 group-hover:opacity-100" />;
-}
-
 let tempId = 0;
 
 export function ExpenseGrid({
@@ -123,6 +118,10 @@ export function ExpenseGrid({
   const [tempRows, setTempRows] = useState<Record<string, unknown>[]>([]);
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Detail sheet state
+  const [detailExpenseId, setDetailExpenseId] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   const saveColumnState = useCallback(() => {
     if (!gridApiRef.current) return;
@@ -180,17 +179,25 @@ export function ExpenseGrid({
   }], [totalAmount]);
 
   const columnDefs = useMemo<ColDef[]>(() => [
-    { headerName: "", field: "__status", width: 40, maxWidth: 40, pinned: "left", editable: false, sortable: false, cellRenderer: StatusCellRenderer, cellClass: "status-cell" },
     { field: "invoiceNumber", headerName: "Invoice #", minWidth: 100, editable: true },
+    {
+      field: "sourceType", headerName: "Source", minWidth: 80, maxWidth: 100, editable: false, sortable: true,
+      cellRenderer: (params: { value: string }) => {
+        if (!params.value || params.value === "MANUAL") return <span className="text-xs text-muted-foreground">Manual</span>;
+        const label = params.value === "FABRIC_ORDER" ? "Fabric" : "SKU";
+        return <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">Auto: {label}</span>;
+      },
+    },
     { field: "vendorId", headerName: "Vendor", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: vendorValues }, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "specification", headerName: "Type", minWidth: 120, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: typeValues }, valueFormatter: (p) => EXPENSE_TYPE_LABELS[p.value] || p.value || "" },
     { field: "date", headerName: "Date", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
     { field: "description", headerName: "Description", minWidth: 150, editable: true },
     { field: "quantity", headerName: "Qty", minWidth: 90, editable: true },
     {
-      field: "amount", headerName: "Amount", minWidth: 100, type: "numericColumn", editable: true,
+      field: "amount", headerName: "Amount", minWidth: 100, type: "numericColumn",
       valueParser: (p) => toNum(p.newValue),
       valueFormatter: (p) => formatCurrency(p.value),
+      cellClass: (params) => params.data?.sourceType && params.data.sourceType !== "MANUAL" ? "text-muted-foreground" : "",
     },
     { field: "deliveredAt", headerName: "Delivered At", minWidth: 110, editable: true, cellEditor: "agSelectCellEditor", cellEditorParams: { values: locationValues } },
     { field: "productNote", headerName: "Product Note", minWidth: 130, editable: true },
@@ -204,19 +211,6 @@ export function ExpenseGrid({
     { field: "inwardDate", headerName: "Inward Date", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
     { field: "expectedInward", headerName: "Exp Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
     { field: "actualInward", headerName: "Act Inward", minWidth: 130, editable: true, cellEditor: DateCellEditor, cellEditorPopup: true },
-    // Actions
-    {
-      headerName: "", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
-      cellRenderer: (params: { data: Record<string, unknown> }) => {
-        if (!params.data || String(params.data.id) === "__total") return null;
-        const isStruck = Boolean(params.data.isStrikedThrough);
-        return (
-          <button onClick={() => handleStrikethrough(params.data)} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-            <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
-          </button>
-        );
-      },
-    },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], []);
 
@@ -269,22 +263,6 @@ export function ExpenseGrid({
     debouncedSave(event.data);
   }
 
-  async function handleStrikethrough(data: Record<string, unknown>) {
-    const rowId = String(data.id);
-    if (rowId.startsWith("__new_")) {
-      setTempRows((prev) => prev.filter((r) => String(r.id) !== rowId));
-      setStatusMap((prev) => { const next = new Map(prev); next.delete(rowId); return next; });
-      return;
-    }
-    const toggled = !data.isStrikedThrough;
-    try {
-      await updateExpense(rowId, { isStrikedThrough: toggled });
-      const updated = { ...data, isStrikedThrough: toggled };
-      gridApiRef.current?.applyTransaction({ update: [updated] });
-      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
-    } catch { toast.error("Failed to update"); }
-  }
-
   function addRow(position: "top" | "bottom") {
     const id = `__new_${++tempId}_${Date.now()}`;
     const newRow = {
@@ -310,11 +288,7 @@ export function ExpenseGrid({
     const serverRows = rowData.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("clean" as RowStatus) }));
     const tempEnriched = tempRows.map((r) => ({ ...r, __status: statusMap.get(String(r.id)) || ("dirty" as RowStatus) }));
     const all = [...tempEnriched, ...serverRows];
-    return all.sort((a, b) => {
-      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
-      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
-      return aStruck - bStruck;
-    });
+    return all;
   }, [rowData, statusMap, tempRows]);
 
   return (
@@ -368,16 +342,34 @@ export function ExpenseGrid({
             }
           }}
           onCellValueChanged={onCellValueChanged}
+          onRowClicked={(event: RowClickedEvent) => {
+            if (!event.data) return;
+            const id = String(event.data.id);
+            if (id === "__total" || id.startsWith("__new_")) return;
+            const sourceType = event.data.sourceType;
+            if (sourceType && sourceType !== "MANUAL") {
+              setDetailExpenseId(id);
+              setDetailOpen(true);
+            }
+          }}
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: true, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          defaultColDef={{
+            editable: (params) => {
+              // Auto-created expense rows are not editable
+              const st = params.data?.sourceType;
+              if (st && st !== "MANUAL") return false;
+              return true;
+            },
+            sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true,
+          }}
           autoSizeStrategy={{ type: "fitCellContents" }}
           pinnedBottomRowData={pinnedBottomRowData}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
-          rowClass="group"
-          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
+          rowClass="group cursor-pointer"
+          getRowClass={() => "cursor-pointer"}
           animateRows={false}
         />
       </div>
@@ -386,6 +378,12 @@ export function ExpenseGrid({
         <Plus className="mr-1.5 h-3.5 w-3.5" />
         Add Row Bottom
       </Button>
+
+      <ExpenseDetailSheet
+        expenseId={detailExpenseId}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 }

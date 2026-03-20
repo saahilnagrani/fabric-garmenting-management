@@ -15,8 +15,8 @@ export default async function FabricOrderDetailPage({
   const order = await getFabricOrder(id);
   if (!order) notFound();
 
-  const ordered = Number(order.quantityOrdered) || 0;
-  const shipped = Number(order.quantityShipped) || 0;
+  const ordered = Number(order.fabricOrderedQuantityKg) || 0;
+  const shipped = Number(order.fabricShippedQuantityKg) || 0;
   const pct = ordered > 0 ? Math.round((shipped / ordered) * 100) : 0;
 
   return (
@@ -32,7 +32,7 @@ export default async function FabricOrderDetailPage({
       <Card>
         <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          <div><p className="text-xs text-muted-foreground">Vendor</p><p className="font-medium">{order.vendor.name}</p></div>
+          <div><p className="text-xs text-muted-foreground">Fabric Vendor</p><p className="font-medium">{order.fabricVendor.name}</p></div>
           <div><p className="text-xs text-muted-foreground">Style Numbers</p><p className="font-medium">{order.styleNumbers}</p></div>
           <div><p className="text-xs text-muted-foreground">Fabric</p><p className="font-medium">{order.fabricName}</p></div>
           <div><p className="text-xs text-muted-foreground">Colour</p><p className="font-medium">{order.colour}</p></div>
@@ -46,7 +46,8 @@ export default async function FabricOrderDetailPage({
               <div className="h-2 rounded-full bg-blue-500" style={{ width: `${Math.min(pct, 100)}%` }} />
             </div>
           </div>
-          <div><p className="text-xs text-muted-foreground">Total Cost</p><p className="font-medium">{formatCurrency(Number(order.fabricCostTotal))}</p></div>
+          <div><p className="text-xs text-muted-foreground">Expected Fabric Cost</p><p className="font-medium">{formatCurrency(Number(order.costPerUnit) * ordered)}</p></div>
+          <div><p className="text-xs text-muted-foreground">Actual Fabric Cost</p><p className="font-medium">{formatCurrency(Number(order.costPerUnit) * shipped)}</p></div>
         </CardContent>
       </Card>
     </div>

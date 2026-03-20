@@ -132,8 +132,8 @@ async function main() {
   const newDesigns = XLSX.utils.sheet_to_json(wb.Sheets["Phase 3 - New Designs"]);
   let newCount = 0;
   for (const row of newDesigns as Record<string, unknown>[]) {
-    const vendorId = resolveVendorId(s(row["Vendor"]));
-    if (!vendorId) { console.log("  Skip new design - no vendor:", s(row["Vendor"])); continue; }
+    const fabricVendorId = resolveVendorId(s(row["Vendor"]));
+    if (!fabricVendorId) { console.log("  Skip new design - no vendor:", s(row["Vendor"])); continue; }
     const styleNumber = s(row["Style Number"]);
     if (!styleNumber) continue;
 
@@ -143,30 +143,29 @@ async function main() {
         styleNumber,
         articleNumber: s(row["Article Number"]) || null,
         skuCode: s(row["SKU Code"]) || null,
-        colour: s(row["Colour"]) || "Unknown",
+        colourOrdered: s(row["Colour"]) || "Unknown",
         isRepeat: false,
         type: s(row["Type"]) || "Unknown",
         gender: (GENDER_MAP[s(row["Gender"])] || "MENS") as "MENS" | "WOMENS" | "KIDS",
         productName: s(row["Product  Name"]) || null,
         status: (STATUS_MAP[s(row["Status "])] || "PROCESSING") as "PROCESSING",
-        vendorId,
+        fabricVendorId,
         fabricName: s(row["Fabric"]) || "Unknown",
         fabricGsm: num(row["GSM"]),
         fabricCostPerKg: num(row["Cost/Kg"]),
-        garmentsPerKg: num(row["No/Kg"]),
+        assumedFabricGarmentsPerKg: num(row["No/Kg"]),
         fabric2Name: s(row["Second Fabric "]) || null,
         fabric2CostPerKg: null,
-        fabric2GarmentsPerKg: num(row["2nd Fabric No/Kg"]),
-        quantityOrderedKg: num(row["Quantity Ordered"]),
-        quantityShippedKg: num(row["Quantity Shipped "]),
+        assumedFabric2GarmentsPerKg: num(row["2nd Fabric No/Kg"]),
+        fabricOrderedQuantityKg: num(row["Quantity Ordered"]),
+        fabricShippedQuantityKg: num(row["Quantity Shipped "]),
         garmentNumber: int(row["Garment Number"]),
-        actualGarmentStitched: int(row["Actual Garment Stiched"]),
-        sizeXS: int(row["XS"]) || 0,
-        sizeS: int(row["S"]) || 0,
-        sizeM: int(row["M"]) || 0,
-        sizeL: int(row["L"]) || 0,
-        sizeXL: int(row["XL"]) || 0,
-        sizeXXL: int(row["XXL"]) || 0,
+        actualStitchedXS: int(row["XS"]) || 0,
+        actualStitchedS: int(row["S"]) || 0,
+        actualStitchedM: int(row["M"]) || 0,
+        actualStitchedL: int(row["L"]) || 0,
+        actualStitchedXL: int(row["XL"]) || 0,
+        actualStitchedXXL: int(row["XXL"]) || 0,
         stitchingCost: num(row["Stiching Cost"]),
         brandLogoCost: num(row["Brand Logo"]),
         neckTwillCost: num(row["Neck Twill"]),
@@ -176,8 +175,8 @@ async function main() {
         brandTagCost: num(row["Brand Tag Cost "]),
         sizeTagCost: num(row["Size Tag/hyperballik"]),
         packagingCost: num(row["Packaging"]),
-        inwardShipping: num(row["Inward Shipping"]),
-        mrp: num(row["MRP"]),
+        outwardShippingCost: num(row["Inward Shipping"]),
+        proposedMrp: num(row["MRP"]),
       },
     });
     newCount++;
@@ -188,8 +187,8 @@ async function main() {
   const repeatDesigns = XLSX.utils.sheet_to_json(wb.Sheets["Phase 3 - Repeat Designs"]);
   let repeatCount = 0;
   for (const row of repeatDesigns as Record<string, unknown>[]) {
-    const vendorId = resolveVendorId(s(row["Vendor"]));
-    if (!vendorId) { console.log("  Skip repeat - no vendor:", s(row["Vendor"])); continue; }
+    const fabricVendorId = resolveVendorId(s(row["Vendor"]));
+    if (!fabricVendorId) { console.log("  Skip repeat - no vendor:", s(row["Vendor"])); continue; }
 
     const articleName = s(row["Article Name "]);
     const productName = s(row["Product Name "]);
@@ -201,30 +200,29 @@ async function main() {
         styleNumber: articleName || productName || "Unknown",
         articleNumber: row["Article Number"] ? s(row["Article Number"]) : null,
         skuCode: s(row["SKU Code"]) || null,
-        colour: s(row["Colour 1"]) || "Unknown",
+        colourOrdered: s(row["Colour 1"]) || "Unknown",
         isRepeat: true,
         type: type || "Unknown",
         gender: "MENS",
         productName: productName || null,
         status: "PROCESSING",
-        vendorId,
+        fabricVendorId,
         fabricName: s(row["Fabric 1"]) || "Unknown",
         fabricGsm: null,
         fabricCostPerKg: null,
-        garmentsPerKg: num(row["No/Kg"]),
+        assumedFabricGarmentsPerKg: num(row["No/Kg"]),
         fabric2Name: s(row["Fabric 2"]) || null,
         fabric2CostPerKg: null,
-        fabric2GarmentsPerKg: null,
-        quantityOrderedKg: num(row["Fabric 1 Quantity"]),
-        quantityShippedKg: null,
+        assumedFabric2GarmentsPerKg: null,
+        fabricOrderedQuantityKg: num(row["Fabric 1 Quantity"]),
+        fabricShippedQuantityKg: null,
         garmentNumber: int(row["Number of Garment"]),
-        actualGarmentStitched: null,
-        sizeXS: 0,
-        sizeS: int(row["S"]) || 0,
-        sizeM: int(row["M"]) || 0,
-        sizeL: int(row["L"]) || 0,
-        sizeXL: int(row["XL"]) || 0,
-        sizeXXL: int(row["XXL"]) || 0,
+        actualStitchedXS: 0,
+        actualStitchedS: int(row["S"]) || 0,
+        actualStitchedM: int(row["M"]) || 0,
+        actualStitchedL: int(row["L"]) || 0,
+        actualStitchedXL: int(row["XL"]) || 0,
+        actualStitchedXXL: int(row["XXL"]) || 0,
         stitchingCost: num(row["Stiching Cost"]),
         brandLogoCost: num(row["Brand Logo"]),
         neckTwillCost: num(row["Neck Twill"]),
@@ -234,8 +232,7 @@ async function main() {
         brandTagCost: num(row["Brand Tag Cost "]),
         sizeTagCost: num(row["Size Tag/hyperballik"]),
         packagingCost: num(row["Packaging"]),
-        inwardShipping: num(row["Inward Shipping"]),
-        mrp: num(row["MRP"]),
+        outwardShippingCost: num(row["Inward Shipping"]),
         proposedMrp: num(row["Proposed MRP"]),
         onlineMrp: num(row["Online MRP"]),
         garmentingAt: s(row["Garmenting At"]) || null,
@@ -249,23 +246,22 @@ async function main() {
   const fabricNew = XLSX.utils.sheet_to_json(wb.Sheets["Phase 3 - Fabric Planning"]);
   let fabNewCount = 0;
   for (const row of fabricNew as Record<string, unknown>[]) {
-    const vendorId = resolveVendorId(s(row["Vendor"]));
-    if (!vendorId) { console.log("  Skip fabric new - no vendor:", s(row["Vendor"])); continue; }
+    const fabricVendorId = resolveVendorId(s(row["Vendor"]));
+    if (!fabricVendorId) { console.log("  Skip fabric new - no vendor:", s(row["Vendor"])); continue; }
 
     await prisma.fabricOrder.create({
       data: {
         phaseId: phase.id,
-        vendorId,
+        fabricVendorId,
         gender: (GENDER_MAP[s(row["Gender"])] || null) as "MENS" | "WOMENS" | "KIDS" | null,
-        billNumber: s(row["Bill Number "]) || null,
+        invoiceNumber: s(row["Bill Number "]) || null,
         receivedAt: s(row["Fabric Received At"]) || null,
         styleNumbers: s(row["Style Number"]),
         fabricName: s(row["Name"]) || "Unknown",
         colour: s(row["Colour"]) || "Unknown",
         costPerUnit: num(row["MRP"]),
-        quantityOrdered: num(row["Quantity"]),
-        quantityShipped: num(row["Shipped Quantity"]),
-        fabricCostTotal: num(row["Fabric Cost"]),
+        fabricOrderedQuantityKg: num(row["Quantity"]),
+        fabricShippedQuantityKg: num(row["Shipped Quantity"]),
         isRepeat: false,
       },
     });
@@ -277,24 +273,23 @@ async function main() {
   const fabricRepeat = XLSX.utils.sheet_to_json(wb.Sheets["P3 - Fabric Planning for Repeat"]);
   let fabRepeatCount = 0;
   for (const row of fabricRepeat as Record<string, unknown>[]) {
-    const vendorId = resolveVendorId(s(row["Vendor "]) || s(row["Vendor"]));
-    if (!vendorId) { console.log("  Skip fabric repeat - no vendor:", s(row["Vendor "]) || s(row["Vendor"])); continue; }
+    const fabricVendorId = resolveVendorId(s(row["Vendor "]) || s(row["Vendor"]));
+    if (!fabricVendorId) { console.log("  Skip fabric repeat - no vendor:", s(row["Vendor "]) || s(row["Vendor"])); continue; }
 
     await prisma.fabricOrder.create({
       data: {
         phaseId: phase.id,
-        vendorId,
+        fabricVendorId,
         gender: (GENDER_MAP[s(row["Gender"])] || null) as "MENS" | "WOMENS" | "KIDS" | null,
-        billNumber: s(row["Bill Number "]) || null,
+        invoiceNumber: s(row["Bill Number "]) || null,
         receivedAt: s(row["Fabric Received At"]) || null,
         styleNumbers: s(row["Style Number"]),
         fabricName: s(row["Fabric Name"]) || "Unknown",
         colour: s(row["Colour"]) || "Unknown",
         availableColour: s(row["Available Colour"]) || null,
         costPerUnit: num(row["MRP"]),
-        quantityOrdered: num(row["Quantity"]),
-        quantityShipped: num(row["Shipped Quantity"]),
-        fabricCostTotal: num(row["Fabric Cost"]),
+        fabricOrderedQuantityKg: num(row["Quantity"]),
+        fabricShippedQuantityKg: num(row["Shipped Quantity"]),
         isRepeat: true,
       },
     });

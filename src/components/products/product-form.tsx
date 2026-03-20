@@ -56,30 +56,29 @@ export function ProductForm({
       styleNumber: product?.styleNumber || "",
       articleNumber: product?.articleNumber || "",
       skuCode: product?.skuCode || "",
-      colour: product?.colour || "",
+      colourOrdered: product?.colourOrdered || "",
       type: product?.type || "",
       gender: product?.gender || "MENS",
       productName: product?.productName || "",
       isRepeat: product?.isRepeat || false,
       status: product?.status || "PROCESSING",
-      vendorId: product?.vendorId || "",
+      fabricVendorId: product?.fabricVendorId || "",
       fabricName: product?.fabricName || "",
       fabricGsm: product?.fabricGsm || "",
       fabricCostPerKg: product?.fabricCostPerKg || "",
-      garmentsPerKg: product?.garmentsPerKg || "",
+      assumedFabricGarmentsPerKg: product?.assumedFabricGarmentsPerKg || "",
       fabric2Name: product?.fabric2Name || "",
       fabric2CostPerKg: product?.fabric2CostPerKg || "",
-      fabric2GarmentsPerKg: product?.fabric2GarmentsPerKg || "",
-      quantityOrderedKg: product?.quantityOrderedKg || "",
-      quantityShippedKg: product?.quantityShippedKg || "",
+      assumedFabric2GarmentsPerKg: product?.assumedFabric2GarmentsPerKg || "",
+      fabricOrderedQuantityKg: product?.fabricOrderedQuantityKg || "",
+      fabricShippedQuantityKg: product?.fabricShippedQuantityKg || "",
       garmentNumber: product?.garmentNumber || "",
-      actualGarmentStitched: product?.actualGarmentStitched || "",
-      sizeXS: product?.sizeXS || 0,
-      sizeS: product?.sizeS || 0,
-      sizeM: product?.sizeM || 0,
-      sizeL: product?.sizeL || 0,
-      sizeXL: product?.sizeXL || 0,
-      sizeXXL: product?.sizeXXL || 0,
+      actualStitchedXS: product?.actualStitchedXS || 0,
+      actualStitchedS: product?.actualStitchedS || 0,
+      actualStitchedM: product?.actualStitchedM || 0,
+      actualStitchedL: product?.actualStitchedL || 0,
+      actualStitchedXL: product?.actualStitchedXL || 0,
+      actualStitchedXXL: product?.actualStitchedXXL || 0,
       stitchingCost: product?.stitchingCost || "",
       brandLogoCost: product?.brandLogoCost || "",
       neckTwillCost: product?.neckTwillCost || "",
@@ -89,11 +88,11 @@ export function ProductForm({
       brandTagCost: product?.brandTagCost || "",
       sizeTagCost: product?.sizeTagCost || "",
       packagingCost: product?.packagingCost || "",
-      inwardShipping: product?.inwardShipping || "",
-      mrp: product?.mrp || "",
+      outwardShippingCost: product?.outwardShippingCost || "",
       proposedMrp: product?.proposedMrp || "",
       onlineMrp: product?.onlineMrp || "",
       garmentingAt: product?.garmentingAt || "",
+      orderDate: product?.orderDate || "",
     } as FormValues,
   });
 
@@ -101,7 +100,7 @@ export function ProductForm({
   const totalGarmenting = computeTotalGarmenting(watched);
   const fabricCostPerPiece = computeFabricCostPerPiece(watched);
   const totalLanded = computeTotalLandedCost(watched);
-  const dp = computeDealerPrice(watched.mrp);
+  const dp = computeDealerPrice(watched.proposedMrp);
   const pm = computeProfitMargin(watched);
   const totalSizes = computeTotalSizeCount(watched);
 
@@ -112,30 +111,29 @@ export function ProductForm({
         styleNumber: String(data.styleNumber),
         articleNumber: data.articleNumber ? String(data.articleNumber) : null,
         skuCode: data.skuCode ? String(data.skuCode) : null,
-        colour: String(data.colour),
+        colourOrdered: String(data.colourOrdered),
         type: String(data.type),
         gender: String(data.gender),
         productName: data.productName ? String(data.productName) : null,
         isRepeat: Boolean(data.isRepeat),
         status: String(data.status),
-        vendorId: String(data.vendorId),
+        fabricVendorId: String(data.fabricVendorId),
         fabricName: String(data.fabricName),
         fabricGsm: data.fabricGsm ? Number(data.fabricGsm) : null,
         fabricCostPerKg: data.fabricCostPerKg ? Number(data.fabricCostPerKg) : null,
-        garmentsPerKg: data.garmentsPerKg ? Number(data.garmentsPerKg) : null,
+        assumedFabricGarmentsPerKg: data.assumedFabricGarmentsPerKg ? Number(data.assumedFabricGarmentsPerKg) : null,
         fabric2Name: data.fabric2Name ? String(data.fabric2Name) : null,
         fabric2CostPerKg: data.fabric2CostPerKg ? Number(data.fabric2CostPerKg) : null,
-        fabric2GarmentsPerKg: data.fabric2GarmentsPerKg ? Number(data.fabric2GarmentsPerKg) : null,
-        quantityOrderedKg: data.quantityOrderedKg ? Number(data.quantityOrderedKg) : null,
-        quantityShippedKg: data.quantityShippedKg ? Number(data.quantityShippedKg) : null,
+        assumedFabric2GarmentsPerKg: data.assumedFabric2GarmentsPerKg ? Number(data.assumedFabric2GarmentsPerKg) : null,
+        fabricOrderedQuantityKg: data.fabricOrderedQuantityKg ? Number(data.fabricOrderedQuantityKg) : null,
+        fabricShippedQuantityKg: data.fabricShippedQuantityKg ? Number(data.fabricShippedQuantityKg) : null,
         garmentNumber: data.garmentNumber ? Number(data.garmentNumber) : null,
-        actualGarmentStitched: data.actualGarmentStitched ? Number(data.actualGarmentStitched) : null,
-        sizeXS: Number(data.sizeXS) || 0,
-        sizeS: Number(data.sizeS) || 0,
-        sizeM: Number(data.sizeM) || 0,
-        sizeL: Number(data.sizeL) || 0,
-        sizeXL: Number(data.sizeXL) || 0,
-        sizeXXL: Number(data.sizeXXL) || 0,
+        actualStitchedXS: Number(data.actualStitchedXS) || 0,
+        actualStitchedS: Number(data.actualStitchedS) || 0,
+        actualStitchedM: Number(data.actualStitchedM) || 0,
+        actualStitchedL: Number(data.actualStitchedL) || 0,
+        actualStitchedXL: Number(data.actualStitchedXL) || 0,
+        actualStitchedXXL: Number(data.actualStitchedXXL) || 0,
         stitchingCost: data.stitchingCost ? Number(data.stitchingCost) : null,
         brandLogoCost: data.brandLogoCost ? Number(data.brandLogoCost) : null,
         neckTwillCost: data.neckTwillCost ? Number(data.neckTwillCost) : null,
@@ -145,12 +143,11 @@ export function ProductForm({
         brandTagCost: data.brandTagCost ? Number(data.brandTagCost) : null,
         sizeTagCost: data.sizeTagCost ? Number(data.sizeTagCost) : null,
         packagingCost: data.packagingCost ? Number(data.packagingCost) : null,
-        inwardShipping: data.inwardShipping ? Number(data.inwardShipping) : null,
-        mrp: data.mrp ? Number(data.mrp) : null,
-        dp: dp || null,
+        outwardShippingCost: data.outwardShippingCost ? Number(data.outwardShippingCost) : null,
         proposedMrp: data.proposedMrp ? Number(data.proposedMrp) : null,
         onlineMrp: data.onlineMrp ? Number(data.onlineMrp) : null,
         garmentingAt: data.garmentingAt ? String(data.garmentingAt) : null,
+        orderDate: data.orderDate ? String(data.orderDate) : null,
       };
 
       if (isEditing) {
@@ -188,8 +185,8 @@ export function ProductForm({
             <Input {...register("skuCode")} placeholder="e.g. M LO02 BLK" />
           </div>
           <div className="space-y-1">
-            <Label>Colour *</Label>
-            <Input {...register("colour", { required: true })} />
+            <Label>Colour Ordered *</Label>
+            <Input {...register("colourOrdered", { required: true })} />
           </div>
           <div className="space-y-1">
             <Label>Type *</Label>
@@ -216,13 +213,13 @@ export function ProductForm({
             <Input {...register("productName")} placeholder="e.g. GLIDEFIT" />
           </div>
           <div className="space-y-1">
-            <Label>Vendor *</Label>
+            <Label>Fabric Vendor *</Label>
             <Select
-              value={String(watched.vendorId)}
-              onValueChange={(v) => setValue("vendorId", v ?? "")}
+              value={String(watched.fabricVendorId)}
+              onValueChange={(v) => setValue("fabricVendorId", v ?? "")}
             >
               <SelectTrigger>
-                <span className="truncate">{vendors.find((v) => v.id === String(watched.vendorId))?.name || "Select vendor"}</span>
+                <span className="truncate">{vendors.find((v) => v.id === String(watched.fabricVendorId))?.name || "Select vendor"}</span>
               </SelectTrigger>
               <SelectContent>
                 {vendors.map((v) => (
@@ -246,6 +243,10 @@ export function ProductForm({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+          <div className="space-y-1">
+            <Label>Order Date</Label>
+            <Input type="date" {...register("orderDate")} />
           </div>
           <div className="space-y-1">
             <Label>Garmenting At</Label>
@@ -278,7 +279,7 @@ export function ProductForm({
           </div>
           <div className="space-y-1">
             <Label>Garments/Kg (No/Kg)</Label>
-            <Input type="number" step="0.01" {...register("garmentsPerKg")} />
+            <Input type="number" step="0.01" {...register("assumedFabricGarmentsPerKg")} />
           </div>
           <div className="col-span-full border-t pt-3">
             <Label className="text-xs text-muted-foreground">Second Fabric (optional)</Label>
@@ -293,7 +294,7 @@ export function ProductForm({
           </div>
           <div className="space-y-1">
             <Label>2nd Fabric Garments/Kg</Label>
-            <Input type="number" step="0.01" {...register("fabric2GarmentsPerKg")} />
+            <Input type="number" step="0.01" {...register("assumedFabric2GarmentsPerKg")} />
           </div>
         </CardContent>
       </Card>
@@ -306,19 +307,15 @@ export function ProductForm({
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <Label>Fabric Ordered (Kg)</Label>
-            <Input type="number" step="0.01" {...register("quantityOrderedKg")} />
+            <Input type="number" step="0.01" {...register("fabricOrderedQuantityKg")} />
           </div>
           <div className="space-y-1">
             <Label>Fabric Shipped (Kg)</Label>
-            <Input type="number" step="0.01" {...register("quantityShippedKg")} />
+            <Input type="number" step="0.01" {...register("fabricShippedQuantityKg")} />
           </div>
           <div className="space-y-1">
             <Label>Expected Garments</Label>
             <Input type="number" {...register("garmentNumber")} />
-          </div>
-          <div className="space-y-1">
-            <Label>Actual Stitched</Label>
-            <Input type="number" {...register("actualGarmentStitched")} />
           </div>
         </CardContent>
       </Card>
@@ -339,7 +336,7 @@ export function ProductForm({
               <Label className="text-xs">{size}</Label>
               <Input
                 type="number"
-                {...register(`size${size}` as keyof FormValues, { valueAsNumber: true })}
+                {...register(`actualStitched${size}` as keyof FormValues, { valueAsNumber: true })}
               />
             </div>
           ))}
@@ -392,30 +389,24 @@ export function ProductForm({
             value={formatCurrency(fabricCostPerPiece)}
           />
           <div className="space-y-1">
-            <Label className="text-xs">Inward Shipping</Label>
-            <Input type="number" step="0.01" {...register("inwardShipping")} />
+            <Label className="text-xs">Outward Shipping Cost</Label>
+            <Input type="number" step="0.01" {...register("outwardShippingCost")} />
           </div>
           <ComputedField
             label="Total Landed Cost"
             value={formatCurrency(totalLanded)}
           />
           <div className="space-y-1">
-            <Label className="text-xs">MRP</Label>
-            <Input type="number" step="0.01" {...register("mrp")} />
+            <Label className="text-xs">Proposed MRP</Label>
+            <Input type="number" step="0.01" {...register("proposedMrp")} />
           </div>
           <ComputedField label="DP (50%)" value={formatCurrency(dp)} />
           <ComputedField label="Profit Margin" value={formatPercent(pm)} />
           {Boolean(watched.isRepeat) && (
-            <>
-              <div className="space-y-1">
-                <Label className="text-xs">Proposed MRP</Label>
-                <Input type="number" step="0.01" {...register("proposedMrp")} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Online MRP</Label>
-                <Input type="number" step="0.01" {...register("onlineMrp")} />
-              </div>
-            </>
+            <div className="space-y-1">
+              <Label className="text-xs">Online MRP</Label>
+              <Input type="number" step="0.01" {...register("onlineMrp")} />
+            </div>
           )}
         </CardContent>
       </Card>

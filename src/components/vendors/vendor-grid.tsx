@@ -73,7 +73,6 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
           contactInfo: data.contactInfo || null,
         });
       }}
-      onStrikethrough={async (id, isStrikedThrough) => updateVendor(id, { isStrikedThrough })}
       autoHeight
       height="600px"
     />

@@ -103,9 +103,9 @@
   border-top: 2px solid #cbd5e1;
 }
 
-/* Editable cell cursor */
-.ag-theme-quartz .ag-cell:not(.computed-cell):not(.status-cell) {
-  cursor: text;
+/* Row pointer cursor */
+.ag-theme-quartz .ag-row {
+  cursor: pointer;
 }
 
 /* Sort icons - active sort column highlighted in blue */
@@ -122,13 +122,3 @@
   opacity: 0.5;
 }
 
-/* Strikethrough rows */
-.ag-theme-quartz .strikethrough-row {
-  text-decoration: line-through;
-  opacity: 0.45;
-}
-
-.ag-theme-quartz .strikethrough-row.ag-row-odd,
-.ag-theme-quartz .strikethrough-row.ag-row-even {
-  background-color: #fef2f2 !important;
-}

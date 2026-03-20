@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
@@ -17,7 +18,7 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Eye, EyeOff } from "lucide-react";
 import { ProductMasterSheet, type ProductMasterRow } from "./product-master-sheet";
 
 function toNum(v: unknown): number | null {
@@ -28,7 +29,8 @@ function toNum(v: unknown): number | null {
 
 type FabricData = { name: string; mrp: number | null };
 
-export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] }: { masters: unknown[]; productTypes?: string[]; fabricData?: FabricData[] }) {
+export function ProductMasterGrid({ masters, productTypes = [], fabricData = [], showArchived = false }: { masters: unknown[]; productTypes?: string[]; fabricData?: FabricData[]; showArchived?: boolean }) {
+  const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<ProductMasterRow | null>(null);
 
@@ -64,6 +66,7 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
           inwardShipping: toNum(m.inwardShipping),
           proposedMrp: toNum(m.proposedMrp),
           onlineMrp: toNum(m.onlineMrp),
+          isStrikedThrough: Boolean(m.isStrikedThrough),
         };
       }),
     [masters]
@@ -135,7 +138,7 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
         minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeFabricCostPerPiece({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
+        valueGetter: (p) => (p.data ? computeFabricCostPerPiece({ ...p.data, assumedFabricGarmentsPerKg: p.data.garmentsPerKg, assumedFabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
@@ -143,16 +146,16 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
         minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeTotalCost({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
+        valueGetter: (p) => (p.data ? computeTotalCost({ ...p.data, assumedFabricGarmentsPerKg: p.data.garmentsPerKg, assumedFabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
-      numCol("inwardShipping", "Shipping Cost per piece (Rs)"),
+      numCol("inwardShipping", "Outward Shipping Cost (Rs)"),
       {
         headerName: "Total Landed Cost per piece (Rs)",
         minWidth: 70,
         editable: false,
         cellClass: "computed-cell",
-        valueGetter: (p) => (p.data ? computeTotalLandedCost({ ...p.data, fabric2GarmentsPerKg: p.data.garmentsPerKg2 }) : 0),
+        valueGetter: (p) => (p.data ? computeTotalLandedCost({ ...p.data, assumedFabricGarmentsPerKg: p.data.garmentsPerKg, assumedFabric2GarmentsPerKg: p.data.garmentsPerKg2, outwardShippingCost: p.data.inwardShipping }) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       numCol("proposedMrp", "Proposed MRP (Rs)"),
@@ -173,7 +176,7 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
         valueGetter: (p) => {
           if (!p.data) return 0;
           // Use proposedMrp for PM calculation in masters
-          const d = { ...p.data, mrp: p.data.proposedMrp, fabric2GarmentsPerKg: p.data.garmentsPerKg2 };
+          const d = { ...p.data, proposedMrp: p.data.proposedMrp, assumedFabricGarmentsPerKg: p.data.garmentsPerKg, assumedFabric2GarmentsPerKg: p.data.garmentsPerKg2, outwardShippingCost: p.data.inwardShipping };
           return computeProfitMargin(d);
         },
         valueFormatter: (p) => formatPercent(p.value),
@@ -205,12 +208,24 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
     setSheetOpen(true);
   }
 
+  function toggleArchived() {
+    const url = showArchived ? "/product-masters" : "/product-masters?showArchived=true";
+    router.push(url);
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 mb-3">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add SKU/Style
+        </Button>
+        <Button variant="ghost" size="sm" onClick={toggleArchived} className="text-muted-foreground">
+          {showArchived ? (
+            <><EyeOff className="mr-1.5 h-3.5 w-3.5" />Hide Archived</>
+          ) : (
+            <><Eye className="mr-1.5 h-3.5 w-3.5" />Show Archived</>
+          )}
         </Button>
       </div>
       <DataGrid<ProductMasterRow>
@@ -221,6 +236,10 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
         defaultSort={[{ colId: "articleNumber", sort: "desc" }]}
         hideAddRowButtons
         onRowClicked={handleRowClicked}
+        getRowClass={(params) => {
+          if (params.data?.isStrikedThrough) return "opacity-40";
+          return "";
+        }}
         onCreate={async (data) => {
         const payload = {
           skuCode: data.skuCode,
@@ -283,7 +302,6 @@ export function ProductMasterGrid({ masters, productTypes = [], fabricData = [] 
         };
         return updateProductMaster(id, payload);
       }}
-      onStrikethrough={async (id, isStrikedThrough) => updateProductMaster(id, { isStrikedThrough })}
       validate={validateProductMaster}
       height="600px"
     />

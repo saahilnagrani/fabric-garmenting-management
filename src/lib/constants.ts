@@ -56,6 +56,14 @@ export const FABRIC_STATUS_COLORS: Record<string, string> = {
   PARTIALLY_INWARDED: "bg-orange-100 text-orange-800",
 };
 
+export const FABRIC_ORDER_STATUS_LABELS: Record<string, string> = {
+  DRAFT_ORDER: "Draft Order",
+  ORDERED: "Ordered",
+  PARTIALLY_SHIPPED: "Partially Shipped",
+  SHIPPED: "Shipped",
+  RECEIVED: "Received",
+};
+
 export const DELIVERY_LOCATIONS = [
   "Garsem",
   "Mumtaz",

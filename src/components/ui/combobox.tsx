@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon, CheckIcon } from "lucide-react";
 
-type OptionItem = string | { label: string; value: string };
+type OptionItem = string | { label: string; value: string; searchText?: string };
 
 interface ComboboxProps {
   value: string;
@@ -24,6 +24,11 @@ function getValue(opt: OptionItem): string {
   return typeof opt === "string" ? opt : opt.value;
 }
 
+function getSearchText(opt: OptionItem): string {
+  if (typeof opt === "string") return opt;
+  return opt.searchText || opt.label;
+}
+
 export function Combobox({
   value,
   onValueChange,
@@ -39,7 +44,7 @@ export function Combobox({
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   const filtered = options.filter((opt) =>
-    getLabel(opt).toLowerCase().includes(search.toLowerCase())
+    getSearchText(opt).toLowerCase().includes(search.toLowerCase())
   );
 
   // Find the display label for the current value

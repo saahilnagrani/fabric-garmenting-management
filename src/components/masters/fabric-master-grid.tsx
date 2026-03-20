@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
 import { createFabricMaster, updateFabricMaster } from "@/actions/fabric-masters";
 import { validateFabricMaster } from "@/lib/validations";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Archive, Eye, EyeOff } from "lucide-react";
 import { FabricMasterSheet, type FabricMasterRow } from "./fabric-master-sheet";
 
 type Vendor = { id: string; name: string };
@@ -21,10 +22,13 @@ function toNum(v: unknown): number | null {
 export function FabricMasterGrid({
   masters,
   vendors,
+  showArchived = false,
 }: {
   masters: unknown[];
   vendors: Vendor[];
+  showArchived?: boolean;
 }) {
+  const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<FabricMasterRow | null>(null);
 
@@ -38,6 +42,7 @@ export function FabricMasterGrid({
         styleNumbers: (m.styleNumbers as string[]) || [],
         coloursAvailable: (m.coloursAvailable as string[]) || [],
         mrp: toNum(m.mrp),
+        isStrikedThrough: Boolean(m.isStrikedThrough),
       })),
     [masters]
   );
@@ -78,7 +83,7 @@ export function FabricMasterGrid({
       },
       {
         field: "mrp",
-        headerName: "MRP",
+        headerName: "Cost/kg (Rs)",
         minWidth: 90,
         type: "numericColumn",
         editable: false,
@@ -105,12 +110,24 @@ export function FabricMasterGrid({
     setSheetOpen(true);
   }
 
+  function toggleArchived() {
+    const url = showArchived ? "/fabric-masters" : "/fabric-masters?showArchived=true";
+    router.push(url);
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 mb-3">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Fabric
+        </Button>
+        <Button variant="ghost" size="sm" onClick={toggleArchived} className="text-muted-foreground">
+          {showArchived ? (
+            <><EyeOff className="mr-1.5 h-3.5 w-3.5" />Hide Archived</>
+          ) : (
+            <><Eye className="mr-1.5 h-3.5 w-3.5" />Show Archived</>
+          )}
         </Button>
       </div>
       <DataGrid<FabricMasterRow>
@@ -121,6 +138,10 @@ export function FabricMasterGrid({
         defaultSort={[{ colId: "fabricName", sort: "asc" }]}
         hideAddRowButtons
         onRowClicked={handleRowClicked}
+        getRowClass={(params) => {
+          if (params.data?.isStrikedThrough) return "opacity-40";
+          return "";
+        }}
         onCreate={async (data) => {
           const payload = {
             fabricName: data.fabricName,
@@ -143,7 +164,6 @@ export function FabricMasterGrid({
           };
           return updateFabricMaster(id, payload);
         }}
-        onStrikethrough={async (id, isStrikedThrough) => updateFabricMaster(id, { isStrikedThrough })}
         validate={validateFabricMaster}
         height="500px"
       />

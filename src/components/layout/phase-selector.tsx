@@ -36,12 +36,12 @@ export function PhaseSelector({
   return (
     <Select value={currentPhaseId || ""} onValueChange={handleChange}>
       <SelectTrigger className="w-[220px]">
-        <span className="truncate">{selectedPhase?.name || "Select phase"}</span>
+        <span className="truncate">{selectedPhase ? `Phase ${selectedPhase.number} - ${selectedPhase.name}` : "Select phase"}</span>
       </SelectTrigger>
       <SelectContent>
         {phases.map((phase) => (
           <SelectItem key={phase.id} value={phase.id}>
-            {phase.name}
+            Phase {phase.number} - {phase.name}
           </SelectItem>
         ))}
       </SelectContent>

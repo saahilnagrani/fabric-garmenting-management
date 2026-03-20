@@ -9,11 +9,9 @@ import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import { updateFabricOrder } from "@/actions/fabric-orders";
-import { GENDER_LABELS } from "@/lib/constants";
+import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
-import { Plus, Strikethrough, Check } from "lucide-react";
-import { toast } from "sonner";
+import { Plus, Check } from "lucide-react";
 import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
@@ -23,6 +21,7 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 type Vendor = { id: string; name: string };
 type FabricMasterType = Record<string, unknown>;
+type ProductMasterType = Record<string, unknown>;
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -36,25 +35,25 @@ function toRow(o: any): Record<string, unknown> {
   return {
     id: o.id,
     phaseId: o.phaseId,
-    vendorId: s(o.vendorId),
+    fabricVendorId: s(o.fabricVendorId),
     styleNumbers: s(o.styleNumbers),
     fabricName: s(o.fabricName),
     colour: s(o.colour),
     gender: s(o.gender),
-    billNumber: s(o.billNumber),
+    invoiceNumber: s(o.invoiceNumber),
     receivedAt: s(o.receivedAt),
     availableColour: s(o.availableColour),
     costPerUnit: toNum(o.costPerUnit),
-    quantityOrdered: toNum(o.quantityOrdered),
-    quantityShipped: toNum(o.quantityShipped),
-    fabricCostTotal: toNum(o.fabricCostTotal),
+    fabricOrderedQuantityKg: toNum(o.fabricOrderedQuantityKg),
+    fabricShippedQuantityKg: toNum(o.fabricShippedQuantityKg),
     orderDate: s(o.orderDate),
     isRepeat: Boolean(o.isRepeat),
-    isStrikedThrough: Boolean(o.isStrikedThrough),
+    orderStatus: s(o.orderStatus),
+    garmentingAt: s(o.garmentingAt),
   };
 }
 
-const COL_STATE_KEY = "ag-grid-col-state-fabric-orders";
+const COL_STATE_KEY = "ag-grid-col-state-fabric-orders-v2";
 
 export function FabricOrderGrid({
   orders,
@@ -62,12 +61,16 @@ export function FabricOrderGrid({
   currentTab,
   phaseId,
   fabricMasters,
+  productMasters,
+  garmentingLocations,
 }: {
   orders: unknown[];
   vendors: Vendor[];
   currentTab: string;
   phaseId: string;
   fabricMasters: FabricMasterType[];
+  productMasters: ProductMasterType[];
+  garmentingLocations: string[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,31 +111,43 @@ export function FabricOrderGrid({
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     { field: "fabricName", headerName: "Fabric Name", minWidth: 120, pinned: "left", editable: false },
-    { field: "vendorId", headerName: "Vendor", minWidth: 120, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
+    { field: "fabricVendorId", headerName: "Fabric Vendor", minWidth: 120, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: false },
     { field: "styleNumbers", headerName: "Fabric used for styles", minWidth: 160, editable: false },
     { field: "colour", headerName: "Colours", minWidth: 100, editable: false },
     { field: "availableColour", headerName: "Avail. Colour", minWidth: 110, editable: false },
     { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
-    { field: "billNumber", headerName: "Invoice #", minWidth: 90, editable: false },
+    { field: "invoiceNumber", headerName: "Invoice #", minWidth: 90, editable: false },
     { field: "receivedAt", headerName: "Received At", minWidth: 130, editable: false },
     numCol("costPerUnit", "Cost/Unit", 85),
-    numCol("quantityOrdered", "Ordered Qty (kg)", 110),
-    numCol("quantityShipped", "Shipped Qty (kg)", 110),
-    numCol("fabricCostTotal", "Expected Cost (Rs)", 130),
-    // Computed: Ordered Qty * Cost/Unit
+    numCol("fabricOrderedQuantityKg", "Ordered Qty (kg)", 110),
+    numCol("fabricShippedQuantityKg", "Shipped Qty (kg)", 110),
+    // Computed: Expected Fabric Cost = Cost/Unit * Ordered Qty
     {
-      headerName: "Fabric Cost (Rs)", minWidth: 110, editable: false, cellClass: "computed-cell",
+      headerName: "Expected Fabric Cost (Rs)", minWidth: 130, editable: false, cellClass: "computed-cell",
       valueGetter: (p) => {
         if (!p.data) return 0;
         const cost = toNum(p.data.costPerUnit) || 0;
-        const qty = toNum(p.data.quantityOrdered) || 0;
+        const qty = toNum(p.data.fabricOrderedQuantityKg) || 0;
         return cost * qty;
       },
       valueFormatter: (p) => formatCurrency(p.value),
     },
+    // Computed: Actual Fabric Cost = Cost/Unit * Shipped Qty
     {
-      field: "isRepeat", headerName: "Repeat", minWidth: 75, maxWidth: 75, editable: false,
+      headerName: "Actual Fabric Cost (Rs)", minWidth: 130, editable: false, cellClass: "computed-cell",
+      valueGetter: (p) => {
+        if (!p.data) return 0;
+        const cost = toNum(p.data.costPerUnit) || 0;
+        const qty = toNum(p.data.fabricShippedQuantityKg) || 0;
+        return cost * qty;
+      },
+      valueFormatter: (p) => formatCurrency(p.value),
+    },
+    { field: "orderStatus", headerName: "Order Status", minWidth: 120, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    { field: "garmentingAt", headerName: "Garmenting Location", minWidth: 130, editable: false },
+    {
+      field: "isRepeat", headerName: "Repeat Order?", minWidth: 85, maxWidth: 85, editable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
         if (!params.data) return null;
         const checked = Boolean(params.data.isRepeat);
@@ -160,37 +175,11 @@ export function FabricOrderGrid({
     return [
       ...baseColumnDefs,
       ...customColDefs,
-      // Actions
-      {
-        headerName: "", field: "__actions", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
-        cellRenderer: (params: { data: Record<string, unknown> }) => {
-          if (!params.data) return null;
-          const isStruck = Boolean(params.data.isStrikedThrough);
-          return (
-            <button onClick={(e) => { e.stopPropagation(); handleStrikethrough(params.data); }} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-              <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
-            </button>
-          );
-        },
-      },
     ];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseColumnDefs, customColumns]);
 
-  async function handleStrikethrough(data: Record<string, unknown>) {
-    const rowId = String(data.id);
-    const toggled = !data.isStrikedThrough;
-    try {
-      await updateFabricOrder(rowId, { isStrikedThrough: toggled });
-      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
-      router.refresh();
-    } catch { toast.error("Failed to update"); }
-  }
-
   function handleRowClicked(event: RowClickedEvent) {
-    // Skip if clicking the actions column (strikethrough button)
-    const target = event.event?.target as HTMLElement | null;
-    if (target?.closest("[col-id='__actions']")) return;
     if (event.data) {
       setEditingRow(event.data);
       setSheetOpen(true);
@@ -216,12 +205,7 @@ export function FabricOrderGrid({
   ];
 
   const enrichedData = useMemo(() => {
-    const sorted = [...rowData].sort((a, b) => {
-      const aStruck = a.isStrikedThrough ? 1 : 0;
-      const bStruck = b.isStrikedThrough ? 1 : 0;
-      return aStruck - bStruck;
-    });
-    return enrichRowData(sorted);
+    return enrichRowData([...rowData]);
   }, [rowData, enrichRowData]);
 
   return (
@@ -262,6 +246,8 @@ export function FabricOrderGrid({
         vendors={vendors}
         phaseId={phaseId}
         fabricMasters={fabricMasters}
+        productMasters={productMasters}
+        garmentingLocations={garmentingLocations}
         isRepeatTab={currentTab === "repeat"}
         editingRow={editingRow}
       />
@@ -306,7 +292,6 @@ export function FabricOrderGrid({
           defaultColDef={{ editable: false, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
-          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
         />
       </div>

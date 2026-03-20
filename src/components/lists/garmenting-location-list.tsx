@@ -5,19 +5,19 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  createProductType,
-  updateProductType,
-  deleteProductType,
-} from "@/actions/product-types";
+  createGarmentingLocation,
+  updateGarmentingLocation,
+  deleteGarmentingLocation,
+} from "@/actions/garmenting-locations";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Check, X } from "lucide-react";
 
-type ProductType = {
+type GarmentingLocation = {
   id: string;
   name: string;
 };
 
-export function ProductTypeList({ types }: { types: ProductType[] }) {
+export function GarmentingLocationList({ locations }: { locations: GarmentingLocation[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -26,43 +26,43 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
 
   async function handleAdd() {
     if (!newName.trim()) {
-      toast.error("Type name is required");
+      toast.error("Location name is required");
       return;
     }
     try {
-      await createProductType(newName);
+      await createGarmentingLocation(newName);
       setNewName("");
       setAdding(false);
-      toast.success("Type added");
+      toast.success("Location added");
       router.refresh();
     } catch {
-      toast.error("Failed to add type. It may already exist.");
+      toast.error("Failed to add location. It may already exist.");
     }
   }
 
   async function handleUpdate(id: string) {
     if (!editingName.trim()) {
-      toast.error("Type name is required");
+      toast.error("Location name is required");
       return;
     }
     try {
-      await updateProductType(id, editingName);
+      await updateGarmentingLocation(id, editingName);
       setEditingId(null);
-      toast.success("Type updated");
+      toast.success("Location updated");
       router.refresh();
     } catch {
-      toast.error("Failed to update type. Name may already exist.");
+      toast.error("Failed to update location. Name may already exist.");
     }
   }
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
     try {
-      await deleteProductType(id);
-      toast.success("Type deleted");
+      await deleteGarmentingLocation(id);
+      toast.success("Location deleted");
       router.refresh();
     } catch {
-      toast.error("Failed to delete type");
+      toast.error("Failed to delete location");
     }
   }
 
@@ -74,7 +74,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="New type name..."
+              placeholder="New location name..."
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
@@ -100,18 +100,18 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
           </div>
         ) : (
           <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Add Type
+            <Plus className="h-4 w-4 mr-1" /> Add Location
           </Button>
         )}
       </div>
 
       <div className="border rounded-lg divide-y">
-        {types.length === 0 && (
+        {locations.length === 0 && (
           <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-            No product types yet. Click &quot;Add Type&quot; to create one.
+            No garmenting locations yet. Click &quot;Add Location&quot; to create one.
           </div>
         )}
-        {types.map((t) => (
+        {locations.map((t) => (
           <div
             key={t.id}
             className="group flex items-center gap-2 px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"

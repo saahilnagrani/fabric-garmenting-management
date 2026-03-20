@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
-import { updateProduct } from "@/actions/products";
 import { PRODUCT_STATUS_LABELS, GENDER_LABELS } from "@/lib/constants";
 import {
   computeTotalGarmenting,
@@ -22,8 +21,7 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { Plus, Strikethrough, Check } from "lucide-react";
-import { toast } from "sonner";
+import { Plus, Check } from "lucide-react";
 import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
@@ -46,31 +44,38 @@ function toRow(p: any): Record<string, unknown> {
   return {
     id: p.id,
     phaseId: p.phaseId,
-    date: s(p.date) || "15 Nov 2025",
+    orderDate: s(p.orderDate) || "15 Nov 2025",
     styleNumber: s(p.styleNumber), articleNumber: s(p.articleNumber), skuCode: s(p.skuCode),
-    colour: s(p.colour), isRepeat: Boolean(p.isRepeat),
+    colourOrdered: s(p.colourOrdered), isRepeat: Boolean(p.isRepeat),
     type: s(p.type), gender: s(p.gender), productName: s(p.productName),
-    status: s(p.status) || "PROCESSING", vendorId: s(p.vendorId),
+    status: s(p.status) || "PROCESSING", fabricVendorId: s(p.fabricVendorId),
     fabricName: s(p.fabricName), fabricGsm: toNum(p.fabricGsm),
-    fabricCostPerKg: toNum(p.fabricCostPerKg), garmentsPerKg: toNum(p.garmentsPerKg),
+    fabricCostPerKg: toNum(p.fabricCostPerKg), assumedFabricGarmentsPerKg: toNum(p.assumedFabricGarmentsPerKg),
     fabric2Name: s(p.fabric2Name), fabric2CostPerKg: toNum(p.fabric2CostPerKg),
-    fabric2GarmentsPerKg: toNum(p.fabric2GarmentsPerKg),
-    quantityOrderedKg: toNum(p.quantityOrderedKg), quantityShippedKg: toNum(p.quantityShippedKg),
-    garmentNumber: toNum(p.garmentNumber), actualGarmentStitched: toNum(p.actualGarmentStitched),
-    sizeXS: toNum(p.sizeXS) ?? 0, sizeS: toNum(p.sizeS) ?? 0, sizeM: toNum(p.sizeM) ?? 0,
-    sizeL: toNum(p.sizeL) ?? 0, sizeXL: toNum(p.sizeXL) ?? 0, sizeXXL: toNum(p.sizeXXL) ?? 0,
+    assumedFabric2GarmentsPerKg: toNum(p.assumedFabric2GarmentsPerKg),
+    fabricOrderedQuantityKg: toNum(p.fabricOrderedQuantityKg), fabricShippedQuantityKg: toNum(p.fabricShippedQuantityKg),
+    fabric2OrderedQuantityKg: toNum(p.fabric2OrderedQuantityKg), fabric2ShippedQuantityKg: toNum(p.fabric2ShippedQuantityKg),
+    fabric2VendorId: s(p.fabric2VendorId),
+    garmentNumber: toNum(p.garmentNumber),
+    actualStitchedXS: toNum(p.actualStitchedXS) ?? 0, actualStitchedS: toNum(p.actualStitchedS) ?? 0, actualStitchedM: toNum(p.actualStitchedM) ?? 0,
+    actualStitchedL: toNum(p.actualStitchedL) ?? 0, actualStitchedXL: toNum(p.actualStitchedXL) ?? 0, actualStitchedXXL: toNum(p.actualStitchedXXL) ?? 0,
+    actualInwardXS: toNum(p.actualInwardXS) ?? 0, actualInwardS: toNum(p.actualInwardS) ?? 0, actualInwardM: toNum(p.actualInwardM) ?? 0,
+    actualInwardL: toNum(p.actualInwardL) ?? 0, actualInwardXL: toNum(p.actualInwardXL) ?? 0, actualInwardXXL: toNum(p.actualInwardXXL) ?? 0,
+    actualInwardTotal: toNum(p.actualInwardTotal) ?? 0,
+    invoiceNumber: s(p.invoiceNumber),
     stitchingCost: toNum(p.stitchingCost), brandLogoCost: toNum(p.brandLogoCost),
     neckTwillCost: toNum(p.neckTwillCost), reflectorsCost: toNum(p.reflectorsCost),
     fusingCost: toNum(p.fusingCost), accessoriesCost: toNum(p.accessoriesCost),
     brandTagCost: toNum(p.brandTagCost), sizeTagCost: toNum(p.sizeTagCost),
-    packagingCost: toNum(p.packagingCost), inwardShipping: toNum(p.inwardShipping),
-    mrp: toNum(p.mrp), proposedMrp: toNum(p.proposedMrp), onlineMrp: toNum(p.onlineMrp),
-    dp: toNum(p.dp), garmentingAt: s(p.garmentingAt),
-    isStrikedThrough: Boolean(p.isStrikedThrough),
+    packagingCost: toNum(p.packagingCost), outwardShippingCost: toNum(p.outwardShippingCost),
+    proposedMrp: toNum(p.proposedMrp), onlineMrp: toNum(p.onlineMrp),
+    garmentingAt: s(p.garmentingAt),
   };
 }
 
-const COL_STATE_KEY = "ag-grid-col-state-products";
+const COL_STATE_KEY = "ag-grid-col-state-products-v2";
+
+type SizeDistItem = { size: string; percentage: number };
 
 export function ProductGrid({
   products,
@@ -78,12 +83,14 @@ export function ProductGrid({
   currentTab,
   phaseId,
   productMasters,
+  sizeDistributions = [],
 }: {
   products: unknown[];
   vendors: Vendor[];
   currentTab: string;
   phaseId: string;
   productMasters: ProductMasterType[];
+  sizeDistributions?: SizeDistItem[];
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -123,24 +130,24 @@ export function ProductGrid({
     field, headerName, minWidth: w, type: "numericColumn", editable: false,
   });
 
-  // Helper: expected garments = garmentsPerKg * quantityShippedKg
+  // Helper: expected garments = assumedFabricGarmentsPerKg * fabricShippedQuantityKg
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const expectedGarments = (data: any): number =>
-    (toNum(data?.garmentsPerKg) || 0) * (toNum(data?.quantityShippedKg) || 0);
+    (toNum(data?.assumedFabricGarmentsPerKg) || 0) * (toNum(data?.fabricShippedQuantityKg) || 0);
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 90, editable: false },
-    { field: "date", headerName: "Date", minWidth: 130, editable: false },
+    { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: false },
     { field: "skuCode", headerName: "SKU", minWidth: 90, editable: false },
-    { field: "articleNumber", headerName: "Art #", minWidth: 80, editable: false },
-    { field: "colour", headerName: "Colour", minWidth: 90, editable: false },
+    { field: "articleNumber", headerName: "Article #", minWidth: 80, editable: false },
+    { field: "colourOrdered", headerName: "Colour Ordered", minWidth: 100, editable: false },
     { field: "productName", headerName: "Product", minWidth: 110, editable: false },
     { field: "type", headerName: "Type", minWidth: 90, editable: false },
     { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
-    { field: "vendorId", headerName: "Vendor", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
+    { field: "fabricVendorId", headerName: "Fabric Vendor", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "status", headerName: "Status", minWidth: 120, editable: false, valueFormatter: (p) => PRODUCT_STATUS_LABELS[p.value] || p.value || "" },
     {
-      field: "isRepeat", headerName: "Repeat", minWidth: 65, editable: false,
+      field: "isRepeat", headerName: "Repeat Order?", minWidth: 80, editable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
         if (!params.data) return null;
         const checked = Boolean(params.data.isRepeat);
@@ -155,32 +162,44 @@ export function ProductGrid({
     },
     // Fabric
     { field: "fabricName", headerName: "Fabric Name", minWidth: 110, editable: false },
-    numCol("fabricGsm", "GSM", 65),
-    numCol("fabricCostPerKg", "Fabric 1 Cost/kg", 100),
-    numCol("garmentsPerKg", "No of Garments/kg (Fabric 1)", 140),
+    numCol("fabricGsm", "Fabric GSM", 65),
+    numCol("fabricCostPerKg", "Fabric Cost/kg", 100),
+    numCol("assumedFabricGarmentsPerKg", "Assumed No of Garments/kg (Fabric 1)", 160),
     { field: "fabric2Name", headerName: "Fabric 2 Name", minWidth: 110, editable: false },
     numCol("fabric2CostPerKg", "Fabric 2 Cost/kg", 100),
-    numCol("fabric2GarmentsPerKg", "No of Garments/kg (Fabric 2)", 140),
+    numCol("assumedFabric2GarmentsPerKg", "Assumed No of Garments/kg (Fabric 2)", 160),
+    { field: "fabric2VendorId", headerName: "Fabric 2 Vendor", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     // Quantities
-    numCol("quantityOrderedKg", "Ordered Qty (Fabric 1; kg)", 130),
-    numCol("quantityShippedKg", "Shipped Qty (Fabric 1; kg)", 130),
+    numCol("fabricOrderedQuantityKg", "Fabric Ordered Qty (kg)", 130),
+    numCol("fabricShippedQuantityKg", "Fabric Shipped Qty (kg)", 130),
+    numCol("fabric2OrderedQuantityKg", "Fabric 2 Ordered Qty (kg)", 140),
+    numCol("fabric2ShippedQuantityKg", "Fabric 2 Shipped Qty (kg)", 140),
+    // Invoice
+    { field: "invoiceNumber", headerName: "Invoice Number", minWidth: 110, editable: false },
     // Expected & Actual Garment Counts
     { headerName: "Expected No. Of Garments", minWidth: 130, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? expectedGarments(p.data) : 0 },
-    { headerName: "Actual No. of Garments", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalSizeCount(p.data) : 0 },
-    numCol("actualGarmentStitched", "Stitched", 75),
-    // Sizes
+    { headerName: "Actual No. of Garments Stitched", minWidth: 140, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalSizeCount(p.data) : 0 },
+    // Sizes - Stitched
     { headerName: "Expected XS", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: () => 0 },
-    numCol("sizeXS", "Actual XS", 65),
+    numCol("actualStitchedXS", "Actual Stitched - XS", 85),
     { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 8) : 0 },
-    numCol("sizeS", "Actual S", 60),
+    numCol("actualStitchedS", "Actual Stitched - S", 85),
     { headerName: "Expected M", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
-    numCol("sizeM", "Actual M", 60),
+    numCol("actualStitchedM", "Actual Stitched - M", 85),
     { headerName: "Expected L", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
-    numCol("sizeL", "Actual L", 60),
+    numCol("actualStitchedL", "Actual Stitched - L", 85),
     { headerName: "Expected XL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
-    numCol("sizeXL", "Actual XL", 65),
+    numCol("actualStitchedXL", "Actual Stitched - XL", 90),
     { headerName: "Expected XXL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 8) : 0 },
-    numCol("sizeXXL", "Actual XXL", 70),
+    numCol("actualStitchedXXL", "Actual Stitched - XXL", 95),
+    // Sizes - Inward
+    numCol("actualInwardXS", "Actual Inward XS", 85),
+    numCol("actualInwardS", "Actual Inward S", 80),
+    numCol("actualInwardM", "Actual Inward M", 80),
+    numCol("actualInwardL", "Actual Inward L", 80),
+    numCol("actualInwardXL", "Actual Inward XL", 85),
+    numCol("actualInwardXXL", "Actual Inward XXL", 90),
+    numCol("actualInwardTotal", "Actual Inward Total", 100),
     // Garmenting Costs
     numCol("stitchingCost", "Stitching Cost (Rs)", 110),
     numCol("brandLogoCost", "Logo Cost (Rs)", 95),
@@ -194,13 +213,14 @@ export function ProductGrid({
     // Computed
     { headerName: "Total Garmenting Cost (Rs)", minWidth: 130, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalGarmenting(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Fabric Cost per Piece (Rs)", minWidth: 125, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeFabricCostPerPiece(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
-    { headerName: "Fab Cost", minWidth: 80, editable: false, cellClass: "computed-cell", valueGetter: (p) => { if (!p.data) return 0; return (toNum(p.data.fabricCostPerKg) || 0) * (toNum(p.data.quantityOrderedKg) || 0); }, valueFormatter: (p) => formatCurrency(p.value) },
+    { headerName: "Total Fabric Cost (Rs)", minWidth: 100, editable: false, cellClass: "computed-cell", valueGetter: (p) => { if (!p.data) return 0; return (toNum(p.data.fabricCostPerKg) || 0) * (toNum(p.data.fabricOrderedQuantityKg) || 0); }, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Total Cost per piece (Rs)", minWidth: 125, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalCost(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     // Pricing
-    numCol("inwardShipping", "Shipping Cost per piece (Rs)", 125),
+    numCol("outwardShippingCost", "Shipping Cost per piece (Rs)", 125),
     { headerName: "Total Landed Cost per piece (Rs)", minWidth: 145, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalLandedCost(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
-    numCol("mrp", "MRP", 75),
-    { headerName: "Dealer Price (50% off)", minWidth: 115, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeDealerPrice(p.data.mrp) : 0, valueFormatter: (p) => formatCurrency(p.value) },
+    numCol("proposedMrp", "Proposed MRP", 90),
+    numCol("onlineMrp", "Online MRP", 90),
+    { headerName: "Dealer Price (50% off)", minWidth: 115, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeDealerPrice(p.data.proposedMrp) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Profit Margin (%)", minWidth: 100, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeProfitMargin(p.data) : 0, valueFormatter: (p) => formatPercent(p.value) },
     { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false },
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -218,37 +238,11 @@ export function ProductGrid({
     return [
       ...baseColumnDefs,
       ...customColDefs,
-      // Actions
-      {
-        headerName: "", field: "__actions", width: 45, maxWidth: 45, pinned: "right", editable: false, sortable: false,
-        cellRenderer: (params: { data: Record<string, unknown> }) => {
-          if (!params.data) return null;
-          const isStruck = Boolean(params.data.isStrikedThrough);
-          return (
-            <button onClick={(e) => { e.stopPropagation(); handleStrikethrough(params.data); }} className={`p-1 ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"}`} title={isStruck ? "Remove strikethrough" : "Strikethrough row"}>
-              <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
-            </button>
-          );
-        },
-      },
     ];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseColumnDefs, customColumns]);
 
-  async function handleStrikethrough(data: Record<string, unknown>) {
-    const rowId = String(data.id);
-    const toggled = !data.isStrikedThrough;
-    try {
-      await updateProduct(rowId, { isStrikedThrough: toggled });
-      toast.success(toggled ? "Row striked through" : "Strikethrough removed");
-      router.refresh();
-    } catch { toast.error("Failed to update"); }
-  }
-
   function handleRowClicked(event: RowClickedEvent) {
-    // Skip if clicking the actions column (strikethrough button)
-    const target = event.event?.target as HTMLElement | null;
-    if (target?.closest("[col-id='__actions']")) return;
     if (event.data) {
       setEditingRow(event.data);
       setSheetOpen(true);
@@ -276,12 +270,7 @@ export function ProductGrid({
   ];
 
   const enrichedData = useMemo(() => {
-    const sorted = [...rowData].sort((a, b) => {
-      const aStruck = a.isStrikedThrough ? 1 : 0;
-      const bStruck = b.isStrikedThrough ? 1 : 0;
-      return aStruck - bStruck;
-    });
-    return enrichRowData(sorted);
+    return enrichRowData([...rowData]);
   }, [rowData, enrichRowData]);
 
   return (
@@ -336,6 +325,7 @@ export function ProductGrid({
         productMasters={productMasters}
         isRepeatTab={currentTab === "repeat"}
         editingRow={editingRow}
+        sizeDistributions={sizeDistributions}
       />
 
       <div className="ag-theme-quartz" style={{ height: "650px", width: "100%" }}>
@@ -364,7 +354,7 @@ export function ProductGrid({
             const hasSort = currentState.some((cs) => cs.sort);
             if (!hasSort) {
               e.api.applyColumnState({
-                state: [{ colId: "date", sort: "desc" }],
+                state: [{ colId: "orderDate", sort: "desc" }],
                 defaultState: { sort: null },
               });
             }
@@ -377,7 +367,6 @@ export function ProductGrid({
           defaultColDef={{ editable: false, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
-          getRowClass={(params) => params.data?.isStrikedThrough ? "strikethrough-row" : undefined}
           animateRows={false}
         />
       </div>

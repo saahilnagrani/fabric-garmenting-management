@@ -3,8 +3,9 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
-export async function getFabricMasters() {
+export async function getFabricMasters(includeArchived = false) {
   return db.fabricMaster.findMany({
+    where: includeArchived ? {} : { isStrikedThrough: false },
     include: { vendor: true },
     orderBy: { fabricName: "asc" },
   });
@@ -26,6 +27,7 @@ export async function updateFabricMaster(id: string, data: any) {
 
 export async function getFabricNames(): Promise<string[]> {
   const fabrics = await db.fabricMaster.findMany({
+    where: { isStrikedThrough: false },
     select: { fabricName: true },
     orderBy: { fabricName: "asc" },
     distinct: ["fabricName"],
@@ -35,6 +37,7 @@ export async function getFabricNames(): Promise<string[]> {
 
 export async function getFabricNamesMrp(): Promise<{ name: string; mrp: number | null }[]> {
   const fabrics = await db.fabricMaster.findMany({
+    where: { isStrikedThrough: false },
     select: { fabricName: true, mrp: true },
     orderBy: { fabricName: "asc" },
   });

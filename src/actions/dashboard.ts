@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 
 export async function getDashboardStats(phaseId: string) {
   const [products, fabricOrders, expenses] = await Promise.all([
-    db.product.findMany({ where: { phaseId }, include: { vendor: true } }),
+    db.product.findMany({ where: { phaseId }, include: { fabricVendor: true } }),
     db.fabricOrder.findMany({ where: { phaseId } }),
     db.expense.findMany({ where: { phaseId } }),
   ]);
@@ -14,7 +14,14 @@ export async function getDashboardStats(phaseId: string) {
     0
   );
   const totalGarmentsStitched = products.reduce(
-    (sum, p) => sum + (p.actualGarmentStitched || 0),
+    (sum, p) =>
+      sum +
+      (p.actualStitchedXS || 0) +
+      (p.actualStitchedS || 0) +
+      (p.actualStitchedM || 0) +
+      (p.actualStitchedL || 0) +
+      (p.actualStitchedXL || 0) +
+      (p.actualStitchedXXL || 0),
     0
   );
 
@@ -24,11 +31,11 @@ export async function getDashboardStats(phaseId: string) {
   }, {} as Record<string, number>);
 
   const totalFabricOrdered = fabricOrders.reduce(
-    (sum, f) => sum + Number(f.quantityOrdered || 0),
+    (sum, f) => sum + Number(f.fabricOrderedQuantityKg || 0),
     0
   );
   const totalFabricShipped = fabricOrders.reduce(
-    (sum, f) => sum + Number(f.quantityShipped || 0),
+    (sum, f) => sum + Number(f.fabricShippedQuantityKg || 0),
     0
   );
 

@@ -43,10 +43,11 @@ model Vendor {
   isStrikedThrough Boolean       @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
-  products         Product[]
-  fabricOrders     FabricOrder[]
-  expenses         Expense[]
-  fabricMasters    FabricMaster[]
+  productsByFabricVendor   Product[]      @relation("ProductFabricVendor")
+  productsByFabric2Vendor  Product[]      @relation("ProductFabric2Vendor")
+  fabricOrders             FabricOrder[]  @relation("FabricOrderVendor")
+  expenses                 Expense[]      @relation("ExpenseVendor")
+  fabricMasters            FabricMaster[] @relation("FabricMasterVendor")
 }
 
 enum VendorType {
@@ -63,11 +64,11 @@ model Product {
   phase   Phase  @relation(fields: [phaseId], references: [id])
 
   // Identity
-  date          String  @default("15 Nov 2025")
+  orderDate     String  @default("15 Nov 2025")
   styleNumber   String
   articleNumber  String?
   skuCode        String?
-  colour         String
+  colourOrdered  String
   isRepeat       Boolean @default(false)
 
   // Classification
@@ -79,31 +80,43 @@ model Product {
   status        ProductStatus @default(PROCESSING)
 
   // Primary Fabric
-  vendorId          String
-  vendor            Vendor @relation(fields: [vendorId], references: [id])
-  fabricName        String
-  fabricGsm         Decimal? @db.Decimal(10, 2)
-  fabricCostPerKg   Decimal? @db.Decimal(10, 2)
-  garmentsPerKg     Decimal? @db.Decimal(10, 2)
+  fabricVendorId             String
+  fabricVendor               Vendor @relation("ProductFabricVendor", fields: [fabricVendorId], references: [id])
+  fabricName                 String
+  fabricGsm                  Decimal? @db.Decimal(10, 2)
+  fabricCostPerKg            Decimal? @db.Decimal(10, 2)
+  assumedFabricGarmentsPerKg Decimal? @db.Decimal(10, 2)
 
   // Secondary Fabric
-  fabric2Name          String?
-  fabric2CostPerKg     Decimal? @db.Decimal(10, 2)
-  fabric2GarmentsPerKg Decimal? @db.Decimal(10, 2)
+  fabric2Name                    String?
+  fabric2CostPerKg               Decimal? @db.Decimal(10, 2)
+  assumedFabric2GarmentsPerKg    Decimal? @db.Decimal(10, 2)
+  fabric2VendorId                String?
+  fabric2Vendor                  Vendor?  @relation("ProductFabric2Vendor", fields: [fabric2VendorId], references: [id])
 
   // Quantities
-  quantityOrderedKg     Decimal? @db.Decimal(10, 2)
-  quantityShippedKg     Decimal? @db.Decimal(10, 2)
-  garmentNumber         Int?
-  actualGarmentStitched Int?
+  fabricOrderedQuantityKg   Decimal? @db.Decimal(10, 2)
+  fabricShippedQuantityKg   Decimal? @db.Decimal(10, 2)
+  fabric2OrderedQuantityKg  Decimal? @db.Decimal(10, 2)
+  fabric2ShippedQuantityKg  Decimal? @db.Decimal(10, 2)
+  garmentNumber             Int?
 
-  // Size Breakdown
-  sizeXS  Int @default(0)
-  sizeS   Int @default(0)
-  sizeM   Int @default(0)
-  sizeL   Int @default(0)
-  sizeXL  Int @default(0)
-  sizeXXL Int @default(0)
+  // Actual Stitched Size Breakdown
+  actualStitchedXS  Int @default(0)
+  actualStitchedS   Int @default(0)
+  actualStitchedM   Int @default(0)
+  actualStitchedL   Int @default(0)
+  actualStitchedXL  Int @default(0)
+  actualStitchedXXL Int @default(0)
+
+  // Actual Inward Size Breakdown
+  actualInwardXS    Int @default(0)
+  actualInwardS     Int @default(0)
+  actualInwardM     Int @default(0)
+  actualInwardL     Int @default(0)
+  actualInwardXL    Int @default(0)
+  actualInwardXXL   Int @default(0)
+  actualInwardTotal Int @default(0)
 
   // Garmenting Costs
   stitchingCost   Decimal? @db.Decimal(10, 2)
@@ -117,14 +130,19 @@ model Product {
   packagingCost   Decimal? @db.Decimal(10, 2)
 
   // Pricing
-  inwardShipping Decimal? @db.Decimal(10, 2)
-  mrp            Decimal? @db.Decimal(10, 2)
-  proposedMrp    Decimal? @db.Decimal(10, 2)
-  onlineMrp      Decimal? @db.Decimal(10, 2)
-  dp             Decimal? @db.Decimal(10, 2)
+  outwardShippingCost Decimal? @db.Decimal(10, 2)
+  proposedMrp         Decimal? @db.Decimal(10, 2)
+  onlineMrp           Decimal? @db.Decimal(10, 2)
 
   // Garment location
   garmentingAt String?
+
+  // Invoice
+  invoiceNumber String?
+
+  // Link to auto-created expense
+  expenseId String?
+  expense   Expense? @relation("ProductExpense", fields: [expenseId], references: [id])
 
   isStrikedThrough Boolean @default(false)
 
@@ -133,8 +151,10 @@ model Product {
 
   @@index([phaseId])
   @@index([styleNumber])
-  @@index([vendorId])
+  @@index([fabricVendorId])
+  @@index([fabric2VendorId])
   @@index([isRepeat])
+  @@index([invoiceNumber])
 }
 
 enum Gender {
@@ -154,14 +174,14 @@ enum ProductStatus {
 }
 
 model FabricOrder {
-  id       String @id @default(cuid())
-  phaseId  String
-  phase    Phase  @relation(fields: [phaseId], references: [id])
-  vendorId String
-  vendor   Vendor @relation(fields: [vendorId], references: [id])
+  id             String @id @default(cuid())
+  phaseId        String
+  phase          Phase  @relation(fields: [phaseId], references: [id])
+  fabricVendorId String
+  fabricVendor   Vendor @relation("FabricOrderVendor", fields: [fabricVendorId], references: [id])
 
   gender          Gender?
-  billNumber      String?
+  invoiceNumber   String?
   receivedAt      String?
   orderDate       DateTime?
 
@@ -171,11 +191,17 @@ model FabricOrder {
   availableColour String?
   costPerUnit     Decimal? @db.Decimal(10, 2)
 
-  quantityOrdered Decimal? @db.Decimal(10, 2)
-  quantityShipped Decimal? @db.Decimal(10, 2)
-  fabricCostTotal Decimal? @db.Decimal(12, 2)
+  fabricOrderedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabricShippedQuantityKg Decimal? @db.Decimal(10, 2)
 
   isRepeat Boolean @default(false)
+
+  orderStatus      FabricOrderStatus @default(DRAFT_ORDER)
+  garmentingAt     String?
+
+  // Link to auto-created expense
+  expenseId String?
+  expense   Expense? @relation("FabricOrderExpense", fields: [expenseId], references: [id])
 
   isStrikedThrough Boolean @default(false)
 
@@ -183,7 +209,16 @@ model FabricOrder {
   updatedAt DateTime @updatedAt
 
   @@index([phaseId])
-  @@index([vendorId])
+  @@index([fabricVendorId])
+  @@index([invoiceNumber])
+}
+
+enum FabricOrderStatus {
+  DRAFT_ORDER
+  ORDERED
+  PARTIALLY_SHIPPED
+  SHIPPED
+  RECEIVED
 }
 
 model Expense {
@@ -191,10 +226,11 @@ model Expense {
   phaseId  String
   phase    Phase   @relation(fields: [phaseId], references: [id])
   vendorId String?
-  vendor   Vendor? @relation(fields: [vendorId], references: [id])
+  vendor   Vendor? @relation("ExpenseVendor", fields: [vendorId], references: [id])
 
   invoiceNumber String?
   specification ExpenseType
+  sourceType    ExpenseSourceType @default(MANUAL)
   date          DateTime?
   description   String?
   quantity      String?
@@ -214,6 +250,10 @@ model Expense {
 
   isStrikedThrough Boolean @default(false)
 
+  // Reverse relations for auto-created expenses
+  fabricOrders FabricOrder[] @relation("FabricOrderExpense")
+  products     Product[]     @relation("ProductExpense")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -221,6 +261,7 @@ model Expense {
   @@index([vendorId])
   @@index([specification])
   @@index([date])
+  @@index([invoiceNumber])
 }
 
 enum ExpenseType {
@@ -231,6 +272,12 @@ enum ExpenseType {
   SHIPPING
   PACKAGING
   OTHER
+}
+
+enum ExpenseSourceType {
+  MANUAL
+  FABRIC_ORDER
+  PRODUCT_ORDER
 }
 
 enum FabricStatus {
@@ -249,13 +296,29 @@ model ProductType {
   updatedAt DateTime @updatedAt
 }
 
+model GarmentingLocation {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SizeDistribution {
+  id         String   @id @default(cuid())
+  size       String   @unique
+  percentage Float
+  sortOrder  Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
 // ─── MASTER DATA ──────────────────────────────────────────────────
 
 model FabricMaster {
   id               String   @id @default(cuid())
   fabricName       String   @unique
   vendorId         String
-  vendor           Vendor   @relation(fields: [vendorId], references: [id])
+  vendor           Vendor   @relation("FabricMasterVendor", fields: [vendorId], references: [id])
   genders          String[]
   styleNumbers     String[]
   coloursAvailable String[]

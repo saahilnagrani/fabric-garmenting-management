@@ -25,7 +25,7 @@ export default async function ExpensesPage({
       <div>
         <h1 className="text-2xl font-bold">Expenses</h1>
         <p className="text-sm text-muted-foreground">
-          {expenses.length} invoices in {phase.name}
+          {expenses.length} invoices in Phase {phase.number} - {phase.name}
         </p>
       </div>
       <ExpenseGrid expenses={JSON.parse(JSON.stringify(expenses))} vendors={vendors} phaseId={phase.id} />

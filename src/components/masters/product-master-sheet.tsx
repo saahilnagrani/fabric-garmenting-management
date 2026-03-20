@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +24,7 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, ChevronsUpDown, Archive } from "lucide-react";
 
 export type ProductMasterRow = {
   id: string;
@@ -160,6 +160,41 @@ function parseCommaSeparated(val: string): string[] {
     .filter(Boolean);
 }
 
+const SECTIONS = ["productInfo", "fabric", "colours", "garmentingCosts", "pricing"] as const;
+type SectionName = (typeof SECTIONS)[number];
+
+function CollapsibleSection({
+  title,
+  expanded,
+  onToggle,
+  children,
+}: {
+  title: string;
+  expanded: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border border-gray-200 rounded-lg overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full flex items-center gap-1.5 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        )}
+        <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+          {title}
+        </span>
+      </button>
+      {expanded && <div className="p-3 space-y-2">{children}</div>}
+    </div>
+  );
+}
+
 type FabricData = { name: string; mrp: number | null };
 
 export function ProductMasterSheet({
@@ -178,7 +213,23 @@ export function ProductMasterSheet({
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm });
   const [submitting, setSubmitting] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const isEdit = editingRow !== null;
+
+  // Collapsible section state
+  const [expandedSections, setExpandedSections] = useState<Record<SectionName, boolean>>(() =>
+    Object.fromEntries(SECTIONS.map((s) => [s, true])) as Record<SectionName, boolean>
+  );
+
+  function toggleSection(section: SectionName) {
+    setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  }
+
+  function setAllSections(expanded: boolean) {
+    setExpandedSections(
+      Object.fromEntries(SECTIONS.map((s) => [s, expanded])) as Record<SectionName, boolean>
+    );
+  }
 
   // Derive fabric names list and MRP lookup map from fabricData
   const fabricNames = useMemo(() => fabricData.map((f) => f.name), [fabricData]);
@@ -193,7 +244,9 @@ export function ProductMasterSheet({
   useEffect(() => {
     if (open) {
       setForm(editingRow ? rowToForm(editingRow) : { ...emptyForm });
+      setAllSections(true);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingRow]);
 
   const updateField = useCallback((field: keyof FormData, value: string) => {
@@ -220,7 +273,10 @@ export function ProductMasterSheet({
       fabric2CostPerKg: toNum(form.fabric2CostPerKg),
       garmentsPerKg: toNum(form.garmentsPerKg),
       garmentsPerKg2: toNum(form.garmentsPerKg2),
-      fabric2GarmentsPerKg: toNum(form.garmentsPerKg2),
+      // Map to computation function field names
+      assumedFabricGarmentsPerKg: toNum(form.garmentsPerKg),
+      assumedFabric2GarmentsPerKg: toNum(form.garmentsPerKg2),
+      outwardShippingCost: toNum(form.inwardShipping),
       stitchingCost: toNum(form.stitchingCost),
       brandLogoCost: toNum(form.brandLogoCost),
       neckTwillCost: toNum(form.neckTwillCost),
@@ -305,29 +361,67 @@ export function ProductMasterSheet({
     }
   }
 
+  const isArchived = editingRow?.isStrikedThrough === true;
+
+  async function handleArchive() {
+    if (!editingRow) return;
+    setArchiving(true);
+    try {
+      await updateProductMaster(editingRow.id, { isStrikedThrough: !isArchived });
+      toast.success(isArchived ? "SKU unarchived" : "SKU archived");
+      onOpenChange(false);
+      router.refresh();
+    } catch {
+      toast.error(isArchived ? "Failed to unarchive SKU" : "Failed to archive SKU");
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   const data = formAsData();
   const totalGarmenting = computeTotalGarmenting(data);
   const fabricCostPerPiece = computeFabricCostPerPiece(data);
   const totalCost = computeTotalCost(data);
   const totalLanded = computeTotalLandedCost(data);
   const dealerPrice = computeDealerPrice(toNum(form.proposedMrp));
-  const profitMargin = computeProfitMargin({ ...data, mrp: toNum(form.proposedMrp) });
+  const profitMargin = computeProfitMargin(data);
+
+  const allExpanded = SECTIONS.every((s) => expandedSections[s]);
+  const allCollapsed = SECTIONS.every((s) => !expandedSections[s]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="sm:max-w-xl overflow-y-auto">
-        <SheetHeader>
-          <SheetTitle>{isEdit ? "Edit SKU/Style" : "New SKU/Style"}</SheetTitle>
-          <SheetDescription>
-            {isEdit ? "Update SKU/Style template details" : "Add a new SKU/Style to the master database"}
-          </SheetDescription>
+      <SheetContent side="right" className="max-w-[750px] w-full overflow-y-auto border-t-4 border-t-amber-400">
+        <SheetHeader className="pr-12">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <SheetTitle>{isEdit ? "Edit SKU/Style" : "New SKU/Style"}</SheetTitle>
+                <span className="text-[10px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
+              </div>
+              <SheetDescription>
+                {isEdit ? "Update SKU/Style template details" : "Add a new SKU/Style to the master database"}
+              </SheetDescription>
+            </div>
+            <button
+              type="button"
+              onClick={() => setAllSections(allExpanded ? false : true)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+            >
+              <ChevronsUpDown className="h-3 w-3" />
+              {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+            </button>
+          </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-4 px-4 overflow-y-auto">
-          {/* Identity */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Identity</h4>
-            <div className="grid grid-cols-2 gap-3">
+        <div className="flex-1 space-y-3 px-4 overflow-y-auto">
+          {/* Product Info */}
+          <CollapsibleSection
+            title="Product Info"
+            expanded={expandedSections.productInfo}
+            onToggle={() => toggleSection("productInfo")}
+          >
+            <div className="grid grid-cols-4 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">SKU Code *</Label>
                 <Input value={form.skuCode} onChange={(e) => updateField("skuCode", e.target.value)} autoFocus />
@@ -336,8 +430,6 @@ export function ProductMasterSheet({
                 <Label className="text-xs">Style # *</Label>
                 <Input value={form.styleNumber} onChange={(e) => updateField("styleNumber", e.target.value)} />
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Article #</Label>
                 <Input value={form.articleNumber} onChange={(e) => updateField("articleNumber", e.target.value)} />
@@ -347,27 +439,7 @@ export function ProductMasterSheet({
                 <Input value={form.productName} onChange={(e) => updateField("productName", e.target.value)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Fabric Name *</Label>
-                <Combobox
-                  value={form.fabricName}
-                  onValueChange={handleFabricNameChange}
-                  options={fabricNames}
-                  placeholder="Select fabric..."
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">2nd Fabric Name</Label>
-                <Combobox
-                  value={form.fabric2Name}
-                  onValueChange={handleFabric2NameChange}
-                  options={fabricNames}
-                  placeholder="Select fabric..."
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Type *</Label>
                 <Combobox
@@ -391,11 +463,60 @@ export function ProductMasterSheet({
                 </Select>
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
+
+          {/* Fabric */}
+          <CollapsibleSection
+            title="Fabric"
+            expanded={expandedSections.fabric}
+            onToggle={() => toggleSection("fabric")}
+          >
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">Fabric Name *</Label>
+                <Combobox
+                  value={form.fabricName}
+                  onValueChange={handleFabricNameChange}
+                  options={fabricNames}
+                  placeholder="Select fabric..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cost/kg (Rs)</Label>
+                <Input type="number" step="0.01" value={form.fabricCostPerKg} onChange={(e) => updateField("fabricCostPerKg", e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Garments/kg</Label>
+                <Input type="number" step="0.01" value={form.garmentsPerKg} onChange={(e) => updateField("garmentsPerKg", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs">2nd Fabric Name</Label>
+                <Combobox
+                  value={form.fabric2Name}
+                  onValueChange={handleFabric2NameChange}
+                  options={fabricNames}
+                  placeholder="Select fabric..."
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Cost/kg (Rs)</Label>
+                <Input type="number" step="0.01" value={form.fabric2CostPerKg} onChange={(e) => updateField("fabric2CostPerKg", e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Garments/kg</Label>
+                <Input type="number" step="0.01" value={form.garmentsPerKg2} onChange={(e) => updateField("garmentsPerKg2", e.target.value)} />
+              </div>
+            </div>
+          </CollapsibleSection>
 
           {/* Colours */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Colours</h4>
+          <CollapsibleSection
+            title="Colours"
+            expanded={expandedSections.colours}
+            onToggle={() => toggleSection("colours")}
+          >
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Primary Colours (comma-separated)</Label>
@@ -406,37 +527,15 @@ export function ProductMasterSheet({
                 <Input value={form.colours2Available} onChange={(e) => updateField("colours2Available", e.target.value)} placeholder="e.g. Red, Blue" />
               </div>
             </div>
-          </div>
-
-          {/* Fabric */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Fabric</h4>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Garments/kg (Fabric 1)</Label>
-                <Input type="number" step="0.01" value={form.garmentsPerKg} onChange={(e) => updateField("garmentsPerKg", e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Fabric 1 Cost/kg (Rs)</Label>
-                <Input type="number" step="0.01" value={form.fabricCostPerKg} onChange={(e) => updateField("fabricCostPerKg", e.target.value)} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Garments/kg (Fabric 2)</Label>
-                <Input type="number" step="0.01" value={form.garmentsPerKg2} onChange={(e) => updateField("garmentsPerKg2", e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Fabric 2 Cost/kg (Rs)</Label>
-                <Input type="number" step="0.01" value={form.fabric2CostPerKg} onChange={(e) => updateField("fabric2CostPerKg", e.target.value)} />
-              </div>
-            </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Garmenting Costs */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Garmenting Costs</h4>
-            <div className="grid grid-cols-3 gap-3">
+          <CollapsibleSection
+            title="Garmenting Costs"
+            expanded={expandedSections.garmentingCosts}
+            onToggle={() => toggleSection("garmentingCosts")}
+          >
+            <div className="grid grid-cols-5 gap-2">
               {[
                 { key: "stitchingCost", label: "Stitching" },
                 { key: "brandLogoCost", label: "Brand Logo" },
@@ -449,7 +548,7 @@ export function ProductMasterSheet({
                 { key: "packagingCost", label: "Packaging" },
               ].map(({ key, label }) => (
                 <div key={key} className="space-y-1">
-                  <Label className="text-xs">{label}</Label>
+                  <Label className="text-[10px]">{label}</Label>
                   <Input
                     type="number"
                     step="0.01"
@@ -459,11 +558,14 @@ export function ProductMasterSheet({
                 </div>
               ))}
             </div>
-          </div>
+          </CollapsibleSection>
 
           {/* Pricing */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Pricing</h4>
+          <CollapsibleSection
+            title="Pricing"
+            expanded={expandedSections.pricing}
+            onToggle={() => toggleSection("pricing")}
+          >
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label className="text-xs">Shipping/piece (Rs)</Label>
@@ -478,34 +580,34 @@ export function ProductMasterSheet({
                 <Input type="number" step="0.01" value={form.onlineMrp} onChange={(e) => updateField("onlineMrp", e.target.value)} />
               </div>
             </div>
-          </div>
+          </CollapsibleSection>
 
-          {/* Computed Summary */}
+          {/* Computed Summary (always visible) */}
           <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 space-y-2">
             <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
             <div className="grid grid-cols-3 gap-2 text-sm">
               <div>
-                <span className="text-muted-foreground text-xs">Total Garmenting</span>
+                <span className="text-muted-foreground text-[10px]">Total Garmenting</span>
                 <div className="font-semibold">{formatCurrency(totalGarmenting)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground text-xs">Fabric Cost/Piece</span>
+                <span className="text-muted-foreground text-[10px]">Fabric Cost/Piece</span>
                 <div className="font-semibold">{formatCurrency(fabricCostPerPiece)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground text-xs">Total Cost/Piece</span>
+                <span className="text-muted-foreground text-[10px]">Total Cost/Piece</span>
                 <div className="font-semibold">{formatCurrency(totalCost)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground text-xs">Total Landed Cost</span>
+                <span className="text-muted-foreground text-[10px]">Total Landed Cost</span>
                 <div className="font-semibold">{formatCurrency(totalLanded)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground text-xs">Dealer Price (50%)</span>
+                <span className="text-muted-foreground text-[10px]">Dealer Price (50%)</span>
                 <div className="font-semibold">{formatCurrency(dealerPrice)}</div>
               </div>
               <div>
-                <span className="text-muted-foreground text-xs">Profit Margin</span>
+                <span className="text-muted-foreground text-[10px]">Profit Margin</span>
                 <div className="font-semibold">{formatPercent(profitMargin)}</div>
               </div>
             </div>
@@ -513,16 +615,38 @@ export function ProductMasterSheet({
         </div>
 
         <SheetFooter>
-          <Button onClick={handleSubmit} disabled={submitting} className="w-full">
-            {submitting ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isEdit ? "Updating..." : "Creating..."}
-              </>
-            ) : (
-              isEdit ? "Update SKU/Style" : "Create SKU/Style"
+          <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
+            <Button onClick={handleSubmit} disabled={submitting || archiving} className="flex-1">
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isEdit ? "Updating..." : "Creating..."}
+                </>
+              ) : (
+                isEdit ? "Update SKU" : "Create SKU/Style"
+              )}
+            </Button>
+            {isEdit && (
+              <Button
+                variant="outline"
+                onClick={handleArchive}
+                disabled={submitting || archiving}
+                className="flex-1"
+              >
+                {archiving ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isArchived ? "Unarchiving..." : "Archiving..."}
+                  </>
+                ) : (
+                  <>
+                    <Archive className="mr-2 h-4 w-4" />
+                    {isArchived ? "Unarchive SKU" : "Archive SKU"}
+                  </>
+                )}
+              </Button>
             )}
-          </Button>
+          </div>
         </SheetFooter>
       </SheetContent>
     </Sheet>

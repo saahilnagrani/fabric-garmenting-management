@@ -34,14 +34,14 @@ export function computeTotalGarmenting(product: {
 
 export function computeFabricCostPerPiece(product: {
   fabricCostPerKg?: NumberLike;
-  garmentsPerKg?: NumberLike;
+  assumedFabricGarmentsPerKg?: NumberLike;
   fabric2CostPerKg?: NumberLike;
-  fabric2GarmentsPerKg?: NumberLike;
+  assumedFabric2GarmentsPerKg?: NumberLike;
 }): number {
-  const gPerKg = toNum(product.garmentsPerKg);
+  const gPerKg = toNum(product.assumedFabricGarmentsPerKg);
   const fabricCost = gPerKg > 0 ? toNum(product.fabricCostPerKg) / gPerKg : 0;
 
-  const g2PerKg = toNum(product.fabric2GarmentsPerKg);
+  const g2PerKg = toNum(product.assumedFabric2GarmentsPerKg);
   const fabric2Cost =
     g2PerKg > 0 ? toNum(product.fabric2CostPerKg) / g2PerKg : 0;
 
@@ -53,37 +53,37 @@ export function computeTotalCost(product: Parameters<typeof computeTotalGarmenti
 }
 
 export function computeTotalLandedCost(product: Parameters<typeof computeTotalCost>[0] & {
-  inwardShipping?: NumberLike;
+  outwardShippingCost?: NumberLike;
 }): number {
-  return computeTotalCost(product) + toNum(product.inwardShipping);
+  return computeTotalCost(product) + toNum(product.outwardShippingCost);
 }
 
-export function computeDealerPrice(mrp: NumberLike): number {
-  return (toNum(mrp) + 1) / 2;
+export function computeDealerPrice(proposedMrp: NumberLike): number {
+  return (toNum(proposedMrp) + 1) / 2;
 }
 
 export function computeProfitMargin(product: Parameters<typeof computeTotalLandedCost>[0] & {
-  mrp?: NumberLike;
+  proposedMrp?: NumberLike;
 }): number {
-  const dp = computeDealerPrice(product.mrp);
+  const dp = computeDealerPrice(product.proposedMrp);
   const landed = computeTotalLandedCost(product);
   return landed > 0 ? (dp - landed) / dp : 0;
 }
 
 export function computeTotalSizeCount(product: {
-  sizeXS?: NumberLike;
-  sizeS?: NumberLike;
-  sizeM?: NumberLike;
-  sizeL?: NumberLike;
-  sizeXL?: NumberLike;
-  sizeXXL?: NumberLike;
+  actualStitchedXS?: NumberLike;
+  actualStitchedS?: NumberLike;
+  actualStitchedM?: NumberLike;
+  actualStitchedL?: NumberLike;
+  actualStitchedXL?: NumberLike;
+  actualStitchedXXL?: NumberLike;
 }): number {
   return [
-    product.sizeXS,
-    product.sizeS,
-    product.sizeM,
-    product.sizeL,
-    product.sizeXL,
-    product.sizeXXL,
+    product.actualStitchedXS,
+    product.actualStitchedS,
+    product.actualStitchedM,
+    product.actualStitchedL,
+    product.actualStitchedXL,
+    product.actualStitchedXXL,
   ].reduce((sum: number, s) => sum + toNum(s), 0);
 }

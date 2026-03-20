@@ -3,8 +3,9 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
-export async function getProductMasters() {
+export async function getProductMasters(includeArchived = false) {
   return db.productMaster.findMany({
+    where: includeArchived ? {} : { isStrikedThrough: false },
     orderBy: { skuCode: "asc" },
   });
 }

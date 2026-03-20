@@ -2,7 +2,7 @@ export function validateFabricOrder(
   data: Record<string, unknown>
 ): Record<string, string> | null {
   const errors: Record<string, string> = {};
-  if (!data.vendorId) errors.vendorId = "Vendor is required";
+  if (!data.fabricVendorId) errors.fabricVendorId = "Vendor is required";
   if (!data.styleNumbers) errors.styleNumbers = "Style numbers required";
   if (!data.fabricName) errors.fabricName = "Fabric name required";
   if (!data.colour) errors.colour = "Colour required";
@@ -25,9 +25,9 @@ export function validateProduct(
   if (!data.styleNumber) errors.styleNumber = "Style number required";
   if (!data.type) errors.type = "Type required";
   if (!data.gender) errors.gender = "Gender required";
-  if (!data.vendorId) errors.vendorId = "Vendor required";
+  if (!data.fabricVendorId) errors.fabricVendorId = "Vendor required";
   if (!data.fabricName) errors.fabricName = "Fabric name required";
-  if (!data.colour) errors.colour = "Colour required";
+  if (!data.colourOrdered) errors.colourOrdered = "Colour required";
   return Object.keys(errors).length > 0 ? errors : null;
 }
 

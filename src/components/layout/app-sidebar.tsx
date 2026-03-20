@@ -12,6 +12,7 @@ import {
   BookOpen,
   ClipboardList,
   List,
+  CalendarPlus,
 } from "lucide-react";
 import {
   Sidebar,
@@ -27,6 +28,7 @@ import {
 
 const navItems = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { title: "Phase Planning", href: "/phase-planning", icon: CalendarPlus },
   { title: "SKU/Style Orders", href: "/products", icon: Package },
   { title: "Fabric Orders", href: "/fabric-orders", icon: Scissors },
   { title: "Expenses", href: "/expenses", icon: Receipt },
@@ -40,7 +42,9 @@ const masterItems = [
 ];
 
 const listItems = [
-  { title: "Type", href: "/lists/types", icon: List },
+  { title: "Product Types", href: "/lists/types", icon: List },
+  { title: "Garmenting Locations", href: "/lists/garmenting-locations", icon: List },
+  { title: "Size Distribution", href: "/lists/size-distribution", icon: List },
 ];
 
 export function AppSidebar() {

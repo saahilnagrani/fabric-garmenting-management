@@ -4,7 +4,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent, type ColumnState, type ColumnPinnedType, type RowClickedEvent } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
-import { Plus, Strikethrough } from "lucide-react";
+import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "./add-column-dialog";
@@ -22,17 +22,16 @@ type DataGridProps<T extends Record<string, unknown>> = {
   defaultRow: Partial<T>;
   onSave: (id: string, data: T) => Promise<unknown>;
   onCreate: (data: T) => Promise<unknown>;
-  onStrikethrough: (id: string, isStrikedThrough: boolean) => Promise<unknown>;
   validate?: (data: T) => Record<string, string> | null;
   getRowId?: (data: T) => string;
   pinnedBottomRowData?: T[];
   height?: string;
   autoHeight?: boolean;
   onCellValueChangedExtra?: (event: CellValueChangedEvent<T>) => void;
-  showStrikethrough?: boolean;
   defaultSort?: { colId: string; sort: "asc" | "desc" }[];
   hideAddRowButtons?: boolean;
   onRowClicked?: (data: T) => void;
+  getRowClass?: (params: { data?: T }) => string;
 };
 
 let tempIdCounter = 0;
@@ -47,17 +46,16 @@ export function DataGrid<T extends Record<string, unknown>>({
   defaultRow,
   onSave,
   onCreate,
-  onStrikethrough,
   validate,
   getRowId: getRowIdProp,
   pinnedBottomRowData,
   height = "600px",
   autoHeight = false,
   onCellValueChangedExtra,
-  showStrikethrough = true,
   defaultSort,
   hideAddRowButtons = false,
   onRowClicked,
+  getRowClass,
 }: DataGridProps<T>) {
   const gridRef = useRef<AgGridReact<T>>(null);
   const gridApiRef = useRef<GridApi<T> | null>(null);
@@ -109,12 +107,7 @@ export function DataGrid<T extends Record<string, unknown>>({
       __status: statusMap.get(getRowIdFn(row)) || ("clean" as RowStatus),
     }));
     const all = [...topEnriched, ...serverEnriched, ...bottomEnriched];
-    const sorted = all.sort((a, b) => {
-      const aStruck = (a as Record<string, unknown>).isStrikedThrough ? 1 : 0;
-      const bStruck = (b as Record<string, unknown>).isStrikedThrough ? 1 : 0;
-      return aStruck - bStruck;
-    });
-    return enrichRowData(sorted);
+    return enrichRowData(all);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowData, statusMap, topTempRows, bottomTempRows, enrichRowData]);
 
@@ -317,37 +310,7 @@ export function DataGrid<T extends Record<string, unknown>>({
     setStatus(tempId, "dirty");
   }, [defaultRow, setStatus]);
 
-  const strikethroughHandler = useCallback(
-    async (data: T) => {
-      const rowId = getRowIdFn(data);
-      const isNew = rowId.startsWith("__new_");
-
-      if (isNew) {
-        setTopTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
-        setBottomTempRows((prev) => prev.filter((r) => getRowIdFn(r) !== rowId));
-        setStatusMap((prev) => {
-          const next = new Map(prev);
-          next.delete(rowId);
-          return next;
-        });
-        return;
-      }
-
-      const toggled = !(data as Record<string, unknown>).isStrikedThrough;
-      try {
-        await onStrikethrough(rowId, toggled);
-        const updated = { ...data, isStrikedThrough: toggled };
-        gridApiRef.current?.applyTransaction({ update: [updated] });
-        toast.success(toggled ? "Row striked through" : "Strikethrough removed");
-      } catch {
-        toast.error("Failed to update");
-      }
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onStrikethrough]
-  );
-
-  // Build full column defs with custom columns and optionally actions
+  // Build full column defs with custom columns
   const fullColumnDefs = useMemo<ColDef<T>[]>(() => {
     // Custom column defs — filter out any that conflict with code-defined columns (by field or header name)
     const definedFields = new Set(columnDefs.map((c) => c.field).filter(Boolean));
@@ -364,34 +327,8 @@ export function DataGrid<T extends Record<string, unknown>>({
 
     const cols: ColDef<T>[] = [...columnDefs, ...customColDefs];
 
-    if (showStrikethrough) {
-      const actionsCol: ColDef<T> = {
-        headerName: "",
-        width: 45,
-        maxWidth: 45,
-        pinned: "right",
-        editable: false,
-        sortable: false,
-        filter: false,
-        cellRenderer: (params: { data: T }) => {
-          if (!params.data) return null;
-          const isStruck = Boolean((params.data as Record<string, unknown>).isStrikedThrough);
-          return (
-            <button
-              onClick={() => strikethroughHandler(params.data)}
-              className={`p-1 cursor-pointer ${isStruck ? "opacity-100" : "opacity-40 hover:opacity-100"} transition-opacity`}
-              title={isStruck ? "Remove strikethrough" : "Strikethrough row"}
-            >
-              <Strikethrough className={`h-3.5 w-3.5 ${isStruck ? "text-red-500" : "text-gray-500"}`} />
-            </button>
-          );
-        },
-      };
-      cols.push(actionsCol);
-    }
-
     return cols;
-  }, [columnDefs, strikethroughHandler, showStrikethrough, customColumns]);
+  }, [columnDefs, customColumns]);
 
   const handleRowClicked = useCallback((event: RowClickedEvent<T>) => {
     if (!onRowClicked || !event.data) return;
@@ -444,8 +381,8 @@ export function DataGrid<T extends Record<string, unknown>>({
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}
           undoRedoCellEditing={true}
-          rowClass="group"
-          getRowClass={(params) => (params.data as Record<string, unknown>)?.isStrikedThrough ? "strikethrough-row" : undefined}
+          rowClass="group cursor-pointer"
+          getRowClass={getRowClass ? (params) => getRowClass({ data: params.data as T | undefined }) : undefined}
           animateRows={false}
           suppressClickEdit={false}
           domLayout={autoHeight ? "autoHeight" : "normal"}

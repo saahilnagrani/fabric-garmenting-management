@@ -113,7 +113,6 @@ export function PhaseGrid({ phases }: { phases: unknown[] }) {
           startDate: data.startDate ? new Date(data.startDate) : null,
         });
       }}
-      onStrikethrough={async (id, isStrikedThrough) => updatePhase(id, { isStrikedThrough })}
       autoHeight
       height="600px"
     />

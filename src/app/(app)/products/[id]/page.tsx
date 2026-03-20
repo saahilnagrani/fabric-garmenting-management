@@ -19,11 +19,11 @@ export default async function EditProductPage({
     ...product,
     fabricGsm: product.fabricGsm ? Number(product.fabricGsm) : null,
     fabricCostPerKg: product.fabricCostPerKg ? Number(product.fabricCostPerKg) : null,
-    garmentsPerKg: product.garmentsPerKg ? Number(product.garmentsPerKg) : null,
+    assumedFabricGarmentsPerKg: product.assumedFabricGarmentsPerKg ? Number(product.assumedFabricGarmentsPerKg) : null,
     fabric2CostPerKg: product.fabric2CostPerKg ? Number(product.fabric2CostPerKg) : null,
-    fabric2GarmentsPerKg: product.fabric2GarmentsPerKg ? Number(product.fabric2GarmentsPerKg) : null,
-    quantityOrderedKg: product.quantityOrderedKg ? Number(product.quantityOrderedKg) : null,
-    quantityShippedKg: product.quantityShippedKg ? Number(product.quantityShippedKg) : null,
+    assumedFabric2GarmentsPerKg: product.assumedFabric2GarmentsPerKg ? Number(product.assumedFabric2GarmentsPerKg) : null,
+    fabricOrderedQuantityKg: product.fabricOrderedQuantityKg ? Number(product.fabricOrderedQuantityKg) : null,
+    fabricShippedQuantityKg: product.fabricShippedQuantityKg ? Number(product.fabricShippedQuantityKg) : null,
     stitchingCost: product.stitchingCost ? Number(product.stitchingCost) : null,
     brandLogoCost: product.brandLogoCost ? Number(product.brandLogoCost) : null,
     neckTwillCost: product.neckTwillCost ? Number(product.neckTwillCost) : null,
@@ -33,16 +33,14 @@ export default async function EditProductPage({
     brandTagCost: product.brandTagCost ? Number(product.brandTagCost) : null,
     sizeTagCost: product.sizeTagCost ? Number(product.sizeTagCost) : null,
     packagingCost: product.packagingCost ? Number(product.packagingCost) : null,
-    inwardShipping: product.inwardShipping ? Number(product.inwardShipping) : null,
-    mrp: product.mrp ? Number(product.mrp) : null,
-    dp: product.dp ? Number(product.dp) : null,
+    outwardShippingCost: product.outwardShippingCost ? Number(product.outwardShippingCost) : null,
     proposedMrp: product.proposedMrp ? Number(product.proposedMrp) : null,
     onlineMrp: product.onlineMrp ? Number(product.onlineMrp) : null,
   };
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Edit Product - {product.styleNumber} ({product.colour})</h1>
+      <h1 className="text-2xl font-bold">Edit Product - {product.styleNumber} ({product.colourOrdered})</h1>
       <ProductForm
         vendors={vendors}
         phaseId={product.phaseId}

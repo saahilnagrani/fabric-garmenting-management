@@ -12,7 +12,7 @@ export async function getExpenses(phaseId: string, filters?: { vendorId?: string
   return db.expense.findMany({
     where,
     include: { vendor: true },
-    orderBy: [{ isStrikedThrough: "asc" }, { date: "desc" }],
+    orderBy: [{ date: "desc" }],
   });
 }
 
@@ -41,6 +41,25 @@ export async function updateExpense(id: string, data: any) {
 export async function deleteExpense(id: string) {
   await db.expense.delete({ where: { id } });
   revalidatePath("/expenses");
+}
+
+export async function getExpenseWithOrders(id: string) {
+  const expense = await db.expense.findUnique({
+    where: { id },
+    include: {
+      vendor: true,
+      phase: true,
+      fabricOrders: {
+        include: { fabricVendor: true },
+        orderBy: { createdAt: "desc" },
+      },
+      products: {
+        include: { fabricVendor: true },
+        orderBy: [{ styleNumber: "asc" }, { colourOrdered: "asc" }],
+      },
+    },
+  });
+  return expense;
 }
 
 export async function getExpenseSummary(phaseId: string) {
