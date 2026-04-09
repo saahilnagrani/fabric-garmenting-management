@@ -42,3 +42,9 @@ next-env.d.ts
 
 /src/generated/prisma
 .env.local
+
+# local db backups and snapshots
+/.backups/
+
+# editor/tooling local state
+/.claude/launch.json
