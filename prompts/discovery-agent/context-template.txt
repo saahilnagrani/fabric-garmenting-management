@@ -1,0 +1,38 @@
+COMPANY PROFILE
+Company: {{company_name}}
+Description: {{company_description}}
+Location: {{company_location}}
+Website: {{company_website}}
+Products manufactured: {{product_categories}}
+Annual material purchase volume (estimate): {{annual_volume_estimate}}
+Target markets: {{target_markets}}
+Certifications required from suppliers: {{certifications_needed}}
+Key selling points (why suppliers should work with us): {{key_selling_points}}
+
+MATERIAL REQUIREMENTS FOR THIS SEARCH
+{{#each materials}}
+- Material: {{name}}
+  Category: {{category}}
+  Specifications: {{specifications}}
+  Target price range: {{target_price_range}}
+  Priority: {{priority}}
+  Usage context: {{notes}}
+{{/each}}
+
+EXISTING SUPPLIERS IN DATABASE (avoid duplicates)
+{{#if existing_suppliers.length}}
+{{#each existing_suppliers}}
+- {{company_name}} ({{source_platform}}) - Status: {{pipeline_status}}
+{{/each}}
+{{else}}
+No existing suppliers in database yet.
+{{/if}}
+
+SEARCH INSTRUCTIONS
+Find Chinese manufacturers who can supply the materials listed above. Focus on:
+1. Direct manufacturers with factory capability (not trading companies)
+2. Suppliers whose MOQ fits our volume estimates
+3. Suppliers with the certifications we require
+4. Suppliers with experience exporting to India or South Asia
+
+Return results in the JSON format specified in your system prompt.

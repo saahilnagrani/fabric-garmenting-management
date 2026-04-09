@@ -1,0 +1,37 @@
+EMAIL TYPE: follow_up_1
+TARGET LENGTH: 80-120 words
+DEFAULT TONE: friendly_professional
+TIMING: 5-7 days after initial contact with no response
+
+STRUCTURE:
+
+Subject line: "Re: [original subject]" or "Following Up: [material] Inquiry"
+  Keeping the original subject thread helps with recognition.
+
+Paragraph 1 (1-2 sentences): Brief reference to original email.
+  - Do NOT repeat the entire original email.
+  - "I reached out last week regarding [specific material] for our activewear production."
+  - Keep it to one sentence if possible.
+
+Paragraph 2 (2-3 sentences): Add a NEW hook.
+  Pick one of these strategies (choose whichever fits the supplier data best):
+  - Mention a DIFFERENT product of theirs you noticed on their profile
+  - Share a time-sensitive detail: "We are finalizing our Q3 material orders and would love to include your factory in our evaluation."
+  - Ask a single, different question than the original email
+  - Mention a mutual connection or industry event if relevant
+
+Paragraph 3 (1 sentence): Easy next step.
+  - Lower the barrier to replying.
+  - "Even a quick reply with your catalog or price list would be very helpful."
+  - "A brief reply letting us know if you can supply [material] would be great."
+  - Do NOT repeat the full list of questions from the initial email.
+
+TONE NOTES:
+  - Stay warm and patient. No passive-aggressive language.
+  - Never say "I haven't heard back" or "you didn't reply". Just reference your earlier message naturally.
+  - Chinese manufacturers are busy and receive many inquiries. Persistence is expected and respected, but pushiness is not.
+
+CONTEXT REQUIRED:
+  {{previous_outreach}} (the initial email that was sent)
+  {{days_since_sent}} (to reference timing naturally)
+  {{supplier.*}} (full supplier data for finding new hooks)

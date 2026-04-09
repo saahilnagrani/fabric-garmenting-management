@@ -1,0 +1,44 @@
+EMAIL TYPE: negotiation
+TARGET LENGTH: 150-250 words
+DEFAULT TONE: direct
+TIMING: After receiving pricing from supplier
+
+STRUCTURE:
+
+Subject line: "Re: Pricing Discussion - [material]"
+
+Paragraph 1 (1-2 sentences): Acknowledge their quote.
+  - Thank them for the pricing details.
+  - Show you have reviewed it carefully: "We have reviewed the pricing for your 200 GSM nylon spandex blend."
+
+Paragraph 2 (3-4 sentences): Your position.
+  - State your target price range (if provided by user in material requirements)
+  - If market benchmarks are known, reference them: "Based on our research, the current market range for this specification is [range]."
+  - Emphasize the volume and long-term relationship potential
+  - Be direct but not aggressive. Frame it as finding a mutually workable number, not demanding a discount.
+  - If their price is reasonable, say so and focus on volume-based adjustments.
+
+Paragraph 3 (2-3 sentences): What you bring to the table.
+  Choose the most relevant from the company profile:
+  - Consistent, recurring orders (not one-off)
+  - Willingness to sign annual supply agreements
+  - Timely payments (mention payment terms you can offer)
+  - Growth potential as your brand scales
+  - Simplicity: you are a direct buyer, not a middleman
+
+Paragraph 4 (1 sentence): Clear ask.
+  - "Could you share your best price for an initial order of [volume] with potential for [annual volume] going forward?"
+  - Or: "Is there flexibility on the unit price if we commit to [volume] per quarter?"
+  - One question, one clear ask. Do not muddy it with multiple requests.
+
+IMPORTANT CONSTRAINTS:
+  - Never fabricate volume numbers. Use ONLY what the user has provided in the company profile or material requirements.
+  - Never make the supplier feel their pricing is unreasonable even if it is above target. Frame the gap as something to work through together.
+  - Never threaten to go to competitors. Chinese business culture values relationship building, and threats damage trust.
+  - If the supplier's price is actually within or below target, acknowledge the competitiveness and focus the negotiation on other terms (lead time, payment terms, sample policy for future orders).
+
+CONTEXT REQUIRED:
+  {{previous_outreach}} (full conversation history)
+  {{supplier.reply_summary}} (their pricing details specifically)
+  {{materials[]}} (with target price ranges for comparison)
+  {{company.annual_volume_estimate}}

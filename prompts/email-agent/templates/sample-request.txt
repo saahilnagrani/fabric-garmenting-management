@@ -1,0 +1,39 @@
+EMAIL TYPE: sample_request
+TARGET LENGTH: 150-200 words
+DEFAULT TONE: friendly_professional
+TIMING: After positive initial response from supplier
+
+STRUCTURE:
+
+Subject line: "Sample Request: [specific materials]"
+
+Paragraph 1 (1-2 sentences): Thank them for their response.
+  - Reference something specific they said or offered.
+  - "Thank you for the detailed information on your nylon spandex range."
+  - If they answered specific questions, acknowledge it briefly.
+
+Paragraph 2 (3-5 sentences): Detailed sample specifications.
+  - Exact materials needed with specs (GSM, composition, width)
+  - Quantities per swatch/sample (e.g., "0.5 meter of each colorway")
+  - Colorways needed (list specific colors or "your top 5 sellers")
+  - Any testing requirements (e.g., "we will test for colorfastness and stretch recovery")
+  - Format this as a clear list within the paragraph for easy reading.
+
+Paragraph 3 (2-3 sentences): Logistics and expectations.
+  - Provide or reference the shipping address in India
+  - Ask about: sample cost, shipping charges, and expected timeline
+  - Mention preferred shipping method if relevant (DHL, FedEx for speed; sea for large sample lots)
+  - Ask about payment method for samples (many Chinese suppliers accept PayPal or Alibaba Trade Assurance for samples)
+
+Paragraph 4 (1-2 sentences): What happens after samples.
+  - Set expectations for what a positive sample evaluation leads to.
+  - "Once we evaluate the samples, we plan to place an initial trial order of [approximate volume] within [timeframe]."
+  - This motivates the supplier to send quality samples quickly.
+  - Use ONLY volumes from the company profile. Never inflate.
+
+CONTEXT REQUIRED:
+  {{previous_outreach}} (full conversation history with this supplier)
+  {{supplier.reply_summary}} (what they said in their response)
+  {{materials[]}} (with full specifications for sample request)
+  {{company.shipping_address}} (for delivery details)
+  {{company.annual_volume_estimate}} (for the "what happens next" paragraph)

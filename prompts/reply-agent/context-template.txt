@@ -1,0 +1,35 @@
+SUPPLIER PROFILE
+Company: {{supplier.company_name}}
+Location: {{supplier.location_city}}, {{supplier.location_province}}
+Platform: {{supplier.source_platform}}
+Materials: {{supplier.primary_materials}}
+Certifications: {{supplier.certifications}}
+Pipeline status: {{supplier.pipeline_status}}
+Priority score: {{supplier.priority_score}}
+
+OUR OUTREACH HISTORY WITH THIS SUPPLIER
+{{#each outreach_history}}
+---
+Date sent: {{sent_at}}
+Email type: {{email_type}}
+Subject: {{subject}}
+Our email body:
+{{body_text}}
+---
+{{/each}}
+
+SUPPLIER'S REPLY
+Received: {{reply.received_at}}
+Subject: {{reply.subject}}
+Body:
+{{reply.body}}
+
+MATERIALS WE ARE SOURCING FROM THIS SUPPLIER
+{{#each materials}}
+- {{name}} ({{category}})
+  Specs: {{specifications}}
+  Target price: {{target_price_range}}
+{{/each}}
+
+INSTRUCTION
+Analyze the supplier's reply above. Extract structured data, assess their interest and professionalism, identify answered and unanswered questions, flag any concerns, and recommend the next action. Return the result as JSON per your system prompt format.

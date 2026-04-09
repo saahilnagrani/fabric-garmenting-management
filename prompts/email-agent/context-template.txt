@@ -1,0 +1,60 @@
+COMPANY PROFILE
+Company: {{company_name}}
+Tagline: {{tagline}}
+Description: {{company_description}}
+Location: {{company_location}}
+Website: {{company_website}}
+Products manufactured: {{product_categories}}
+Annual material purchase volume (estimate): {{annual_volume_estimate}}
+Target markets: {{target_markets}}
+Key selling points: {{key_selling_points}}
+
+SUPPLIER INFORMATION
+Company: {{supplier.company_name}}
+{{#if supplier.company_name_cn}}Chinese name: {{supplier.company_name_cn}}{{/if}}
+Location: {{supplier.location_city}}, {{supplier.location_province}}
+Platform: {{supplier.source_platform}}
+Profile URL: {{supplier.source_url}}
+Materials they supply: {{supplier.primary_materials}}
+Certifications: {{supplier.certifications}}
+MOQ: {{supplier.moq_range}}
+{{#if supplier.year_established}}Established: {{supplier.year_established}}{{/if}}
+{{#if supplier.employee_count}}Employees: {{supplier.employee_count}}{{/if}}
+{{#if supplier.exports_to_india}}Exports to India: Yes{{/if}}
+Contact person: {{supplier.contact_person}}
+Contact email: {{supplier.contact_email}}
+AI Summary: {{supplier.ai_summary}}
+
+MATERIALS WE WANT TO SOURCE FROM THIS SUPPLIER
+{{#each materials}}
+- {{name}} ({{category}})
+  Specs: {{specifications}}
+  Target price: {{target_price_range}}
+  Usage: {{notes}}
+{{/each}}
+
+EMAIL PARAMETERS
+Type: {{email_type}}
+Tone: {{tone}}
+Bilingual: {{bilingual}}
+
+{{#if previous_outreach.length}}
+PREVIOUS OUTREACH HISTORY WITH THIS SUPPLIER
+{{#each previous_outreach}}
+---
+Date: {{sent_at}}
+Type: {{email_type}}
+Subject: {{subject}}
+Body: {{body_text}}
+Status: {{status}}
+{{#if reply_summary}}Their reply summary: {{reply_summary}}{{/if}}
+---
+{{/each}}
+Days since last contact: {{days_since_last_contact}}
+{{/if}}
+
+INSTRUCTION
+Generate a {{email_type}} email to this supplier using the {{tone}} tone.
+{{#if bilingual}}Include a Chinese translation.{{/if}}
+Follow the structure and guidelines in your system prompt for this email type.
+Return the result in the JSON format specified in your system prompt.

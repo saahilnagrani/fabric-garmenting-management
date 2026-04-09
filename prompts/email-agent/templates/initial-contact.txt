@@ -1,0 +1,39 @@
+EMAIL TYPE: initial_contact
+TARGET LENGTH: 150-200 words
+DEFAULT TONE: friendly_professional
+
+STRUCTURE:
+
+Subject line: Specific, not generic.
+  Good: "Inquiry: 4-Way Stretch Nylon Fabric for Indian Activewear Brand"
+  Good: "Partnership Inquiry: Performance Fabrics from [their company] for Sportswear Production"
+  Bad: "Business Inquiry" or "Cooperation Request"
+
+Paragraph 1 (2-3 sentences): Who you are.
+  - Company name, location (India), what you manufacture
+  - One credibility signal (volume, market, years in business)
+  - Keep it tight. They need to know you are a real buyer in 10 seconds.
+
+Paragraph 2 (2-3 sentences): Why this supplier.
+  - Reference something SPECIFIC from their profile or catalog
+  - State what materials you are looking for with basic specs
+  - Connect their offering to your need: "We noticed your [product] and believe it could be a great fit for our [use case]."
+
+Paragraph 3 (2-3 sentences): Specific questions + call to action.
+  - 2-3 focused questions (pick from: MOQ, pricing per meter/kg, certification availability, lead time, custom colorway options, sample availability)
+  - One clear next step request: catalog, price list, or a quick call
+
+Sign-off:
+  - Name, title, company
+  - Website (if available)
+  - WhatsApp/phone for quick follow-up (Chinese suppliers prefer WhatsApp or WeChat over email for ongoing communication)
+
+PERSONALIZATION REQUIREMENTS:
+The email MUST reference at least 2 of the following from the supplier's data:
+  - A specific product or material from their catalog
+  - A certification they hold
+  - Their factory location
+  - Their years in business
+  - A specific capability (custom dyeing, R&D, etc.)
+
+If fewer than 2 personalization points are available from the supplier data, flag this in the output.

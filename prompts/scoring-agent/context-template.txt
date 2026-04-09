@@ -1,0 +1,41 @@
+BUYER REQUIREMENTS
+
+Company: {{company_name}}
+Location: {{company_location}}
+Products manufactured: {{product_categories}}
+Annual material volume (estimate): {{annual_volume_estimate}}
+
+Required certifications from suppliers:
+{{#each certifications_needed}}
+- {{this}}
+{{/each}}
+
+Material requirements relevant to this supplier:
+{{#each material_requirements}}
+- {{name}} ({{category}})
+  Specifications: {{specifications}}
+  Target price range: {{target_price_range}}
+  Priority: {{priority}}
+{{/each}}
+
+SUPPLIER DATA TO EVALUATE
+
+Company: {{supplier.company_name}}
+{{#if supplier.company_name_cn}}Chinese name: {{supplier.company_name_cn}}{{/if}}
+Platform: {{supplier.source_platform}}
+Profile URL: {{supplier.source_url}}
+Location: {{supplier.location_city}}, {{supplier.location_province}}
+Year established: {{supplier.year_established}}
+Employee count: {{supplier.employee_count}}
+Materials supplied: {{supplier.primary_materials}}
+Certifications held: {{supplier.certifications}}
+Stated MOQ: {{supplier.moq_range}}
+Exports to India: {{supplier.exports_to_india}}
+Contact person: {{supplier.contact_person}}
+Contact email: {{supplier.contact_email}}
+Contact WeChat: {{supplier.contact_wechat}}
+Red flags from discovery: {{supplier.red_flags}}
+AI summary from discovery: {{supplier.ai_summary}}
+
+INSTRUCTION
+Score this supplier against the buyer's requirements using the criteria and weights defined in your system prompt. Return the structured evaluation as JSON.
