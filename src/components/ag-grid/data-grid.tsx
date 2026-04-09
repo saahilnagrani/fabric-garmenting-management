@@ -8,6 +8,7 @@ import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "./add-column-dialog";
+import { ManageColumnsDialog } from "./manage-columns-dialog";
 import "./ag-grid-theme.css";
 
 // Register all community modules
@@ -32,6 +33,7 @@ type DataGridProps<T extends Record<string, unknown>> = {
   hideAddRowButtons?: boolean;
   onRowClicked?: (data: T) => void;
   getRowClass?: (params: { data?: T }) => string;
+  onGridApiReady?: (api: GridApi<T>) => void;
 };
 
 let tempIdCounter = 0;
@@ -56,9 +58,11 @@ export function DataGrid<T extends Record<string, unknown>>({
   hideAddRowButtons = false,
   onRowClicked,
   getRowClass,
+  onGridApiReady,
 }: DataGridProps<T>) {
   const gridRef = useRef<AgGridReact<T>>(null);
   const gridApiRef = useRef<GridApi<T> | null>(null);
+  const isInitializing = useRef(true);
   const [statusMap, setStatusMap] = useState<Map<string, RowStatus>>(new Map());
   const saveTimers = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const [topTempRows, setTopTempRows] = useState<T[]>([]);
@@ -75,9 +79,12 @@ export function DataGrid<T extends Record<string, unknown>>({
   const hasSavedColState = typeof window !== "undefined" && !!localStorage.getItem(colStateKey);
 
   const saveColumnState = useCallback(() => {
-    if (!gridApiRef.current) return;
+    if (!gridApiRef.current || isInitializing.current) return;
     const state = gridApiRef.current.getColumnState();
     localStorage.setItem(colStateKey, JSON.stringify(state));
+    // Keep fingerprint in sync
+    const allColFields = gridApiRef.current.getColumns()?.map((c) => c.getColId()) || [];
+    localStorage.setItem(colStateKey + "-fingerprint", allColFields.join("|"));
   }, [colStateKey]);
 
   const saveColumnStateDebounced = useCallback(() => {
@@ -113,6 +120,7 @@ export function DataGrid<T extends Record<string, unknown>>({
 
   const onGridReady = useCallback((params: GridReadyEvent<T>) => {
     gridApiRef.current = params.api;
+    onGridApiReady?.(params.api);
     const saved = localStorage.getItem(colStateKey);
     if (saved) {
       try {
@@ -185,6 +193,8 @@ export function DataGrid<T extends Record<string, unknown>>({
         });
       }
     }
+    // Allow saving column state after initialization completes
+    setTimeout(() => { isInitializing.current = false; }, 100);
   }, [colStateKey, columnDefs, defaultSort]);
 
   const setStatus = useCallback((id: string, status: RowStatus) => {
@@ -354,13 +364,19 @@ export function DataGrid<T extends Record<string, unknown>>({
             onAdd={addColumn}
             onRemove={removeColumn}
           />
+          <ManageColumnsDialog
+            gridApiRef={gridApiRef}
+            colStateKey={colStateKey}
+          />
         </div>
       )}
       <div className="ag-theme-quartz" style={autoHeight ? { width: "100%", maxHeight: height } : { height, width: "100%" }}>
         <AgGridReact<T>
+          theme="legacy"
           ref={gridRef}
           rowData={enrichedData}
           columnDefs={fullColumnDefs}
+          maintainColumnOrder
           onGridReady={onGridReady}
           onCellValueChanged={onCellValueChanged}
           onColumnMoved={saveColumnState}

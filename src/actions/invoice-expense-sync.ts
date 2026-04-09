@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@/generated/prisma/client";
+import { requirePermission } from "@/lib/require-permission";
 
 function toNum(val: unknown): number {
   if (val === null || val === undefined) return 0;
@@ -29,21 +30,26 @@ export async function syncExpenseForInvoice({
   phaseId: string;
   vendorId?: string;
 }) {
-  // Sync new invoice number
-  if (invoiceNumber && invoiceNumber.trim()) {
-    await syncSingleInvoice(invoiceNumber.trim(), sourceType, phaseId, vendorId);
-  }
+  try {
+    await requirePermission("inventory:expenses:create");
+    // Sync new invoice number
+    if (invoiceNumber && invoiceNumber.trim()) {
+      await syncSingleInvoice(invoiceNumber.trim(), sourceType, phaseId, vendorId);
+    }
 
-  // Sync previous invoice number if it changed
-  if (
-    previousInvoiceNumber &&
-    previousInvoiceNumber.trim() &&
-    previousInvoiceNumber.trim() !== (invoiceNumber?.trim() || "")
-  ) {
-    await syncSingleInvoice(previousInvoiceNumber.trim(), sourceType, phaseId, vendorId);
-  }
+    // Sync previous invoice number if it changed
+    if (
+      previousInvoiceNumber &&
+      previousInvoiceNumber.trim() &&
+      previousInvoiceNumber.trim() !== (invoiceNumber?.trim() || "")
+    ) {
+      await syncSingleInvoice(previousInvoiceNumber.trim(), sourceType, phaseId, vendorId);
+    }
 
-  revalidatePath("/expenses");
+    revalidatePath("/expenses");
+  } catch (error) {
+    console.error("[syncExpenseForInvoice] failed:", error);
+  }
 }
 
 async function syncSingleInvoice(
@@ -94,14 +100,14 @@ async function syncFabricOrderExpense(tx: any, invoiceNumber: string, phaseId: s
 
   // Calculate total: sum(costPerUnit * fabricShippedQuantityKg)
   let totalAmount = 0;
-  const styleNumbers: string[] = [];
+  const articleNumbers: string[] = [];
 
   for (const order of orders) {
     const cost = toNum(order.costPerUnit);
     const shipped = toNum(order.fabricShippedQuantityKg);
     totalAmount += cost * shipped;
-    if (order.styleNumbers && !styleNumbers.includes(order.styleNumbers)) {
-      styleNumbers.push(order.styleNumbers);
+    if (order.articleNumbers && !articleNumbers.includes(order.articleNumbers)) {
+      articleNumbers.push(order.articleNumbers);
     }
   }
 
@@ -110,7 +116,7 @@ async function syncFabricOrderExpense(tx: any, invoiceNumber: string, phaseId: s
   // Use phaseId from first order
   const resolvedPhaseId = orders[0].phaseId || phaseId;
 
-  const description = `Auto: Fabric invoice for ${styleNumbers.join(", ")} (${orders.length} order${orders.length > 1 ? "s" : ""})`;
+  const description = `Auto: Fabric invoice for ${articleNumbers.join(", ")} (${orders.length} order${orders.length > 1 ? "s" : ""})`;
 
   if (existingExpense) {
     // Update existing expense

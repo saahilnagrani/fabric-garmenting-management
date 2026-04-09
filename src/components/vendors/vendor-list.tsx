@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -11,24 +12,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createVendor, updateVendor } from "@/actions/vendors";
+import { createVendor, updateVendor, deleteVendor } from "@/actions/vendors";
 import { VENDOR_TYPE_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
-import { Pencil, Plus, Check, X } from "lucide-react";
+import { Pencil, Plus, Check, X, Trash2 } from "lucide-react";
 
 type Vendor = {
   id: string;
   name: string;
   type: string;
   contactInfo: string | null;
+  address: string | null;
 };
 
 export function VendorList({ vendors }: { vendors: Vendor[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingData, setEditingData] = useState<{ name: string; type: string; contactInfo: string }>({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" });
+  const [editingData, setEditingData] = useState<{ name: string; type: string; contactInfo: string; address: string }>({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" });
   const [adding, setAdding] = useState(false);
-  const [newData, setNewData] = useState<{ name: string; type: string; contactInfo: string }>({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" });
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [newData, setNewData] = useState<{ name: string; type: string; contactInfo: string; address: string }>({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" });
 
   async function handleAdd() {
     if (!newData.name.trim()) {
@@ -40,8 +43,9 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
         name: newData.name,
         type: newData.type as never,
         contactInfo: newData.contactInfo || undefined,
+        address: newData.address || undefined,
       });
-      setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" });
+      setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" });
       setAdding(false);
       toast.success("Vendor added");
       router.refresh();
@@ -60,12 +64,24 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
         name: editingData.name,
         type: editingData.type,
         contactInfo: editingData.contactInfo || null,
+        address: editingData.address || null,
       });
       setEditingId(null);
       toast.success("Vendor updated");
       router.refresh();
     } catch {
       toast.error("Failed to update vendor.");
+    }
+  }
+
+  async function handleDelete(id: string) {
+    try {
+      await deleteVendor(id);
+      setDeletingId(null);
+      toast.success("Vendor deleted");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete vendor.");
     }
   }
 
@@ -82,7 +98,7 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
               className="flex-1"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
-                if (e.key === "Escape") { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" }); }
+                if (e.key === "Escape") { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" }); }
               }}
             />
             <Select value={newData.type} onValueChange={(v) => setNewData((d) => ({ ...d, type: v || "FABRIC_SUPPLIER" }))}>
@@ -102,13 +118,22 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
               className="flex-1"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
-                if (e.key === "Escape") { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" }); }
+                if (e.key === "Escape") { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" }); }
+              }}
+            />
+            <Textarea
+              value={newData.address}
+              onChange={(e) => setNewData((d) => ({ ...d, address: e.target.value }))}
+              placeholder="Address..."
+              className="flex-1 min-h-[60px] resize-none text-sm"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" }); }
               }}
             />
             <Button size="sm" onClick={handleAdd}>
               <Check className="h-4 w-4" />
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "" }); }}>
+            <Button size="sm" variant="ghost" onClick={() => { setAdding(false); setNewData({ name: "", type: "FABRIC_SUPPLIER", contactInfo: "", address: "" }); }}>
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -121,10 +146,11 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
 
       <div className="border rounded-lg overflow-hidden">
         {/* Header */}
-        <div className="grid grid-cols-[1fr_150px_1fr_80px] gap-2 px-4 py-2.5 bg-muted/50 border-b text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+        <div className="grid grid-cols-[3fr_3fr_4fr_6fr_auto] gap-2 px-4 py-2.5 bg-muted/50 border-b text-xs font-semibold uppercase text-muted-foreground tracking-wider">
           <span>Name</span>
           <span>Type</span>
           <span>Contact</span>
+          <span>Address</span>
           <span />
         </div>
 
@@ -137,7 +163,7 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
         {vendors.map((v) => (
           <div
             key={v.id}
-            className="group grid grid-cols-[1fr_150px_1fr_80px] gap-2 items-center px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors cursor-pointer"
+            className="group grid grid-cols-[3fr_3fr_4fr_6fr_auto] gap-2 items-center px-4 py-2.5 border-b last:border-b-0 hover:bg-muted/50 transition-colors cursor-pointer"
           >
             {editingId === v.id ? (
               <>
@@ -170,6 +196,14 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
                     if (e.key === "Escape") setEditingId(null);
                   }}
                 />
+                <Textarea
+                  value={editingData.address}
+                  onChange={(e) => setEditingData((d) => ({ ...d, address: e.target.value }))}
+                  className="min-h-[60px] resize-none text-sm"
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setEditingId(null);
+                  }}
+                />
                 <div className="flex items-center gap-1">
                   <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleUpdate(v.id)}>
                     <Check className="h-4 w-4" />
@@ -184,18 +218,40 @@ export function VendorList({ vendors }: { vendors: Vendor[] }) {
                 <span className="text-sm font-medium">{v.name}</span>
                 <span className="text-sm text-muted-foreground">{VENDOR_TYPE_LABELS[v.type] || v.type}</span>
                 <span className="text-sm text-muted-foreground">{v.contactInfo || "-"}</span>
+                <span className="text-sm text-muted-foreground whitespace-pre-line">{v.address || "-"}</span>
                 <div className="flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
-                    onClick={() => {
-                      setEditingId(v.id);
-                      setEditingData({ name: v.name, type: v.type, contactInfo: v.contactInfo || "" });
-                    }}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
+                  {deletingId === v.id ? (
+                    <>
+                      <Button size="sm" variant="destructive" className="h-7 px-2 text-xs" onClick={() => handleDelete(v.id)}>
+                        Delete
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setDeletingId(null)}>
+                        Cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100"
+                        onClick={() => {
+                          setEditingId(v.id);
+                          setEditingData({ name: v.name, type: v.type, contactInfo: v.contactInfo || "", address: v.address || "" });
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 text-destructive hover:text-destructive"
+                        onClick={() => setDeletingId(v.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </>
+                  )}
                 </div>
               </>
             )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
@@ -8,7 +8,8 @@ import { MultiTagRenderer } from "@/components/ag-grid/multi-tag-renderer";
 import { createFabricMaster, updateFabricMaster } from "@/actions/fabric-masters";
 import { validateFabricMaster } from "@/lib/validations";
 import { Button } from "@/components/ui/button";
-import { Plus, Archive, Eye, EyeOff } from "lucide-react";
+import { Plus, Eye, EyeOff } from "lucide-react";
+import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { FabricMasterSheet, type FabricMasterRow } from "./fabric-master-sheet";
 
 type Vendor = { id: string; name: string };
@@ -19,18 +20,25 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+type Phase = { id: string; name: string; number: number };
+
 export function FabricMasterGrid({
   masters,
   vendors,
+  colours = [],
+  phases = [],
   showArchived = false,
 }: {
   masters: unknown[];
   vendors: Vendor[];
+  colours?: string[];
+  phases?: Phase[];
   showArchived?: boolean;
 }) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<FabricMasterRow | null>(null);
+  const gridApiRef = useRef<import("ag-grid-community").GridApi | null>(null);
 
   const rowData: FabricMasterRow[] = useMemo(
     () =>
@@ -39,9 +47,11 @@ export function FabricMasterGrid({
         fabricName: String(m.fabricName ?? ""),
         vendorId: String(m.vendorId ?? ""),
         genders: (m.genders as string[]) || [],
-        styleNumbers: (m.styleNumbers as string[]) || [],
+        articleNumbers: (m.articleNumbers as string[]) || [],
+        deletedArticleNumbers: (m.deletedArticleNumbers as string[]) || [],
         coloursAvailable: (m.coloursAvailable as string[]) || [],
         mrp: toNum(m.mrp),
+        comments: (m.comments as string) || null,
         isStrikedThrough: Boolean(m.isStrikedThrough),
       })),
     [masters]
@@ -52,7 +62,10 @@ export function FabricMasterGrid({
     vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
 
     return [
-      { field: "fabricName", headerName: "Fabric Name", pinned: "left", minWidth: 150, editable: false },
+      {
+        field: "fabricName", headerName: "Fabric Name", pinned: "left", minWidth: 150, editable: false,
+        comparator: (a, b) => (a || "").toLowerCase().localeCompare((b || "").toLowerCase()),
+      },
       {
         field: "vendorId",
         headerName: "Vendor",
@@ -68,9 +81,16 @@ export function FabricMasterGrid({
         cellRenderer: MultiTagRenderer,
       },
       {
-        field: "styleNumbers",
-        headerName: "Style Numbers",
+        field: "articleNumbers",
+        headerName: "Article Numbers",
         minWidth: 180,
+        editable: false,
+        cellRenderer: MultiTagRenderer,
+      },
+      {
+        field: "deletedArticleNumbers",
+        headerName: "Deleted Articles",
+        minWidth: 150,
         editable: false,
         cellRenderer: MultiTagRenderer,
       },
@@ -88,6 +108,12 @@ export function FabricMasterGrid({
         type: "numericColumn",
         editable: false,
       },
+      {
+        field: "comments",
+        headerName: "Comments",
+        minWidth: 150,
+        editable: false,
+      },
     ];
   }, [vendors]);
 
@@ -95,7 +121,8 @@ export function FabricMasterGrid({
     fabricName: "",
     vendorId: vendors[0]?.id || "",
     genders: [],
-    styleNumbers: [],
+    articleNumbers: [],
+    deletedArticleNumbers: [],
     coloursAvailable: [],
     mrp: null,
   };
@@ -122,6 +149,10 @@ export function FabricMasterGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Fabric
         </Button>
+        <ManageColumnsDialog
+          gridApiRef={gridApiRef}
+          colStateKey="ag-grid-col-state-fabric-masters"
+        />
         <Button variant="ghost" size="sm" onClick={toggleArchived} className="text-muted-foreground">
           {showArchived ? (
             <><EyeOff className="mr-1.5 h-3.5 w-3.5" />Hide Archived</>
@@ -135,6 +166,7 @@ export function FabricMasterGrid({
         rowData={rowData}
         columnDefs={columnDefs}
         defaultRow={defaultRow}
+        onGridApiReady={(api) => { gridApiRef.current = api; }}
         defaultSort={[{ colId: "fabricName", sort: "asc" }]}
         hideAddRowButtons
         onRowClicked={handleRowClicked}
@@ -147,7 +179,7 @@ export function FabricMasterGrid({
             fabricName: data.fabricName,
             vendorId: data.vendorId,
             genders: data.genders || [],
-            styleNumbers: data.styleNumbers || [],
+            articleNumbers: data.articleNumbers || [],
             coloursAvailable: data.coloursAvailable || [],
             mrp: toNum(data.mrp),
           };
@@ -158,20 +190,22 @@ export function FabricMasterGrid({
             fabricName: data.fabricName,
             vendorId: data.vendorId,
             genders: data.genders || [],
-            styleNumbers: data.styleNumbers || [],
+            articleNumbers: data.articleNumbers || [],
             coloursAvailable: data.coloursAvailable || [],
             mrp: toNum(data.mrp),
           };
           return updateFabricMaster(id, payload);
         }}
         validate={validateFabricMaster}
-        height="500px"
+        height="600px"
       />
       <FabricMasterSheet
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         editingRow={editingRow}
         vendors={vendors}
+        colours={colours}
+        phases={phases}
       />
     </>
   );

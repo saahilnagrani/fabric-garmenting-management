@@ -11,6 +11,7 @@ type VendorRow = {
   name: string;
   type: string;
   contactInfo: string;
+  address: string;
   [key: string]: unknown;
 };
 
@@ -22,6 +23,7 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
         name: String(v.name ?? ""),
         type: String(v.type ?? "FABRIC_SUPPLIER"),
         contactInfo: String(v.contactInfo ?? ""),
+        address: String(v.address ?? ""),
         isStrikedThrough: Boolean(v.isStrikedThrough),
       })),
     [vendors]
@@ -42,6 +44,7 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
         valueFormatter: (p) => VENDOR_TYPE_LABELS[p.value] || p.value || "",
       },
       { field: "contactInfo", headerName: "Contact", minWidth: 200, flex: 1 },
+      { field: "address", headerName: "Address", minWidth: 250, flex: 1 },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []
@@ -51,6 +54,7 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
     name: "",
     type: "FABRIC_SUPPLIER",
     contactInfo: "",
+    address: "",
   };
 
   return (
@@ -64,6 +68,7 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
           name: data.name,
           type: data.type as never,
           contactInfo: data.contactInfo || undefined,
+          address: data.address || undefined,
         });
       }}
       onSave={async (id, data) => {
@@ -71,6 +76,7 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
           name: data.name,
           type: data.type,
           contactInfo: data.contactInfo || null,
+          address: data.address || null,
         });
       }}
       autoHeight

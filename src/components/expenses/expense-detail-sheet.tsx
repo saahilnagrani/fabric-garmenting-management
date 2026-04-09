@@ -57,7 +57,7 @@ export function ExpenseDetailSheet({
             <SheetTitle>Expense Details</SheetTitle>
             {expense?.sourceType && expense.sourceType !== "MANUAL" && (
               <span className="inline-flex items-center rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                Auto: {isFabric ? "Fabric" : "SKU"}
+                Auto: {isFabric ? "Fabric" : "Article"}
               </span>
             )}
           </div>
@@ -97,7 +97,7 @@ export function ExpenseDetailSheet({
                     <thead>
                       <tr className="bg-muted/50 text-left">
                         <th className="px-3 py-2 font-medium">Fabric</th>
-                        <th className="px-3 py-2 font-medium">Style #</th>
+                        <th className="px-3 py-2 font-medium">Article #</th>
                         <th className="px-3 py-2 font-medium">Colour</th>
                         <th className="px-3 py-2 font-medium text-right">Cost/kg</th>
                         <th className="px-3 py-2 font-medium text-right">Shipped (kg)</th>
@@ -112,7 +112,7 @@ export function ExpenseDetailSheet({
                         return (
                           <tr key={fo.id} className="hover:bg-muted/30">
                             <td className="px-3 py-2">{fo.fabricName}</td>
-                            <td className="px-3 py-2">{fo.styleNumbers}</td>
+                            <td className="px-3 py-2">{fo.articleNumbers}</td>
                             <td className="px-3 py-2">{fo.colour}</td>
                             <td className="px-3 py-2 text-right">{formatCurrency(cost)}</td>
                             <td className="px-3 py-2 text-right">{formatDecimal(shipped)}</td>
@@ -143,13 +143,13 @@ export function ExpenseDetailSheet({
             {isSku && expense.products.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-sm font-semibold">
-                  SKU/Style Orders ({expense.products.length})
+                  Article Orders ({expense.products.length})
                 </h3>
                 <div className="border rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="bg-muted/50 text-left">
-                        <th className="px-3 py-2 font-medium">Style #</th>
+                        <th className="px-3 py-2 font-medium">Article #</th>
                         <th className="px-3 py-2 font-medium">Colour</th>
                         <th className="px-3 py-2 font-medium text-right">Garmenting Cost</th>
                         <th className="px-3 py-2 font-medium text-right">Qty Stitched</th>
@@ -199,7 +199,7 @@ export function ExpenseDetailSheet({
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="bg-muted/50 text-left">
-                          <th className="px-2 py-1.5 font-medium">Style #</th>
+                          <th className="px-2 py-1.5 font-medium">Article #</th>
                           <th className="px-2 py-1.5 font-medium">Colour</th>
                           <th className="px-2 py-1.5 font-medium text-right">Stitch</th>
                           <th className="px-2 py-1.5 font-medium text-right">Logo</th>

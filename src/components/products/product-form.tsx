@@ -61,7 +61,7 @@ export function ProductForm({
       gender: product?.gender || "MENS",
       productName: product?.productName || "",
       isRepeat: product?.isRepeat || false,
-      status: product?.status || "PROCESSING",
+      status: product?.status || "PLANNED",
       fabricVendorId: product?.fabricVendorId || "",
       fabricName: product?.fabricName || "",
       fabricGsm: product?.fabricGsm || "",
@@ -173,7 +173,7 @@ export function ProductForm({
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
-            <Label>Style Number *</Label>
+            <Label>Style Number (legacy) *</Label>
             <Input {...register("styleNumber", { required: true })} />
           </div>
           <div className="space-y-1">
@@ -181,7 +181,7 @@ export function ProductForm({
             <Input {...register("articleNumber")} />
           </div>
           <div className="space-y-1">
-            <Label>SKU Code</Label>
+            <Label>Article Code</Label>
             <Input {...register("skuCode")} placeholder="e.g. M LO02 BLK" />
           </div>
           <div className="space-y-1">

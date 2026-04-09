@@ -1,5 +1,7 @@
 import { getFabricMasters } from "@/actions/fabric-masters";
 import { getVendors } from "@/actions/vendors";
+import { getColours } from "@/actions/colours";
+import { getPhases } from "@/actions/phases";
 import { FabricMasterGrid } from "@/components/masters/fabric-master-grid";
 
 export default async function FabricMastersPage({
@@ -9,10 +11,13 @@ export default async function FabricMastersPage({
 }) {
   const params = await searchParams;
   const showArchived = params.showArchived === "true";
-  const [masters, vendors] = await Promise.all([
+  const [masters, vendors, colourRecords, phases] = await Promise.all([
     getFabricMasters(showArchived),
     getVendors(),
+    getColours(),
+    getPhases(),
   ]);
+  const colourNames = colourRecords.map((c) => c.name);
 
   const activeCount = showArchived
     ? masters.filter((m) => !m.isStrikedThrough).length
@@ -32,6 +37,8 @@ export default async function FabricMastersPage({
       <FabricMasterGrid
         masters={JSON.parse(JSON.stringify(masters))}
         vendors={vendors}
+        colours={colourNames}
+        phases={phases.map((p) => ({ id: p.id, name: p.name, number: p.number }))}
         showArchived={showArchived}
       />
     </div>

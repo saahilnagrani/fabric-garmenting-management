@@ -121,10 +121,15 @@ export function PlanningForm({
   const articleOptions = useMemo(() => {
     const options: { label: string; value: string }[] = [];
     for (const [article, masters] of articleGroups) {
-      const styleName = String(masters[0].styleNumber || article);
-      options.push({ label: `${article} - ${styleName}`, value: article });
+      const productName = String(masters[0].productName || masters[0].styleNumber || "");
+      options.push({ label: productName ? `${article} - ${productName}` : article, value: article });
     }
-    return options.sort((a, b) => a.value.localeCompare(b.value));
+    return options.sort((a, b) => {
+      const na = Number(a.value);
+      const nb = Number(b.value);
+      if (!isNaN(na) && !isNaN(nb)) return nb - na;
+      return b.value.localeCompare(a.value);
+    });
   }, [articleGroups]);
 
   function isRepeatArticle(articleNumber: string): boolean {
@@ -143,7 +148,7 @@ export function PlanningForm({
     if (!masters || masters.length === 0) return;
 
     const first = masters[0];
-    const styleName = String(first.styleNumber || articleNumber);
+    const styleName = String(first.productName || first.styleNumber || articleNumber);
     const fabricName = String(first.fabricName || "");
     const fabric2Name = first.fabric2Name ? String(first.fabric2Name) : null;
 
@@ -274,7 +279,7 @@ export function PlanningForm({
           fabrics.push({
             fabricName: article.fabricName,
             fabricVendorId: article.fabricVendorId,
-            styleNumbers: article.articleNumber,
+            articleNumbers: article.articleNumber,
             colour: cq.colour,
             fabricOrderedQuantityKg: Math.round(fabricQty * 100) / 100,
             costPerUnit: article.fabricCostPerKg,
@@ -291,7 +296,7 @@ export function PlanningForm({
           fabrics.push({
             fabricName: article.fabric2Name,
             fabricVendorId: article.fabric2VendorId,
-            styleNumbers: article.articleNumber,
+            articleNumbers: article.articleNumber,
             colour: cq.colour,
             fabricOrderedQuantityKg: Math.round(fabric2Qty * 100) / 100,
             costPerUnit: article.fabric2CostPerKg,
@@ -316,7 +321,7 @@ export function PlanningForm({
     setSubmitting(true);
     try {
       await createPlanOrders(phaseId, skuOrders, fabricOrders);
-      toast.success(`Created ${skuOrders.length} SKU orders and ${fabricOrders.length} fabric orders`);
+      toast.success(`Created ${skuOrders.length} article orders and ${fabricOrders.length} fabric orders`);
       router.push("/products");
       router.refresh();
     } catch {
@@ -335,18 +340,18 @@ export function PlanningForm({
         </Button>
 
         <div>
-          <h2 className="text-lg font-semibold mb-3">SKU/Style Orders ({skuOrders.length})</h2>
+          <h2 className="text-lg font-semibold mb-3">Article Orders ({skuOrders.length})</h2>
           <div className="border rounded-lg overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Style</th>
-                  <th className="px-3 py-2 text-left font-medium">Article #</th>
-                  <th className="px-3 py-2 text-left font-medium">SKU Code</th>
-                  <th className="px-3 py-2 text-left font-medium">Colour</th>
-                  <th className="px-3 py-2 text-right font-medium">Target Qty</th>
-                  <th className="px-3 py-2 text-left font-medium">Fabric</th>
-                  <th className="px-3 py-2 text-left font-medium">Repeat?</th>
+                  <th className="px-3 py-2 text-left font-medium w-[20%]">Product</th>
+                  <th className="px-3 py-2 text-left font-medium w-[10%]">Article #</th>
+                  <th className="px-3 py-2 text-left font-medium w-[18%]">Article Code</th>
+                  <th className="px-3 py-2 text-left font-medium w-[18%]">Colour</th>
+                  <th className="px-3 py-2 text-right font-medium w-[12%]">Target Qty</th>
+                  <th className="px-3 py-2 text-left font-medium w-[14%]">Fabric</th>
+                  <th className="px-3 py-2 text-left font-medium w-[8%]">Repeat?</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -369,16 +374,16 @@ export function PlanningForm({
         <div>
           <h2 className="text-lg font-semibold mb-3">Fabric Orders ({fabricOrders.length})</h2>
           <div className="border rounded-lg overflow-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm table-fixed">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium">Fabric</th>
-                  <th className="px-3 py-2 text-left font-medium">Vendor</th>
-                  <th className="px-3 py-2 text-left font-medium">For Style</th>
-                  <th className="px-3 py-2 text-left font-medium">Colour</th>
-                  <th className="px-3 py-2 text-right font-medium">Ordered Qty (kg)</th>
-                  <th className="px-3 py-2 text-right font-medium">Cost/Unit</th>
-                  <th className="px-3 py-2 text-left font-medium">Repeat?</th>
+                  <th className="px-3 py-2 text-left font-medium w-[18%]">Fabric</th>
+                  <th className="px-3 py-2 text-left font-medium w-[14%]">Vendor</th>
+                  <th className="px-3 py-2 text-left font-medium w-[10%]">For Article</th>
+                  <th className="px-3 py-2 text-left font-medium w-[18%]">Colour</th>
+                  <th className="px-3 py-2 text-right font-medium w-[14%]">Ordered Qty (kg)</th>
+                  <th className="px-3 py-2 text-right font-medium w-[14%]">Cost/Unit</th>
+                  <th className="px-3 py-2 text-left font-medium w-[8%]">Repeat?</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -388,7 +393,7 @@ export function PlanningForm({
                     <tr key={i}>
                       <td className="px-3 py-2">{fo.fabricName}</td>
                       <td className="px-3 py-2">{vendor?.name || "—"}</td>
-                      <td className="px-3 py-2">{fo.styleNumbers}</td>
+                      <td className="px-3 py-2">{fo.articleNumbers}</td>
                       <td className="px-3 py-2">{fo.colour}</td>
                       <td className="px-3 py-2 text-right">{fo.fabricOrderedQuantityKg}</td>
                       <td className="px-3 py-2 text-right">{fo.costPerUnit ? `Rs ${fo.costPerUnit}` : "—"}</td>
@@ -404,7 +409,7 @@ export function PlanningForm({
         <div className="flex gap-3">
           <Button onClick={handleCreate} disabled={submitting || skuOrders.length === 0}>
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create {skuOrders.length} SKU Orders + {fabricOrders.length} Fabric Orders
+            Create {skuOrders.length} Article Orders + {fabricOrders.length} Fabric Orders
           </Button>
         </div>
       </div>
@@ -417,12 +422,12 @@ export function PlanningForm({
       {/* Article selector */}
       <div className="flex items-end gap-3">
         <div className="w-80">
-          <label className="text-sm font-medium mb-1 block">Add Style (Article #)</label>
+          <label className="text-sm font-medium mb-1 block">Add Article</label>
           <Combobox
             value=""
             onValueChange={handleAddArticle}
             options={articleOptions}
-            placeholder="Search by article # or style name..."
+            placeholder="Search by article # or product name..."
           />
         </div>
       </div>
@@ -520,7 +525,7 @@ export function PlanningForm({
               setStep("review");
             }}
           >
-            Review Orders ({skuOrders.length} SKU + {fabricOrders.length} Fabric)
+            Review Orders ({skuOrders.length} Article + {fabricOrders.length} Fabric)
           </Button>
         </div>
       )}

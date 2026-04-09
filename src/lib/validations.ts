@@ -3,7 +3,7 @@ export function validateFabricOrder(
 ): Record<string, string> | null {
   const errors: Record<string, string> = {};
   if (!data.fabricVendorId) errors.fabricVendorId = "Vendor is required";
-  if (!data.styleNumbers) errors.styleNumbers = "Style numbers required";
+  if (!data.articleNumbers) errors.articleNumbers = "Article numbers required";
   if (!data.fabricName) errors.fabricName = "Fabric name required";
   if (!data.colour) errors.colour = "Colour required";
   return Object.keys(errors).length > 0 ? errors : null;

@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+import { getProductPrefillFromFabricOrder } from "@/actions/fabric-orders";
 import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, RowClickedEvent } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
@@ -25,6 +27,7 @@ import { Plus, Check } from "lucide-react";
 import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
+import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -48,7 +51,7 @@ function toRow(p: any): Record<string, unknown> {
     styleNumber: s(p.styleNumber), articleNumber: s(p.articleNumber), skuCode: s(p.skuCode),
     colourOrdered: s(p.colourOrdered), isRepeat: Boolean(p.isRepeat),
     type: s(p.type), gender: s(p.gender), productName: s(p.productName),
-    status: s(p.status) || "PROCESSING", fabricVendorId: s(p.fabricVendorId),
+    status: s(p.status) || "PLANNED", fabricVendorId: s(p.fabricVendorId),
     fabricName: s(p.fabricName), fabricGsm: toNum(p.fabricGsm),
     fabricCostPerKg: toNum(p.fabricCostPerKg), assumedFabricGarmentsPerKg: toNum(p.assumedFabricGarmentsPerKg),
     fabric2Name: s(p.fabric2Name), fabric2CostPerKg: toNum(p.fabric2CostPerKg),
@@ -136,13 +139,13 @@ export function ProductGrid({
     (toNum(data?.assumedFabricGarmentsPerKg) || 0) * (toNum(data?.fabricShippedQuantityKg) || 0);
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
-    { field: "styleNumber", headerName: "Style #", pinned: "left", minWidth: 90, editable: false },
+    { field: "styleNumber", headerName: "Style # (legacy)", pinned: "left", minWidth: 90, editable: false },
     { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: false },
-    { field: "skuCode", headerName: "SKU", minWidth: 90, editable: false },
+    { field: "skuCode", headerName: "Article Code", minWidth: 90, editable: false },
     { field: "articleNumber", headerName: "Article #", minWidth: 80, editable: false },
     { field: "colourOrdered", headerName: "Colour Ordered", minWidth: 100, editable: false },
-    { field: "productName", headerName: "Product", minWidth: 110, editable: false },
-    { field: "type", headerName: "Type", minWidth: 90, editable: false },
+    { field: "productName", headerName: "Product Name", minWidth: 110, editable: false },
+    { field: "type", headerName: "Product Type", minWidth: 90, editable: false },
     { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
     { field: "fabricVendorId", headerName: "Fabric Vendor", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
     { field: "status", headerName: "Status", minWidth: 120, editable: false, valueFormatter: (p) => PRODUCT_STATUS_LABELS[p.value] || p.value || "" },
@@ -254,6 +257,25 @@ export function ProductGrid({
     setSheetOpen(true);
   }
 
+  // Open sheet with prefill data when navigated from fabric order "Create matching article order"
+  const prefillFabricOrderId = searchParams.get("prefillFromFabricOrderId");
+  const processedPrefillRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!prefillFabricOrderId) return;
+    if (processedPrefillRef.current === prefillFabricOrderId) return;
+    processedPrefillRef.current = prefillFabricOrderId;
+    getProductPrefillFromFabricOrder(prefillFabricOrderId)
+      .then((prefill) => {
+        if (prefill) {
+          setEditingRow(prefill as Record<string, unknown>);
+          setSheetOpen(true);
+        } else {
+          toast.error("Could not load prefill data");
+        }
+      })
+      .catch(() => toast.error("Failed to load prefill data"));
+  }, [prefillFabricOrderId]);
+
   function applyFilter(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
     if (value && value !== "all") params.set(key, value);
@@ -283,7 +305,7 @@ export function ProductGrid({
         ))}
         <div className="ml-auto" />
         <form onSubmit={handleSearch} className="flex gap-2">
-          <Input placeholder="Search style, SKU, name..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[200px]" />
+          <Input placeholder="Search article, code, name..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[200px]" />
         </form>
         <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
           <SelectTrigger className="w-[150px]">
@@ -310,10 +332,9 @@ export function ProductGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Product Order
         </Button>
-        <AddColumnButton
-          columns={customColumns}
-          onAdd={addColumn}
-          onRemove={removeColumn}
+        <ManageColumnsDialog
+          gridApiRef={gridApiRef}
+          colStateKey={COL_STATE_KEY}
         />
       </div>
 
@@ -328,10 +349,12 @@ export function ProductGrid({
         sizeDistributions={sizeDistributions}
       />
 
-      <div className="ag-theme-quartz" style={{ height: "650px", width: "100%" }}>
+      <div className="ag-theme-quartz" style={{ height: "550px", width: "100%" }}>
         <AgGridReact
+          theme="legacy"
           rowData={enrichedData}
           columnDefs={columnDefs}
+          maintainColumnOrder
           onGridReady={(e: GridReadyEvent) => {
             gridApiRef.current = e.api;
             const saved = localStorage.getItem(COL_STATE_KEY);

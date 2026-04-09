@@ -12,7 +12,7 @@ export default async function SizeDistributionPage() {
       <p className="text-sm text-muted-foreground">
         Set the percentage distribution for each size. These percentages are used
         to calculate expected quantities per size from the total expected quantity
-        in SKU/Style Orders. Percentages must add up to 100%.
+        in Article Orders. Percentages must add up to 100%.
       </p>
       <SizeDistributionList distributions={distributions} />
     </div>

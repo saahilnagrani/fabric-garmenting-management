@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
+import { getFabricOrderPrefillFromProduct } from "@/actions/products";
 import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, RowClickedEvent } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
@@ -15,6 +17,7 @@ import { Plus, Check } from "lucide-react";
 import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
+import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -36,7 +39,7 @@ function toRow(o: any): Record<string, unknown> {
     id: o.id,
     phaseId: o.phaseId,
     fabricVendorId: s(o.fabricVendorId),
-    styleNumbers: s(o.styleNumbers),
+    articleNumbers: s(o.articleNumbers),
     fabricName: s(o.fabricName),
     colour: s(o.colour),
     gender: s(o.gender),
@@ -76,7 +79,7 @@ export function FabricOrderGrid({
   const searchParams = useSearchParams();
   const gridApiRef = useRef<GridApi | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [editingRow, setEditingRow] = useState<Record<string, unknown> | null>(null);
+  const [editingRows, setEditingRows] = useState<Record<string, unknown>[]>([]);
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Custom columns
@@ -98,9 +101,78 @@ export function FabricOrderGrid({
     }, 300);
   }, [saveColumnState]);
 
-  const rowData = useMemo((): Record<string, unknown>[] => {
+  // Keep raw rows for the edit sheet (so clicking a row can find the original orders)
+  const rawRows = useMemo((): Record<string, unknown>[] => {
     return (orders as Record<string, unknown>[]).map((o) => toRow(o));
   }, [orders]);
+
+  // Aggregate rows by (fabricName, fabricVendorId, colour): sum numeric fields, concatenate text fields
+  const rowData = useMemo((): Record<string, unknown>[] => {
+    const groupKey = (r: Record<string, unknown>) =>
+      `${r.fabricVendorId}||${r.fabricName}||${r.colour}`;
+
+    const groups = new Map<string, Record<string, unknown>[]>();
+    for (const row of rawRows) {
+      const key = groupKey(row);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+
+    const concatUnique = (rows: Record<string, unknown>[], field: string): string => {
+      const vals = [...new Set(rows.map((r) => String(r[field] || "")).filter(Boolean))];
+      return vals.join(", ");
+    };
+    const sumField = (rows: Record<string, unknown>[], field: string): number | null => {
+      let total = 0;
+      let hasValue = false;
+      for (const r of rows) {
+        const n = toNum(r[field]);
+        if (n !== null) { total += n; hasValue = true; }
+      }
+      return hasValue ? total : null;
+    };
+
+    const aggregated: Record<string, unknown>[] = [];
+    for (const [, rows] of groups) {
+      const first = rows[0];
+      aggregated.push({
+        // Use a composite id for the aggregated row
+        id: rows.map((r) => r.id).join("+"),
+        __sourceIds: rows.map((r) => r.id),
+        phaseId: first.phaseId,
+        fabricVendorId: first.fabricVendorId,
+        fabricName: first.fabricName,
+        colour: first.colour,
+        gender: [...new Set(rows.map((r) => GENDER_LABELS[String(r.gender || "")] || String(r.gender || "")).filter(Boolean))].join(", "),
+        articleNumbers: concatUnique(rows, "articleNumbers"),
+        orderDate: concatUnique(rows, "orderDate"),
+        invoiceNumber: concatUnique(rows, "invoiceNumber"),
+        receivedAt: concatUnique(rows, "receivedAt"),
+        availableColour: first.availableColour,
+        costPerUnit: toNum(first.costPerUnit),
+        fabricOrderedQuantityKg: sumField(rows, "fabricOrderedQuantityKg"),
+        fabricShippedQuantityKg: sumField(rows, "fabricShippedQuantityKg"),
+        isRepeat: rows.some((r) => r.isRepeat),
+        orderStatus: concatUnique(rows, "orderStatus"),
+        garmentingAt: concatUnique(rows, "garmentingAt"),
+      });
+    }
+
+    // Sort by vendor → fabric name → colour for grouping display
+    aggregated.sort((a, b) => {
+      const vA = String(a.fabricVendorId || "");
+      const vB = String(b.fabricVendorId || "");
+      if (vA !== vB) return vA.localeCompare(vB);
+      const fA = String(a.fabricName || "");
+      const fB = String(b.fabricName || "");
+      if (fA !== fB) return fA.localeCompare(fB);
+      const cA = String(a.colour || "");
+      const cB = String(b.colour || "");
+      return cA.localeCompare(cB);
+    });
+
+    return aggregated;
+  }, [rawRows]);
 
   const vendorLabels: Record<string, string> = {};
   vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
@@ -109,22 +181,116 @@ export function FabricOrderGrid({
     field, headerName, minWidth: w, type: "numericColumn", editable: false,
   });
 
+  // Span maps stored in refs so they can be recalculated imperatively on sort changes
+  const groupSpanMapRef = useRef(new Map<number, number>());
+  const groupStartsRef = useRef(new Set<number>());
+
+  const recalcGroupSpans = useCallback(() => {
+    const spanMap = new Map<number, number>();
+    const starts = new Set<number>();
+
+    // Walk rows in their current display order (or fall back to rowData array order before grid is ready)
+    const displayRows: Record<string, unknown>[] = [];
+    const api = gridApiRef.current;
+    if (api) {
+      api.forEachNodeAfterFilterAndSort((node) => {
+        if (node.data) displayRows.push(node.data as Record<string, unknown>);
+      });
+    }
+    const rows = displayRows.length > 0 ? displayRows : rowData;
+
+    let i = 0;
+    while (i < rows.length) {
+      let j = i + 1;
+      while (
+        j < rows.length &&
+        String(rows[j].fabricVendorId) === String(rows[i].fabricVendorId) &&
+        String(rows[j].fabricName) === String(rows[i].fabricName)
+      ) {
+        j++;
+      }
+      const span = j - i;
+      starts.add(i);
+      spanMap.set(i, span);
+      for (let k = i + 1; k < j; k++) {
+        spanMap.set(k, 1);
+      }
+      i = j;
+    }
+
+    groupSpanMapRef.current = spanMap;
+    groupStartsRef.current = starts;
+  }, [rowData]);
+
+  // Compute initial spans from rowData order (before grid is ready)
+  useMemo(() => {
+    recalcGroupSpans();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recalcGroupSpans]);
+
   const baseColumnDefs = useMemo<ColDef[]>(() => [
-    { field: "fabricName", headerName: "Fabric Name", minWidth: 120, pinned: "left", editable: false },
-    { field: "fabricVendorId", headerName: "Fabric Vendor", minWidth: 120, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
-    { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: false },
-    { field: "styleNumbers", headerName: "Fabric used for styles", minWidth: 160, editable: false },
-    { field: "colour", headerName: "Colours", minWidth: 100, editable: false },
-    { field: "availableColour", headerName: "Avail. Colour", minWidth: 110, editable: false },
-    { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
-    { field: "invoiceNumber", headerName: "Invoice #", minWidth: 90, editable: false },
-    { field: "receivedAt", headerName: "Received At", minWidth: 130, editable: false },
-    numCol("costPerUnit", "Cost/Unit", 85),
-    numCol("fabricOrderedQuantityKg", "Ordered Qty (kg)", 110),
-    numCol("fabricShippedQuantityKg", "Shipped Qty (kg)", 110),
+    {
+      field: "fabricName",
+      headerName: "Fabric",
+      minWidth: 90,
+      pinned: "left",
+      editable: false,
+      rowSpan: (params) => {
+        const idx = params.node?.rowIndex;
+        if (idx == null) return 1;
+        return groupStartsRef.current.has(idx) ? (groupSpanMapRef.current.get(idx) || 1) : 1;
+      },
+      cellClassRules: {
+        "row-span-cell": (params) => {
+          const idx = params.node?.rowIndex;
+          return idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1;
+        },
+      },
+    },
+    {
+      field: "fabricVendorId",
+      headerName: "Vendor",
+      minWidth: 80,
+      editable: false,
+      sortable: true,
+      unSortIcon: true,
+      valueFormatter: (p) => vendorLabels[p.value] || p.value || "",
+      rowSpan: (params) => {
+        const idx = params.node?.rowIndex;
+        if (idx == null) return 1;
+        return groupStartsRef.current.has(idx) ? (groupSpanMapRef.current.get(idx) || 1) : 1;
+      },
+      cellClassRules: {
+        "row-span-cell": (params) => {
+          const idx = params.node?.rowIndex;
+          return idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1;
+        },
+      },
+    },
+    {
+      field: "orderDate", headerName: "Order Date", minWidth: 90, maxWidth: 140, editable: false,
+      valueFormatter: (p) => {
+        if (!p.value) return "";
+        // Handle concatenated dates (from aggregation)
+        const dates = String(p.value).split(",").map((d) => d.trim());
+        return dates.map((d) => {
+          const parsed = new Date(d);
+          if (isNaN(parsed.getTime())) return d;
+          return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+        }).join(", ");
+      },
+    },
+    { field: "articleNumbers", headerName: "Articles", minWidth: 80, editable: false },
+    { field: "colour", headerName: "Colour", minWidth: 70, editable: false },
+    { field: "gender", headerName: "Gender", minWidth: 65, editable: false },
+    { field: "invoiceNumber", headerName: "Invoice #", minWidth: 70, editable: false },
+    { field: "receivedAt", headerName: "Received At", minWidth: 90, editable: false },
+    numCol("costPerUnit", "Cost/Unit", 70),
+    numCol("fabricOrderedQuantityKg", "Ordered (kg)", 80),
+    numCol("fabricShippedQuantityKg", "Shipped (kg)", 80),
     // Computed: Expected Fabric Cost = Cost/Unit * Ordered Qty
     {
-      headerName: "Expected Fabric Cost (Rs)", minWidth: 130, editable: false, cellClass: "computed-cell",
+      headerName: "Expected Cost", minWidth: 90, editable: false, cellClass: "computed-cell",
       valueGetter: (p) => {
         if (!p.data) return 0;
         const cost = toNum(p.data.costPerUnit) || 0;
@@ -135,7 +301,7 @@ export function FabricOrderGrid({
     },
     // Computed: Actual Fabric Cost = Cost/Unit * Shipped Qty
     {
-      headerName: "Actual Fabric Cost (Rs)", minWidth: 130, editable: false, cellClass: "computed-cell",
+      headerName: "Actual Cost", minWidth: 90, editable: false, cellClass: "computed-cell",
       valueGetter: (p) => {
         if (!p.data) return 0;
         const cost = toNum(p.data.costPerUnit) || 0;
@@ -144,8 +310,8 @@ export function FabricOrderGrid({
       },
       valueFormatter: (p) => formatCurrency(p.value),
     },
-    { field: "orderStatus", headerName: "Order Status", minWidth: 120, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
-    { field: "garmentingAt", headerName: "Garmenting Location", minWidth: 130, editable: false },
+    { field: "orderStatus", headerName: "Status", minWidth: 80, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    { field: "garmentingAt", headerName: "Garmenting", minWidth: 90, editable: false },
     {
       field: "isRepeat", headerName: "Repeat Order?", minWidth: 85, maxWidth: 85, editable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
@@ -179,17 +345,66 @@ export function FabricOrderGrid({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseColumnDefs, customColumns]);
 
+  const handleSortChanged = useCallback(() => {
+    saveColumnState();
+    recalcGroupSpans();
+    if (gridApiRef.current) {
+      gridApiRef.current.refreshCells({
+        columns: ["fabricName", "fabricVendorId"],
+        force: true,
+      });
+    }
+  }, [saveColumnState, recalcGroupSpans]);
+
   function handleRowClicked(event: RowClickedEvent) {
-    if (event.data) {
-      setEditingRow(event.data);
+    if (!event.data) return;
+
+    // Don't open sheet when clicking on merged fabric/vendor cells
+    const clickedColId = (event.event?.target as HTMLElement)?.closest?.('[col-id]')?.getAttribute('col-id');
+    if ((clickedColId === 'fabricName' || clickedColId === 'fabricVendorId')) {
+      const idx = event.node?.rowIndex;
+      if (idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1) {
+        return;
+      }
+    }
+
+    {
+      const sourceIds = event.data.__sourceIds as string[] | undefined;
+      if (sourceIds && sourceIds.length > 0) {
+        const sourceRows = sourceIds
+          .map((id) => rawRows.find((r) => r.id === id))
+          .filter(Boolean) as Record<string, unknown>[];
+        setEditingRows(sourceRows.length > 0 ? sourceRows : [event.data]);
+      } else {
+        setEditingRows([event.data]);
+      }
       setSheetOpen(true);
     }
   }
 
   function handleAddNew() {
-    setEditingRow(null);
+    setEditingRows([]);
     setSheetOpen(true);
   }
+
+  // Open sheet with prefill data when navigated from product "Create matching fabric order"
+  const prefillProductId = searchParams.get("prefillFromProductId");
+  const processedPrefillRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!prefillProductId) return;
+    if (processedPrefillRef.current === prefillProductId) return;
+    processedPrefillRef.current = prefillProductId;
+    getFabricOrderPrefillFromProduct(prefillProductId, 1)
+      .then((prefill) => {
+        if (prefill) {
+          setEditingRows([prefill as unknown as Record<string, unknown>]);
+          setSheetOpen(true);
+        } else {
+          toast.error("Could not load prefill data");
+        }
+      })
+      .catch(() => toast.error("Failed to load prefill data"));
+  }, [prefillProductId]);
 
   function applyFilter(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -233,10 +448,9 @@ export function FabricOrderGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Fabric Order
         </Button>
-        <AddColumnButton
-          columns={customColumns}
-          onAdd={addColumn}
-          onRemove={removeColumn}
+        <ManageColumnsDialog
+          gridApiRef={gridApiRef}
+          colStateKey={COL_STATE_KEY}
         />
       </div>
 
@@ -249,13 +463,15 @@ export function FabricOrderGrid({
         productMasters={productMasters}
         garmentingLocations={garmentingLocations}
         isRepeatTab={currentTab === "repeat"}
-        editingRow={editingRow}
+        editingRows={editingRows}
       />
 
-      <div className="ag-theme-quartz" style={{ height: "600px", width: "100%" }}>
+      <div className="ag-theme-quartz" style={{ height: "550px", width: "100%" }}>
         <AgGridReact
+          theme="legacy"
           rowData={enrichedData}
           columnDefs={columnDefs}
+          maintainColumnOrder
           onGridReady={(e: GridReadyEvent) => {
             gridApiRef.current = e.api;
             const saved = localStorage.getItem(COL_STATE_KEY);
@@ -265,31 +481,35 @@ export function FabricOrderGrid({
                 // Preserve pinned settings from column defs
                 const pinnedMap: Record<string, ColumnPinnedType> = {};
                 columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as ColumnPinnedType; });
+                // Columns that use rowSpan must never be sorted (breaks merged cell display)
+                const noSortCols = new Set(["fabricName", "fabricVendorId"]);
                 const merged = parsed.map((cs) => {
-                  if (cs.colId && pinnedMap[cs.colId] !== undefined) return { ...cs, pinned: pinnedMap[cs.colId] };
-                  return cs;
+                  const patched = { ...cs };
+                  if (cs.colId && pinnedMap[cs.colId] !== undefined) patched.pinned = pinnedMap[cs.colId];
+                  if (cs.colId && noSortCols.has(cs.colId)) { patched.sort = null; patched.sortIndex = null; }
+                  return patched;
                 });
                 e.api.applyColumnState({ state: merged, applyOrder: true });
               } catch {
                 // ignore
               }
             }
-            // Always apply default sort if no sort is currently set
-            const currentState = e.api.getColumnState();
-            const hasSort = currentState.some((cs) => cs.sort);
-            if (!hasSort) {
-              e.api.applyColumnState({
-                state: [{ colId: "orderDate", sort: "desc" }],
-                defaultState: { sort: null },
-              });
-            }
+            // Data is already pre-sorted by vendor → fabric → colour in the rowData memo,
+            // so no grid-level default sort is needed (avoids "Fabric 2" / "Vendor 1" labels).
+            // Recalculate spans based on actual grid display order
+            recalcGroupSpans();
           }}
           onRowClicked={handleRowClicked}
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
-          onSortChanged={saveColumnState}
+          onSortChanged={handleSortChanged}
+          onRowDataUpdated={() => {
+            recalcGroupSpans();
+            gridApiRef.current?.refreshCells({ columns: ["fabricName", "fabricVendorId"], force: true });
+          }}
+          suppressRowTransform
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: false, sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          defaultColDef={{ editable: false, sortable: false, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
           animateRows={false}

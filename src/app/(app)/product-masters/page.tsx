@@ -1,6 +1,8 @@
-import { getProductMasters } from "@/actions/product-masters";
+import { getProductMastersGrouped } from "@/actions/product-masters";
 import { getProductTypes } from "@/actions/product-types";
 import { getFabricNamesMrp } from "@/actions/fabric-masters";
+import { getColours } from "@/actions/colours";
+import { getPhases } from "@/actions/phases";
 import { ProductMasterGrid } from "@/components/masters/product-master-grid";
 
 export default async function ProductMastersPage({
@@ -10,31 +12,36 @@ export default async function ProductMastersPage({
 }) {
   const params = await searchParams;
   const showArchived = params.showArchived === "true";
-  const [masters, types, fabricData] = await Promise.all([
-    getProductMasters(showArchived),
+  const [groupedMasters, types, fabricData, colourRecords, phases] = await Promise.all([
+    getProductMastersGrouped(showArchived),
     getProductTypes(),
     getFabricNamesMrp(),
+    getColours(),
+    getPhases(),
   ]);
+  const colourNames = colourRecords.map((c) => c.name);
+  const coloursWithCode = colourRecords.map((c) => ({ name: c.name, code: c.code }));
+  const productTypesWithCode = types.map((t) => ({ name: t.name, code: t.code }));
 
-  const activeCount = showArchived
-    ? masters.filter((m) => !m.isStrikedThrough).length
-    : masters.length;
-  const archivedCount = showArchived
-    ? masters.filter((m) => m.isStrikedThrough).length
-    : 0;
+  const activeCount = groupedMasters.filter((m) => !m.isStrikedThrough).length;
+  const totalSkus = groupedMasters.reduce((sum, m) => sum + m.skuCount, 0);
 
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-2xl font-bold">SKU Master DB</h1>
+        <h1 className="text-2xl font-bold">Article Master DB</h1>
         <p className="text-sm text-muted-foreground">
-          {activeCount} SKU templates{archivedCount > 0 ? ` + ${archivedCount} archived` : ""}. These defaults auto-populate when creating SKU/Style orders.
+          {activeCount} articles, {totalSkus} total variants. Grouped by article #.
         </p>
       </div>
       <ProductMasterGrid
-        masters={JSON.parse(JSON.stringify(masters))}
+        groupedMasters={groupedMasters}
         productTypes={types.map((t) => t.name)}
+        productTypesWithCode={productTypesWithCode}
         fabricData={fabricData}
+        colours={colourNames}
+        coloursWithCode={coloursWithCode}
+        phases={phases.map((p) => ({ id: p.id, name: p.name, number: p.number }))}
         showArchived={showArchived}
       />
     </div>

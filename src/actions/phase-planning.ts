@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/lib/require-permission";
 
 export type PlannedSKUOrder = {
   styleNumber: string;
@@ -38,7 +39,7 @@ export type PlannedSKUOrder = {
 export type PlannedFabricOrder = {
   fabricName: string;
   fabricVendorId: string;
-  styleNumbers: string;
+  articleNumbers: string;
   colour: string;
   fabricOrderedQuantityKg: number;
   costPerUnit: number | null;
@@ -53,9 +54,16 @@ export async function createPlanOrders(
   skuOrders: PlannedSKUOrder[],
   fabricOrders: PlannedFabricOrder[]
 ) {
+  await requirePermission("inventory:phases:edit");
   await db.$transaction(async (tx) => {
+    // Map (articleNumber, colour) -> { productId, fabricName, fabric2Name }
+    // used to build ProductFabricOrder join rows after fabric orders are created
+    const productMap = new Map<string, { id: string; fabricName: string; fabric2Name: string | null }>();
+    const key = (article: string, colour: string) =>
+      `${article.trim()}||${colour.toLowerCase().trim()}`;
+
     for (const sku of skuOrders) {
-      await tx.product.create({
+      const product = await tx.product.create({
         data: {
           phaseId,
           orderDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
@@ -94,27 +102,45 @@ export async function createPlanOrders(
           outwardShippingCost: sku.outwardShippingCost,
           proposedMrp: sku.proposedMrp,
           onlineMrp: sku.onlineMrp,
-          status: "PROCESSING",
+          status: "PLANNED",
         },
       });
+      productMap.set(key(sku.articleNumber, sku.colourOrdered), {
+        id: product.id,
+        fabricName: sku.fabricName,
+        fabric2Name: sku.fabric2Name,
+      });
     }
+
     for (const fabric of fabricOrders) {
-      await tx.fabricOrder.create({
+      const fabricOrder = await tx.fabricOrder.create({
         data: {
           phaseId,
           orderDate: new Date(),
           fabricName: fabric.fabricName,
           fabricVendorId: fabric.fabricVendorId,
-          styleNumbers: fabric.styleNumbers,
+          articleNumbers: fabric.articleNumbers,
           colour: fabric.colour,
           fabricOrderedQuantityKg: fabric.fabricOrderedQuantityKg,
           costPerUnit: fabric.costPerUnit,
           isRepeat: fabric.isRepeat,
           gender: fabric.gender as "MENS" | "WOMENS" | "KIDS" | null,
-          orderStatus: (fabric.orderStatus || "DRAFT_ORDER") as "DRAFT_ORDER" | "ORDERED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "RECEIVED",
+          orderStatus: (fabric.orderStatus || "DRAFT_ORDER") as "DRAFT_ORDER" | "DISCUSSED_WITH_VENDOR" | "ORDERED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "RECEIVED",
           garmentingAt: fabric.garmentingAt,
         },
       });
+
+      // Link to Product(s). articleNumbers may contain multiple (comma-separated).
+      const articles = fabric.articleNumbers.split(",").map((a) => a.trim()).filter(Boolean);
+      for (const article of articles) {
+        const product = productMap.get(key(article, fabric.colour));
+        if (!product) continue;
+        const slot = product.fabricName === fabric.fabricName ? 1 : product.fabric2Name === fabric.fabricName ? 2 : null;
+        if (slot === null) continue;
+        await tx.productFabricOrder.create({
+          data: { productId: product.id, fabricOrderId: fabricOrder.id, fabricSlot: slot },
+        });
+      }
     }
   });
   revalidatePath("/products");
@@ -124,6 +150,7 @@ export async function createPlanOrders(
 
 // Check if an article was produced in any previous phase
 export async function getArticlesInPreviousPhases(currentPhaseId: string): Promise<Set<string>> {
+  await requirePermission("inventory:phases:view");
   const products = await db.product.findMany({
     where: {
       phaseId: { not: currentPhaseId },

@@ -40,7 +40,7 @@ export default async function EditProductPage({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">Edit Product - {product.styleNumber} ({product.colourOrdered})</h1>
+      <h1 className="text-2xl font-bold">Edit Product - {product.articleNumber} ({product.colourOrdered})</h1>
       <ProductForm
         vendors={vendors}
         phaseId={product.phaseId}

@@ -12,15 +12,32 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
 import { Combobox } from "@/components/ui/combobox";
-import { createFabricOrder, updateFabricOrder, deleteFabricOrder } from "@/actions/fabric-orders";
-import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
+import { MultiCombobox } from "@/components/ui/multi-combobox";
+import { createFabricOrder, updateFabricOrder, deleteFabricOrder, findExistingOrdersForFabricColour, getFabricOrderLinkedProducts } from "@/actions/fabric-orders";
+import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS, PRODUCT_STATUS_LABELS } from "@/lib/constants";
+import { showAutoAdvanceToast } from "@/lib/toast-helpers";
 import { toast } from "sonner";
-import { Loader2, Trash2, ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
+import { Loader2, Trash2, ChevronDown, ChevronRight, ChevronLeft, ChevronsUpDown } from "lucide-react";
 import React from "react";
 
 type Vendor = { id: string; name: string };
 type FabricMasterType = Record<string, unknown>;
 type ProductMasterType = Record<string, unknown>;
+
+function toISODate(v: string | null): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v; // can't parse, send as-is
+  return d.toISOString();
+}
+
+function formatDateHuman(v: unknown): string {
+  if (!v) return "";
+  const s = String(v);
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s; // already human-readable or unparseable, keep as-is
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -31,7 +48,7 @@ function toNum(v: unknown): number | null {
 type FormData = {
   fabricName: string;
   fabricVendorId: string;
-  styleNumbers: string;
+  articleNumbers: string;
   colour: string;
   availableColour: string;
   gender: string;
@@ -49,13 +66,13 @@ type FormData = {
 const emptyForm: FormData = {
   fabricName: "",
   fabricVendorId: "",
-  styleNumbers: "",
+  articleNumbers: "",
   colour: "",
   availableColour: "",
   gender: "",
   invoiceNumber: "",
   receivedAt: "",
-  orderDate: "",
+  orderDate: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
   costPerUnit: "",
   fabricOrderedQuantityKg: "",
   fabricShippedQuantityKg: "",
@@ -64,7 +81,17 @@ const emptyForm: FormData = {
   garmentingAt: "",
 };
 
-const SECTIONS = ["fabricInfo", "orderDetails", "styles", "quantitiesCost"] as const;
+const SECTIONS = ["fabricInfo", "orderDetails", "styles", "quantitiesCost", "linkedProducts"] as const;
+
+type LinkedProduct = {
+  id: string;
+  articleNumber: string | null;
+  colourOrdered: string;
+  productName: string | null;
+  status: string;
+  garmentNumber: number | null;
+  fabricSlot: number;
+};
 type SectionName = (typeof SECTIONS)[number];
 
 function CollapsibleSection({
@@ -79,22 +106,22 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-gray-200 rounded overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-1.5 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+        className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
         {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
         ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
         )}
-        <span className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">
+        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
           {title}
         </span>
       </button>
-      {expanded && <div className="p-3 space-y-2">{children}</div>}
+      {expanded && <div className="px-2 py-1.5 space-y-1.5">{children}</div>}
     </div>
   );
 }
@@ -109,6 +136,7 @@ export function FabricOrderSheet({
   garmentingLocations,
   isRepeatTab,
   editingRow = null,
+  editingRows = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -119,6 +147,7 @@ export function FabricOrderSheet({
   garmentingLocations: string[];
   isRepeatTab: boolean;
   editingRow?: Record<string, unknown> | null;
+  editingRows?: Record<string, unknown>[];
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm, isRepeat: isRepeatTab });
@@ -126,12 +155,19 @@ export function FabricOrderSheet({
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
+  // Multi-order navigation
+  const [navIndex, setNavIndex] = useState(0);
+  const hasMultipleOrders = editingRows.length > 1;
+  // Use editingRows if provided, otherwise fall back to legacy editingRow prop
+  const activeRow = editingRows.length > 0 ? editingRows[navIndex] ?? null : editingRow;
+
   // Collapsible section state
   const [expandedSections, setExpandedSections] = useState<Record<SectionName, boolean>>(() =>
     Object.fromEntries(SECTIONS.map((s) => [s, true])) as Record<SectionName, boolean>
   );
 
-  const isEditing = editingRow !== null && editingRow !== undefined;
+  // Edit mode requires an id on the row. Rows without id are treated as prefill for create mode.
+  const isEditing = !!activeRow?.id;
 
   function toggleSection(section: SectionName) {
     setExpandedSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -160,22 +196,32 @@ export function FabricOrderSheet({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fabricMasters]);
 
-  // Build Combobox options for style numbers (search across product master fields)
-  const styleOptions = useMemo(() => {
-    return productMasters.map((m) => {
-      const skuCode = String(m.skuCode || "");
-      const styleName = String(m.productName || "");
+  // Build Combobox options for article numbers (deduplicated by articleNumber)
+  const articleOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const opts: { label: string; value: string; searchText: string }[] = [];
+    for (const m of productMasters) {
       const articleNum = String(m.articleNumber || "");
-      const label = `${skuCode}${styleName ? ` - ${styleName}` : ""}${articleNum ? ` (${articleNum})` : ""}`;
+      if (!articleNum || seen.has(articleNum)) continue;
+      seen.add(articleNum);
+      const productName = String(m.productName || "");
+      const label = `${articleNum}${productName ? ` - ${productName}` : ""}`;
       const searchText = [
-        String(m.articleNumber || ""),
-        String(m.styleNumber || ""),
+        articleNum,
         String(m.skuCode || ""),
         String(m.productName || ""),
         String(m.type || ""),
       ].join(" ");
-      return { label, value: skuCode, searchText };
+      opts.push({ label, value: articleNum, searchText });
+    }
+    // Sort by article number descending (numeric)
+    opts.sort((a, b) => {
+      const na = Number(a.value);
+      const nb = Number(b.value);
+      if (!isNaN(na) && !isNaN(nb)) return nb - na;
+      return b.value.localeCompare(a.value);
     });
+    return opts;
   }, [productMasters]);
 
   // Get available colours from the selected fabric master
@@ -190,35 +236,61 @@ export function FabricOrderSheet({
     return [];
   }, [form.fabricName, fabricMasters]);
 
+  function loadRowIntoForm(row: Record<string, unknown> | null) {
+    if (row) {
+      setForm({
+        fabricName: String(row.fabricName ?? ""),
+        fabricVendorId: String(row.fabricVendorId ?? ""),
+        articleNumbers: String(row.articleNumbers ?? ""),
+        colour: String(row.colour ?? ""),
+        availableColour: String(row.availableColour ?? ""),
+        gender: String(row.gender ?? ""),
+        invoiceNumber: String(row.invoiceNumber ?? ""),
+        receivedAt: formatDateHuman(row.receivedAt),
+        orderDate: formatDateHuman(row.orderDate),
+        costPerUnit: row.costPerUnit != null ? String(row.costPerUnit) : "",
+        fabricOrderedQuantityKg: row.fabricOrderedQuantityKg != null ? String(row.fabricOrderedQuantityKg) : "",
+        fabricShippedQuantityKg: row.fabricShippedQuantityKg != null ? String(row.fabricShippedQuantityKg) : "",
+        isRepeat: Boolean(row.isRepeat),
+        orderStatus: String(row.orderStatus ?? "DRAFT_ORDER"),
+        garmentingAt: String(row.garmentingAt ?? ""),
+      });
+    } else {
+      setForm({ ...emptyForm, isRepeat: isRepeatTab });
+    }
+  }
+
   // Reset form when sheet opens
   useEffect(() => {
     if (open) {
-      if (editingRow) {
-        setForm({
-          fabricName: String(editingRow.fabricName ?? ""),
-          fabricVendorId: String(editingRow.fabricVendorId ?? ""),
-          styleNumbers: String(editingRow.styleNumbers ?? ""),
-          colour: String(editingRow.colour ?? ""),
-          availableColour: String(editingRow.availableColour ?? ""),
-          gender: String(editingRow.gender ?? ""),
-          invoiceNumber: String(editingRow.invoiceNumber ?? ""),
-          receivedAt: String(editingRow.receivedAt ?? ""),
-          orderDate: String(editingRow.orderDate ?? ""),
-          costPerUnit: editingRow.costPerUnit != null ? String(editingRow.costPerUnit) : "",
-          fabricOrderedQuantityKg: editingRow.fabricOrderedQuantityKg != null ? String(editingRow.fabricOrderedQuantityKg) : "",
-          fabricShippedQuantityKg: editingRow.fabricShippedQuantityKg != null ? String(editingRow.fabricShippedQuantityKg) : "",
-          isRepeat: Boolean(editingRow.isRepeat),
-          orderStatus: String(editingRow.orderStatus ?? "DRAFT_ORDER"),
-          garmentingAt: String(editingRow.garmentingAt ?? ""),
-        });
-      } else {
-        setForm({ ...emptyForm, isRepeat: isRepeatTab });
-      }
+      setNavIndex(0);
+      loadRowIntoForm(activeRow);
       setShowDeleteConfirm(false);
       setAllSections(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, isRepeatTab, vendors, editingRow]);
+  }, [open, isRepeatTab]);
+
+  // Fetch linked products when editing
+  const [linkedProducts, setLinkedProducts] = useState<LinkedProduct[]>([]);
+  const activeRowId = activeRow?.id as string | undefined;
+  useEffect(() => {
+    if (open && activeRowId) {
+      getFabricOrderLinkedProducts(activeRowId)
+        .then((data) => setLinkedProducts(data as LinkedProduct[]))
+        .catch(() => setLinkedProducts([]));
+    } else {
+      setLinkedProducts([]);
+    }
+  }, [open, activeRowId]);
+
+  // Update form when navigating between orders
+  function navigateTo(index: number) {
+    if (index < 0 || index >= editingRows.length) return;
+    setNavIndex(index);
+    loadRowIntoForm(editingRows[index]);
+    setShowDeleteConfirm(false);
+  }
 
   function updateField(field: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -239,16 +311,16 @@ export function FabricOrderSheet({
   }
 
   function handleStyleSelect(skuCode: string) {
-    // Append to existing styleNumbers (comma-separated)
+    // Append to existing articleNumbers (comma-separated)
     setForm((prev) => {
-      const existing = prev.styleNumbers.trim();
+      const existing = prev.articleNumbers.trim();
       if (existing) {
         // Don't add duplicate
         const parts = existing.split(",").map((s) => s.trim());
         if (parts.includes(skuCode)) return prev;
-        return { ...prev, styleNumbers: `${existing}, ${skuCode}` };
+        return { ...prev, articleNumbers: `${existing}, ${skuCode}` };
       }
-      return { ...prev, styleNumbers: skuCode };
+      return { ...prev, articleNumbers: skuCode };
     });
   }
 
@@ -262,18 +334,38 @@ export function FabricOrderSheet({
       toast.error("Fabric Vendor is required");
       return;
     }
+    if (!form.colour.trim()) {
+      toast.error("Colour is required");
+      return;
+    }
+    if (toNum(form.costPerUnit) === null) {
+      toast.error("Cost/Unit is required");
+      return;
+    }
+    if (toNum(form.fabricOrderedQuantityKg) === null) {
+      toast.error("Ordered Qty is required");
+      return;
+    }
+    if (!form.orderStatus) {
+      toast.error("Order Status is required");
+      return;
+    }
+    if (!form.garmentingAt.trim()) {
+      toast.error("Garmenting At is required");
+      return;
+    }
 
     setSubmitting(true);
     try {
       const payload = {
         fabricVendorId: form.fabricVendorId,
-        styleNumbers: form.styleNumbers,
+        articleNumbers: form.articleNumbers,
         fabricName: form.fabricName,
         colour: form.colour,
         gender: form.gender || null,
         invoiceNumber: form.invoiceNumber || null,
-        receivedAt: form.receivedAt || null,
-        orderDate: form.orderDate || null,
+        receivedAt: toISODate(form.receivedAt || null),
+        orderDate: toISODate(form.orderDate || null),
         availableColour: form.availableColour || null,
         costPerUnit: toNum(form.costPerUnit),
         fabricOrderedQuantityKg: toNum(form.fabricOrderedQuantityKg),
@@ -284,15 +376,46 @@ export function FabricOrderSheet({
         garmentingAt: form.garmentingAt || null,
       };
 
-      if (isEditing && editingRow?.id) {
-        await updateFabricOrder(String(editingRow.id), payload);
+      if (isEditing && activeRow?.id) {
+        const { autoAdvanced } = await updateFabricOrder(String(activeRow.id), payload);
         toast.success("Fabric order updated");
+        showAutoAdvanceToast(autoAdvanced);
+        onOpenChange(false);
+        router.refresh();
       } else {
-        await createFabricOrder({ ...payload, phaseId });
-        toast.success("Fabric order created");
+        // Check for existing orders with same fabric+colour in this phase (info only)
+        if (payload.colour && payload.fabricName) {
+          const existing = await findExistingOrdersForFabricColour(
+            phaseId,
+            payload.fabricName,
+            payload.colour,
+          );
+          if (existing.length > 0) {
+            const totalQty = existing.reduce((sum, o) => sum + (Number(o.fabricOrderedQuantityKg) || 0), 0);
+            const styles = existing.map((o) => o.articleNumbers).filter(Boolean).join(", ");
+            toast.info(
+              `Note: ${existing.length} existing order${existing.length > 1 ? "s" : ""} for ${payload.fabricName} / ${payload.colour} (${totalQty}kg${styles ? `, styles: ${styles}` : ""}). New separate order created.`,
+              { duration: 6000 }
+            );
+          }
+        }
+        const { order, linkedCount, autoAdvanced } = await createFabricOrder({ ...payload, phaseId });
+        if (linkedCount > 0) {
+          toast.success(`Fabric order created — linked to ${linkedCount} article order${linkedCount === 1 ? "" : "s"}`);
+        } else {
+          toast.success("Fabric order created", {
+            description: "No matching article orders found.",
+            action: {
+              label: "Create article order",
+              onClick: () => router.push(`/products?prefillFromFabricOrderId=${order.id}`),
+            },
+            duration: 8000,
+          });
+        }
+        showAutoAdvanceToast(autoAdvanced);
+        onOpenChange(false);
+        router.refresh();
       }
-      onOpenChange(false);
-      router.refresh();
     } catch {
       toast.error(isEditing ? "Failed to update fabric order" : "Failed to create fabric order");
     } finally {
@@ -301,10 +424,10 @@ export function FabricOrderSheet({
   }
 
   async function handleDelete() {
-    if (!editingRow?.id) return;
+    if (!activeRow?.id) return;
     setDeleting(true);
     try {
-      await deleteFabricOrder(String(editingRow.id));
+      await deleteFabricOrder(String(activeRow.id));
       toast.success("Fabric order deleted");
       onOpenChange(false);
       router.refresh();
@@ -327,101 +450,134 @@ export function FabricOrderSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="max-w-[750px] w-full overflow-y-auto border-t-4 border-t-blue-500">
-        <SheetHeader className="pr-12">
+      <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-blue-500">
+        <SheetHeader className="pr-12 pb-1">
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <SheetTitle>{isEditing ? "Edit Fabric Order" : "New Fabric Order"}</SheetTitle>
-                <span className="text-[10px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Order</span>
+              <div className="flex items-center gap-1.5">
+                <SheetTitle className="text-sm">{isEditing ? "Edit Fabric Order" : "New Fabric Order"}</SheetTitle>
+                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1 py-0.5 rounded leading-none">Order</span>
               </div>
-              <SheetDescription>
+              <SheetDescription className="text-[11px]">
                 {isEditing
                   ? "Update the fabric order details below"
                   : "Enter fabric name to auto-populate from Fabrics Master DB"}
               </SheetDescription>
+              {hasMultipleOrders && (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    disabled={navIndex === 0}
+                    onClick={() => navigateTo(navIndex - 1)}
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    Order {navIndex + 1} of {editingRows.length}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 w-6 p-0"
+                    disabled={navIndex === editingRows.length - 1}
+                    onClick={() => navigateTo(navIndex + 1)}
+                  >
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
             <button
               type="button"
               onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
             >
               <ChevronsUpDown className="h-3 w-3" />
-              {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+              {allExpanded ? "Collapse" : "Expand"}
             </button>
           </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-3 px-4 overflow-y-auto">
+        <div className="flex-1 space-y-2 px-4 overflow-y-auto">
           {/* Fabric Info */}
           <CollapsibleSection
             title="Fabric Info"
             expanded={expandedSections.fabricInfo}
             onToggle={() => toggleSection("fabricInfo")}
           >
-            <div className="grid grid-cols-3 gap-3">
-              <div className="col-span-2 space-y-1">
-                <Label className="text-xs">Fabric Name *</Label>
+            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 110px 110px" }}>
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Fabric Name *</Label>
                 <Combobox
                   value={form.fabricName}
                   onValueChange={handleFabricNameSelect}
                   options={fabricNameOptions}
-                  placeholder="Search fabric name or vendor..."
+                  placeholder="Search fabric..."
                 />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Fabric Vendor *</Label>
+              <div className="space-y-0.5 min-w-0 overflow-hidden">
+                <Label className="text-[11px]">Vendor *</Label>
                 <Select value={form.fabricVendorId} onValueChange={(v) => updateField("fabricVendorId", v ?? "")}>
-                  <SelectTrigger>
-                    <span className="truncate">{vendorLabels[form.fabricVendorId] || "Select"}</span>
+                  <SelectTrigger className="h-8 text-xs w-full overflow-hidden">
+                    <span className="truncate block">{vendorLabels[form.fabricVendorId] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
                     {vendors.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      <SelectItem key={v.id} value={v.id} className="text-xs">{v.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Colour</Label>
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Colour *</Label>
                 {colourOptions.length > 0 ? (
                   <Combobox
                     value={form.colour}
                     onValueChange={(v) => updateField("colour", v)}
                     options={colourOptions}
-                    placeholder="Select colour..."
+                    placeholder="Colour..."
                   />
                 ) : (
-                  <Input value={form.colour} onChange={(e) => updateField("colour", e.target.value)} placeholder={form.fabricName ? "No colours in master" : "Select fabric first"} />
+                  <Input className="h-8 text-xs" value={form.colour} onChange={(e) => updateField("colour", e.target.value)} placeholder={form.fabricName ? "No colours" : "Fabric first"} />
                 )}
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Avail. Colour</Label>
-                {colourOptions.length > 0 ? (
-                  <Combobox
-                    value={form.availableColour}
-                    onValueChange={(v) => updateField("availableColour", v)}
-                    options={colourOptions}
-                    placeholder="Select colour..."
-                  />
-                ) : (
-                  <Input value={form.availableColour} onChange={(e) => updateField("availableColour", e.target.value)} placeholder={form.fabricName ? "No colours in master" : "Select fabric first"} />
-                )}
+            </div>
+          </CollapsibleSection>
+
+          {/* Quantities & Cost — moved up per requirement */}
+          <CollapsibleSection
+            title="Quantities & Cost"
+            expanded={expandedSections.quantitiesCost}
+            onToggle={() => toggleSection("quantitiesCost")}
+          >
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Cost/Unit (Rs) *</Label>
+                <Input className="h-8 text-xs" type="number" step="0.01" value={form.costPerUnit} onChange={(e) => updateField("costPerUnit", e.target.value)} />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Gender</Label>
-                <Select value={form.gender} onValueChange={(v) => updateField("gender", v ?? "")}>
-                  <SelectTrigger>
-                    <span className="truncate">{GENDER_LABELS[form.gender] || "Select"}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(GENDER_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Ordered Qty (kg) *</Label>
+                <Input className="h-8 text-xs" type="number" step="0.01" value={form.fabricOrderedQuantityKg} onChange={(e) => updateField("fabricOrderedQuantityKg", e.target.value)} />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Shipped Qty (kg)</Label>
+                <Input className="h-8 text-xs" type="number" step="0.01" value={form.fabricShippedQuantityKg} onChange={(e) => updateField("fabricShippedQuantityKg", e.target.value)} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded bg-gray-50 border border-gray-200 px-2 py-1.5">
+                <div className="text-[9px] text-muted-foreground">Expected = Unit x Ordered</div>
+                <div className="text-xs font-semibold">
+                  {computedExpectedCost > 0 ? `Rs ${computedExpectedCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
+                </div>
+              </div>
+              <div className="rounded bg-gray-50 border border-gray-200 px-2 py-1.5">
+                <div className="text-[9px] text-muted-foreground">Actual = Unit x Shipped</div>
+                <div className="text-xs font-semibold">
+                  {computedActualCost > 0 ? `Rs ${computedActualCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
+                </div>
               </div>
             </div>
           </CollapsibleSection>
@@ -432,137 +588,141 @@ export function FabricOrderSheet({
             expanded={expandedSections.orderDetails}
             onToggle={() => toggleSection("orderDetails")}
           >
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Order Status</Label>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Order Status *</Label>
                 <Select value={form.orderStatus} onValueChange={(v) => updateField("orderStatus", v ?? "DRAFT_ORDER")}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs w-full">
                     <span className="truncate">{FABRIC_ORDER_STATUS_LABELS[form.orderStatus] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
                     {Object.entries(FABRIC_ORDER_STATUS_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                      <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Garmenting Location</Label>
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Garmenting At *</Label>
                 <Select value={form.garmentingAt} onValueChange={(v) => updateField("garmentingAt", v ?? "")}>
-                  <SelectTrigger>
+                  <SelectTrigger className="h-8 text-xs w-full">
                     <span className="truncate">{form.garmentingAt || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
                     {garmentingLocations.map((loc) => (
-                      <SelectItem key={loc} value={loc}>{loc}</SelectItem>
+                      <SelectItem key={loc} value={loc} className="text-xs">{loc}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Invoice #</Label>
-                <Input value={form.invoiceNumber} onChange={(e) => updateField("invoiceNumber", e.target.value)} />
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Invoice #</Label>
+                <Input className="h-8 text-xs" value={form.invoiceNumber} onChange={(e) => updateField("invoiceNumber", e.target.value)} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Order Date</Label>
-                <Input type="date" value={form.orderDate} onChange={(e) => updateField("orderDate", e.target.value)} />
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Order Date</Label>
+                <Input className="h-8 text-xs" value={form.orderDate} onChange={(e) => updateField("orderDate", e.target.value)} placeholder="e.g. 15 Nov 2025" />
               </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Received At</Label>
-                <Input type="date" value={form.receivedAt} onChange={(e) => updateField("receivedAt", e.target.value)} />
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Received At</Label>
+                <Input className="h-8 text-xs" value={form.receivedAt} onChange={(e) => updateField("receivedAt", e.target.value)} placeholder="e.g. 15 Nov 2025" />
               </div>
-              <div className="flex items-end pb-1.5 gap-2">
+              <div className="flex items-end pb-1 gap-1.5">
                 <button
                   type="button"
                   onClick={() => updateField("isRepeat", !form.isRepeat)}
-                  className={`h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0 ${form.isRepeat ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
+                  className={`h-3.5 w-3.5 rounded border flex items-center justify-center transition-colors shrink-0 ${form.isRepeat ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
                 >
                   {form.isRepeat && (
-                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <svg className="h-2.5 w-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
                 </button>
-                <Label className="text-xs">Repeat Order</Label>
+                <Label className="text-[11px]">Repeat</Label>
               </div>
             </div>
           </CollapsibleSection>
 
-          {/* Styles */}
+          {/* Articles */}
           <CollapsibleSection
-            title="Styles"
+            title="Articles"
             expanded={expandedSections.styles}
             onToggle={() => toggleSection("styles")}
           >
-            <div className="space-y-1">
-              <Label className="text-xs">Fabric used for styles</Label>
-              <Combobox
-                value=""
-                onValueChange={handleStyleSelect}
-                options={styleOptions}
-                placeholder="Search SKU, style, article, name, type..."
-              />
-              {form.styleNumbers && (
-                <div className="flex items-center justify-between gap-2 mt-1 p-1.5 bg-gray-50 rounded border">
-                  <span className="text-xs text-muted-foreground">{form.styleNumbers}</span>
-                  <button
-                    type="button"
-                    className="text-xs text-red-500 hover:text-red-700 shrink-0"
-                    onClick={() => updateField("styleNumbers", "")}
-                  >
-                    Clear
-                  </button>
+            <div className="grid gap-2" style={{ gridTemplateColumns: "4fr 1fr" }}>
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Article Numbers</Label>
+                <MultiCombobox
+                  values={form.articleNumbers ? form.articleNumbers.split(",").map((s) => s.trim()).filter(Boolean) : []}
+                  onValuesChange={(vals) => updateField("articleNumbers", vals.join(", "))}
+                  options={articleOptions}
+                  placeholder="Search article number, article code, product name, product type"
+                  showValueInChip
+                />
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <Label className="text-[11px]">Gender</Label>
+                <Select value={form.gender} onValueChange={(v) => updateField("gender", v ?? "")}>
+                  <SelectTrigger className="h-8 text-xs w-full">
+                    <span className="truncate">{GENDER_LABELS[form.gender] || "Select"}</span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(GENDER_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k} className="text-xs">{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CollapsibleSection>
+
+          {isEditing && (
+            <CollapsibleSection
+              title={`Linked Article Orders (${linkedProducts.length})`}
+              expanded={expandedSections.linkedProducts}
+              onToggle={() => toggleSection("linkedProducts")}
+            >
+              {linkedProducts.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-1">
+                  No article orders linked to this fabric order.
+                </p>
+              ) : (
+                <div className="border rounded divide-y">
+                  {linkedProducts.map((lp) => (
+                    <div key={lp.id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="font-medium">{lp.articleNumber || "—"}</span>
+                        <span className="text-muted-foreground">/</span>
+                        <span>{lp.colourOrdered}</span>
+                        <span className="text-[9px] text-muted-foreground px-1 py-0.5 rounded bg-muted">
+                          Fabric {lp.fabricSlot}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {lp.garmentNumber !== null && (
+                          <span className="text-muted-foreground">{lp.garmentNumber} pcs</span>
+                        )}
+                        <span className="text-[9px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                          {PRODUCT_STATUS_LABELS[lp.status] || lp.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-            </div>
-          </CollapsibleSection>
-
-          {/* Quantities & Cost */}
-          <CollapsibleSection
-            title="Quantities & Cost"
-            expanded={expandedSections.quantitiesCost}
-            onToggle={() => toggleSection("quantitiesCost")}
-          >
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1">
-                <Label className="text-xs">Cost/Unit (Rs)</Label>
-                <Input type="number" step="0.01" value={form.costPerUnit} onChange={(e) => updateField("costPerUnit", e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Ordered Qty (kg)</Label>
-                <Input type="number" step="0.01" value={form.fabricOrderedQuantityKg} onChange={(e) => updateField("fabricOrderedQuantityKg", e.target.value)} />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Shipped Qty (kg)</Label>
-                <Input type="number" step="0.01" value={form.fabricShippedQuantityKg} onChange={(e) => updateField("fabricShippedQuantityKg", e.target.value)} />
-              </div>
-            </div>
-            {/* Computed fields */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
-                <div className="text-[10px] text-muted-foreground">Expected Cost = Cost/Unit x Ordered Qty</div>
-                <div className="text-sm font-semibold mt-0.5">
-                  {computedExpectedCost > 0 ? `Rs ${computedExpectedCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
-                </div>
-              </div>
-              <div className="rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
-                <div className="text-[10px] text-muted-foreground">Actual Cost = Cost/Unit x Shipped Qty</div>
-                <div className="text-sm font-semibold mt-0.5">
-                  {computedActualCost > 0 ? `Rs ${computedActualCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
-                </div>
-              </div>
-            </div>
-          </CollapsibleSection>
+            </CollapsibleSection>
+          )}
         </div>
 
-        <SheetFooter className="flex-col gap-2">
+        <SheetFooter className="flex-col gap-1.5 pt-2">
           <div className={`flex gap-2 ${isEditing ? "" : "flex-col"}`}>
-            <Button onClick={handleSubmit} disabled={submitting || deleting} className="flex-1">
+            <Button size="lg" onClick={handleSubmit} disabled={submitting || deleting} className="flex-1">
               {submitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   {isEditing ? "Updating..." : "Creating..."}
                 </>
               ) : (
@@ -572,44 +732,26 @@ export function FabricOrderSheet({
             {isEditing && !showDeleteConfirm && (
               <Button
                 variant="destructive"
+                size="lg"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={submitting || deleting}
                 className="flex-1"
               >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete Order
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                Delete
               </Button>
             )}
           </div>
           {isEditing && showDeleteConfirm && (
-            <div className="w-full rounded-lg border border-red-200 bg-red-50 p-3 space-y-2">
-              <p className="text-sm font-medium text-red-800">
-                Are you sure you want to delete this fabric order? This action cannot be undone.
+            <div className="w-full rounded border border-red-200 bg-red-50 p-2 space-y-1.5">
+              <p className="text-xs font-medium text-red-800">
+                Delete this fabric order? This cannot be undone.
               </p>
               <div className="flex gap-2">
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  className="flex-1"
-                >
-                  {deleting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Deleting...
-                    </>
-                  ) : (
-                    "Yes, Delete"
-                  )}
+                <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting} className="flex-1 h-7 text-xs">
+                  {deleting ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Deleting...</> : "Yes, Delete"}
                 </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowDeleteConfirm(false)}
-                  disabled={deleting}
-                  className="flex-1"
-                >
+                <Button variant="outline" size="sm" onClick={() => setShowDeleteConfirm(false)} disabled={deleting} className="flex-1 h-7 text-xs">
                   Cancel
                 </Button>
               </div>

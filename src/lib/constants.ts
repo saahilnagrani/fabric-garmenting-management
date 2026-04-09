@@ -1,20 +1,26 @@
 export const PRODUCT_STATUS_LABELS: Record<string, string> = {
-  PROCESSING: "Processing",
-  SAMPLE_WITH_ST: "Sample with ST",
-  SAMPLE_READY: "Sample Ready",
-  READY_AT_GARSEM: "Ready at Garsem",
-  READY_AT_MUMTAZ: "Ready at Mumtaz",
+  PLANNED: "Planned",
+  FABRIC_ORDERED: "Fabric Ordered",
+  FABRIC_RECEIVED: "Fabric Received",
+  SAMPLING: "Sampling",
+  CUTTING_REPORT: "Cutting Report",
+  IN_PRODUCTION: "In Production",
+  READY_AT_GARMENTER: "Ready at Garmenter",
+  SHIPPED_TO_WAREHOUSE: "Shipped to Warehouse",
   RECEIVED_AT_WAREHOUSE: "Received at Warehouse",
-  SHIPPED: "Shipped",
+  SHIPPED: "Shipped to Customer",
 };
 
 export const PRODUCT_STATUS_COLORS: Record<string, string> = {
-  PROCESSING: "bg-yellow-100 text-yellow-800",
-  SAMPLE_WITH_ST: "bg-blue-100 text-blue-800",
-  SAMPLE_READY: "bg-indigo-100 text-indigo-800",
-  READY_AT_GARSEM: "bg-purple-100 text-purple-800",
-  READY_AT_MUMTAZ: "bg-purple-100 text-purple-800",
-  RECEIVED_AT_WAREHOUSE: "bg-green-100 text-green-800",
+  PLANNED: "bg-slate-100 text-slate-800",
+  FABRIC_ORDERED: "bg-amber-100 text-amber-800",
+  FABRIC_RECEIVED: "bg-yellow-100 text-yellow-800",
+  SAMPLING: "bg-orange-100 text-orange-800",
+  CUTTING_REPORT: "bg-rose-100 text-rose-800",
+  IN_PRODUCTION: "bg-sky-100 text-sky-800",
+  READY_AT_GARMENTER: "bg-stone-200 text-stone-800",
+  SHIPPED_TO_WAREHOUSE: "bg-indigo-100 text-indigo-800",
+  RECEIVED_AT_WAREHOUSE: "bg-lime-100 text-lime-800",
   SHIPPED: "bg-emerald-100 text-emerald-800",
 };
 
@@ -50,14 +56,15 @@ export const FABRIC_STATUS_LABELS: Record<string, string> = {
 };
 
 export const FABRIC_STATUS_COLORS: Record<string, string> = {
-  FULLY_CONSUMED: "bg-green-100 text-green-800",
-  TO_BE_CONSUMED: "bg-yellow-100 text-yellow-800",
-  FULLY_INWARDED: "bg-blue-100 text-blue-800",
+  FULLY_CONSUMED: "bg-emerald-100 text-emerald-800",
+  TO_BE_CONSUMED: "bg-amber-100 text-amber-800",
+  FULLY_INWARDED: "bg-stone-200 text-stone-800",
   PARTIALLY_INWARDED: "bg-orange-100 text-orange-800",
 };
 
 export const FABRIC_ORDER_STATUS_LABELS: Record<string, string> = {
   DRAFT_ORDER: "Draft Order",
+  DISCUSSED_WITH_VENDOR: "Discussed with Vendor",
   ORDERED: "Ordered",
   PARTIALLY_SHIPPED: "Partially Shipped",
   SHIPPED: "Shipped",

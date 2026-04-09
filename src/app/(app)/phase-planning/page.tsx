@@ -25,7 +25,7 @@ export default async function PhasePlanningPage() {
       <div>
         <h1 className="text-2xl font-bold">Phase Planning</h1>
         <p className="text-sm text-muted-foreground">
-          Plan SKU/Style and Fabric orders for {phase.name}
+          Plan Article and Fabric orders for {phase.name}
         </p>
       </div>
       <PlanningForm

@@ -1,9 +1,10 @@
 import { getCurrentPhase } from "@/actions/phases";
-import { getDashboardStats } from "@/actions/dashboard";
+import { getDashboardStats, getDashboardAlerts } from "@/actions/dashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PRODUCT_STATUS_LABELS, EXPENSE_TYPE_LABELS } from "@/lib/constants";
 import { formatCurrency, formatNumber } from "@/lib/formatters";
 import { Package, Scissors, Receipt, TrendingUp } from "lucide-react";
+import { AlertsPanel } from "@/components/dashboard/alerts-panel";
 
 export default async function DashboardPage() {
   const phase = await getCurrentPhase();
@@ -19,7 +20,10 @@ export default async function DashboardPage() {
     );
   }
 
-  const stats = await getDashboardStats(phase.id);
+  const [stats, alerts] = await Promise.all([
+    getDashboardStats(phase.id),
+    getDashboardAlerts(phase.id),
+  ]);
   const stitchedPercent =
     stats.totalGarmentsPlanned > 0
       ? Math.round(
@@ -40,6 +44,8 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold">Phase {phase.number} - {phase.name}</h1>
         <p className="text-muted-foreground">Dashboard overview</p>
       </div>
+
+      <AlertsPanel alerts={alerts} />
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
@@ -75,7 +81,7 @@ export default async function DashboardPage() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.totalProducts}</div>
             <p className="text-xs text-muted-foreground">
-              SKUs in this phase
+              Articles in this phase
             </p>
           </CardContent>
         </Card>

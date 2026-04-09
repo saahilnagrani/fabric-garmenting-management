@@ -2,8 +2,11 @@
 
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { requirePermission } from "@/lib/require-permission";
+import { logAction } from "@/lib/audit";
 
 export async function getExpenses(phaseId: string, filters?: { vendorId?: string; specification?: string }) {
+  await requirePermission("inventory:expenses:view");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { phaseId };
   if (filters?.vendorId) where.vendorId = filters.vendorId;
@@ -17,6 +20,7 @@ export async function getExpenses(phaseId: string, filters?: { vendorId?: string
 }
 
 export async function getExpense(id: string) {
+  await requirePermission("inventory:expenses:view");
   return db.expense.findUnique({
     where: { id },
     include: { vendor: true, phase: true },
@@ -25,25 +29,32 @@ export async function getExpense(id: string) {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createExpense(data: any) {
+  const session = await requirePermission("inventory:expenses:create");
   const expense = await db.expense.create({ data });
+  logAction(session.user!.id!, session.user!.name!, "CREATE", "Expense", expense.id);
   revalidatePath("/expenses");
   return expense;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateExpense(id: string, data: any) {
+  const session = await requirePermission("inventory:expenses:edit");
   const expense = await db.expense.update({ where: { id }, data });
+  logAction(session.user!.id!, session.user!.name!, "UPDATE", "Expense", id);
   revalidatePath("/expenses");
   revalidatePath(`/expenses/${id}`);
   return expense;
 }
 
 export async function deleteExpense(id: string) {
+  const session = await requirePermission("inventory:expenses:delete");
   await db.expense.delete({ where: { id } });
+  logAction(session.user!.id!, session.user!.name!, "DELETE", "Expense", id);
   revalidatePath("/expenses");
 }
 
 export async function getExpenseWithOrders(id: string) {
+  await requirePermission("inventory:expenses:view");
   const expense = await db.expense.findUnique({
     where: { id },
     include: {
@@ -63,6 +74,7 @@ export async function getExpenseWithOrders(id: string) {
 }
 
 export async function getExpenseSummary(phaseId: string) {
+  await requirePermission("inventory:expenses:view");
   const expenses = await db.expense.findMany({ where: { phaseId } });
   const total = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
   const byType = expenses.reduce((acc, e) => {

@@ -5,20 +5,20 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  createProductType,
-  updateProductType,
-  deleteProductType,
-} from "@/actions/product-types";
+  createColour,
+  updateColour,
+  deleteColour,
+} from "@/actions/colours";
 import { toast } from "sonner";
 import { Pencil, Trash2, Plus, Check, X } from "lucide-react";
 
-type ProductType = {
+type Colour = {
   id: string;
   name: string;
   code: string;
 };
 
-export function ProductTypeList({ types }: { types: ProductType[] }) {
+export function ColourList({ colours }: { colours: Colour[] }) {
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
@@ -29,48 +29,48 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
 
   async function handleAdd() {
     if (!newName.trim()) {
-      toast.error("Type name is required");
+      toast.error("Colour name is required");
       return;
     }
     if (!newCode.trim()) {
-      toast.error("2-3 letter code is required (e.g. RN, SH, LO)");
+      toast.error("3-letter code is required (e.g. BLK, NVY)");
       return;
     }
     try {
-      await createProductType(newName, newCode);
+      await createColour(newName, newCode);
       setNewName("");
       setNewCode("");
       setAdding(false);
-      toast.success("Type added");
+      toast.success("Colour added");
       router.refresh();
     } catch {
-      toast.error("Failed to add type. It may already exist.");
+      toast.error("Failed to add colour. It may already exist.");
     }
   }
 
   async function handleUpdate(id: string) {
     if (!editingName.trim()) {
-      toast.error("Type name is required");
+      toast.error("Colour name is required");
       return;
     }
     try {
-      await updateProductType(id, editingName, editingCode);
+      await updateColour(id, editingName, editingCode);
       setEditingId(null);
-      toast.success("Type updated");
+      toast.success("Colour updated");
       router.refresh();
     } catch {
-      toast.error("Failed to update type. Name may already exist.");
+      toast.error("Failed to update colour. Name may already exist.");
     }
   }
 
   async function handleDelete(id: string, name: string) {
     if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
     try {
-      await deleteProductType(id);
-      toast.success("Type deleted");
+      await deleteColour(id);
+      toast.success("Colour deleted");
       router.refresh();
     } catch {
-      toast.error("Failed to delete type");
+      toast.error("Failed to delete colour");
     }
   }
 
@@ -82,7 +82,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              placeholder="Type name (e.g. Roundneck)"
+              placeholder="Colour name (e.g. Black)"
               autoFocus
               className="flex-1"
               onKeyDown={(e) => {
@@ -96,7 +96,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
             <Input
               value={newCode}
               onChange={(e) => setNewCode(e.target.value.toUpperCase().slice(0, 3))}
-              placeholder="Code (e.g. RN)"
+              placeholder="Code (e.g. BLK)"
               className="w-24"
               maxLength={3}
               onKeyDown={(e) => {
@@ -125,23 +125,23 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
           </div>
         ) : (
           <Button size="sm" onClick={() => setAdding(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Add Type
+            <Plus className="h-4 w-4 mr-1" /> Add Colour
           </Button>
         )}
       </div>
 
       <div className="border rounded-lg divide-y">
-        {types.length === 0 && (
+        {colours.length === 0 && (
           <div className="px-4 py-8 text-center text-muted-foreground text-sm">
-            No product types yet. Click &quot;Add Type&quot; to create one.
+            No colours yet. Click &quot;Add Colour&quot; to create one.
           </div>
         )}
-        {types.map((t) => (
+        {colours.map((c) => (
           <div
-            key={t.id}
+            key={c.id}
             className="group flex items-center gap-2 px-4 py-2.5 hover:bg-muted/50 transition-colors cursor-pointer"
           >
-            {editingId === t.id ? (
+            {editingId === c.id ? (
               <>
                 <Input
                   value={editingName}
@@ -149,7 +149,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
                   className="flex-1 h-8"
                   autoFocus
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleUpdate(t.id);
+                    if (e.key === "Enter") handleUpdate(c.id);
                     if (e.key === "Escape") setEditingId(null);
                   }}
                 />
@@ -159,7 +159,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
                   className="w-24 h-8"
                   maxLength={3}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleUpdate(t.id);
+                    if (e.key === "Enter") handleUpdate(c.id);
                     if (e.key === "Escape") setEditingId(null);
                   }}
                 />
@@ -167,7 +167,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
                   size="sm"
                   variant="ghost"
                   className="h-8 w-8 p-0"
-                  onClick={() => handleUpdate(t.id)}
+                  onClick={() => handleUpdate(c.id)}
                 >
                   <Check className="h-4 w-4" />
                 </Button>
@@ -182,18 +182,18 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
               </>
             ) : (
               <>
-                <span className="flex-1 text-sm">{t.name}</span>
+                <span className="flex-1 text-sm">{c.name}</span>
                 <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                  {t.code || "—"}
+                  {c.code || "—"}
                 </span>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-8 w-8 p-0 opacity-0 group-hover:opacity-100 hover:opacity-100"
                   onClick={() => {
-                    setEditingId(t.id);
-                    setEditingName(t.name);
-                    setEditingCode(t.code || "");
+                    setEditingId(c.id);
+                    setEditingName(c.name);
+                    setEditingCode(c.code || "");
                   }}
                 >
                   <Pencil className="h-3.5 w-3.5" />
@@ -202,7 +202,7 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
                   size="sm"
                   variant="ghost"
                   className="h-8 w-8 p-0 text-destructive opacity-0 group-hover:opacity-100 hover:opacity-100"
-                  onClick={() => handleDelete(t.id, t.name)}
+                  onClick={() => handleDelete(c.id, c.name)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>

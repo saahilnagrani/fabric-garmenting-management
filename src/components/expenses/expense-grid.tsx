@@ -184,7 +184,7 @@ export function ExpenseGrid({
       field: "sourceType", headerName: "Source", minWidth: 80, maxWidth: 100, editable: false, sortable: true,
       cellRenderer: (params: { value: string }) => {
         if (!params.value || params.value === "MANUAL") return <span className="text-xs text-muted-foreground">Manual</span>;
-        const label = params.value === "FABRIC_ORDER" ? "Fabric" : "SKU";
+        const label = params.value === "FABRIC_ORDER" ? "Fabric" : "Article";
         return <span className="inline-flex items-center rounded bg-blue-100 px-1.5 py-0.5 text-xs font-medium text-blue-700">Auto: {label}</span>;
       },
     },
@@ -321,6 +321,7 @@ export function ExpenseGrid({
 
       <div className="ag-theme-quartz" style={{ height: "600px", width: "100%" }}>
         <AgGridReact
+          theme="legacy"
           rowData={enrichedData}
           columnDefs={columnDefs}
           onGridReady={(e: GridReadyEvent) => {

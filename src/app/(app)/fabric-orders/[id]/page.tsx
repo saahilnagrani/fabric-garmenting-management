@@ -33,7 +33,7 @@ export default async function FabricOrderDetailPage({
         <CardHeader><CardTitle className="text-base">Details</CardTitle></CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div><p className="text-xs text-muted-foreground">Fabric Vendor</p><p className="font-medium">{order.fabricVendor.name}</p></div>
-          <div><p className="text-xs text-muted-foreground">Style Numbers</p><p className="font-medium">{order.styleNumbers}</p></div>
+          <div><p className="text-xs text-muted-foreground">Article Numbers</p><p className="font-medium">{order.articleNumbers}</p></div>
           <div><p className="text-xs text-muted-foreground">Fabric</p><p className="font-medium">{order.fabricName}</p></div>
           <div><p className="text-xs text-muted-foreground">Colour</p><p className="font-medium">{order.colour}</p></div>
           <div><p className="text-xs text-muted-foreground">Gender</p><p className="font-medium">{order.gender ? GENDER_LABELS[order.gender] : "-"}</p></div>
