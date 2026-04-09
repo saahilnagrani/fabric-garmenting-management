@@ -2,6 +2,16 @@ import NextAuth from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { compare } from "bcryptjs";
 import { db } from "@/lib/db";
+import type { UserRole, InventoryRole, SourcingRole } from "@/generated/prisma/client";
+
+declare module "next-auth" {
+  interface User {
+    role?: UserRole;
+    inventoryRole?: InventoryRole | null;
+    sourcingRole?: SourcingRole | null;
+    permissionOverrides?: string[];
+  }
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
@@ -35,6 +45,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           id: user.id,
           name: user.name,
           email: user.email,
+          role: user.role,
+          inventoryRole: user.inventoryRole,
+          sourcingRole: user.sourcingRole,
+          permissionOverrides: user.permissionOverrides,
         };
       },
     }),
@@ -43,12 +57,20 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.role = user.role;
+        token.inventoryRole = user.inventoryRole;
+        token.sourcingRole = user.sourcingRole;
+        token.permissionOverrides = user.permissionOverrides;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.role = token.role as UserRole;
+        session.user.inventoryRole = token.inventoryRole as InventoryRole | null;
+        session.user.sourcingRole = token.sourcingRole as SourcingRole | null;
+        session.user.permissionOverrides = token.permissionOverrides as string[];
       }
       return session;
     },

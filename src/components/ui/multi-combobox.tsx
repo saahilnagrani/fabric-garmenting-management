@@ -4,16 +4,17 @@ import * as React from "react";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon, CheckIcon } from "lucide-react";
+import { ChevronDownIcon, CheckIcon, X } from "lucide-react";
 
 type OptionItem = string | { label: string; value: string; searchText?: string };
 
-interface ComboboxProps {
-  value: string;
-  onValueChange: (value: string) => void;
+interface MultiComboboxProps {
+  values: string[];
+  onValuesChange: (values: string[]) => void;
   options: OptionItem[];
   placeholder?: string;
   className?: string;
+  showValueInChip?: boolean;
 }
 
 function getLabel(opt: OptionItem): string {
@@ -29,16 +30,17 @@ function getSearchText(opt: OptionItem): string {
   return opt.searchText || opt.label;
 }
 
-export function Combobox({
-  value,
-  onValueChange,
+export function MultiCombobox({
+  values,
+  onValuesChange,
   options,
   placeholder = "Select...",
   className,
-}: ComboboxProps) {
+  showValueInChip = false,
+}: MultiComboboxProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
-  const triggerRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
@@ -47,11 +49,13 @@ export function Combobox({
     getSearchText(opt).toLowerCase().includes(search.toLowerCase())
   );
 
-  // Find the display label for the current value
-  const displayLabel = React.useMemo(() => {
-    const match = options.find((opt) => getValue(opt) === value);
-    return match ? getLabel(match) : value;
-  }, [options, value]);
+  const labelMap = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    options.forEach((opt) => {
+      map[getValue(opt)] = getLabel(opt);
+    });
+    return map;
+  }, [options]);
 
   const updatePosition = useCallback(() => {
     if (triggerRef.current) {
@@ -85,10 +89,17 @@ export function Combobox({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  function handleSelect(opt: OptionItem) {
-    onValueChange(getValue(opt));
-    setOpen(false);
-    setSearch("");
+  function handleToggle(opt: OptionItem) {
+    const v = getValue(opt);
+    if (values.includes(v)) {
+      onValuesChange(values.filter((val) => val !== v));
+    } else {
+      onValuesChange([...values, v]);
+    }
+  }
+
+  function handleRemove(v: string) {
+    onValuesChange(values.filter((val) => val !== v));
   }
 
   const dropdown = open
@@ -99,7 +110,7 @@ export function Combobox({
             position: "fixed",
             top: pos.top,
             left: pos.left,
-            width: pos.width,
+            minWidth: Math.max(pos.width, 256),
             zIndex: 9999,
           }}
           className="rounded-lg border bg-popover shadow-md"
@@ -116,9 +127,6 @@ export function Combobox({
                   setOpen(false);
                   setSearch("");
                 }
-                if (e.key === "Enter" && filtered.length === 1) {
-                  handleSelect(filtered[0]);
-                }
               }}
             />
           </div>
@@ -131,19 +139,20 @@ export function Combobox({
               filtered.map((opt) => {
                 const optValue = getValue(opt);
                 const optLabel = getLabel(opt);
+                const selected = values.includes(optValue);
                 return (
                   <button
                     key={optValue}
                     type="button"
-                    onClick={() => handleSelect(opt)}
+                    onClick={() => handleToggle(opt)}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-md px-2 py-1 text-xs text-left cursor-default hover:bg-accent hover:text-accent-foreground overflow-hidden",
-                      value === optValue && "bg-accent"
+                      "flex w-full items-center justify-between rounded-md px-2 py-1 text-xs text-left whitespace-nowrap cursor-default hover:bg-accent hover:text-accent-foreground",
+                      selected && "bg-accent"
                     )}
                   >
-                    <span className="truncate">{optLabel}</span>
-                    {value === optValue && (
-                      <CheckIcon className="h-3 w-3 shrink-0 ml-1" />
+                    <span>{optLabel}</span>
+                    {selected && (
+                      <CheckIcon className="h-3 w-3 shrink-0 ml-2" />
                     )}
                   </button>
                 );
@@ -156,24 +165,54 @@ export function Combobox({
     : null;
 
   return (
-    <div className={cn("relative", className)}>
-      <button
-        ref={triggerRef}
-        type="button"
+    <div className={cn("relative", className)} ref={triggerRef}>
+      <div
+        role="button"
+        tabIndex={0}
         onClick={() => {
           setOpen(!open);
           if (!open) {
             setTimeout(() => inputRef.current?.focus(), 0);
           }
         }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen(!open);
+            if (!open) setTimeout(() => inputRef.current?.focus(), 0);
+          }
+        }}
         className={cn(
-          "flex w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-xs h-8 transition-colors outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
-          !value && "text-muted-foreground"
+          "flex w-full items-center justify-between rounded-lg border border-input bg-transparent px-2.5 py-2 text-xs min-h-8 transition-colors outline-none cursor-pointer focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+          values.length === 0 && "text-muted-foreground"
         )}
       >
-        <span className="truncate">{displayLabel || placeholder}</span>
+        <div className="flex flex-wrap gap-1 flex-1">
+          {values.length === 0 ? (
+            <span>{placeholder}</span>
+          ) : (
+            values.map((v) => (
+              <span
+                key={v}
+                className="inline-flex items-center gap-0.5 bg-muted text-foreground text-xs px-1.5 py-0.5 rounded"
+              >
+                {showValueInChip ? v : (labelMap[v] || v)}
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemove(v);
+                  }}
+                  className="hover:text-destructive"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))
+          )}
+        </div>
         <ChevronDownIcon className="ml-1 h-4 w-4 shrink-0 text-muted-foreground" />
-      </button>
+      </div>
       {dropdown}
     </div>
   );

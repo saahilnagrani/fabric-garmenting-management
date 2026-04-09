@@ -29,7 +29,7 @@ export default function LoginPage() {
       setError("Invalid email or password");
       setLoading(false);
     } else {
-      router.push("/dashboard");
+      router.push("/");
       router.refresh();
     }
   }
@@ -40,7 +40,7 @@ export default function LoginPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold">Hyperballik</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Inventory & Garmenting Management
+            Sign in to continue
           </p>
         </CardHeader>
         <CardContent>
