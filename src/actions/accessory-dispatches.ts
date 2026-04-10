@@ -125,6 +125,69 @@ export async function getDispatchSuggestionForProduct(
   };
 }
 
+/**
+ * Resolve every BOM line for an article (via its matching ProductMaster).
+ * Returns the accessory metadata plus per-piece quantity and the computed
+ * total quantity for this article's piece count. Used by the article order
+ * sheet to display the BOM alongside the order.
+ */
+export async function getBomForProduct(productId: string) {
+  await requirePermission("inventory:accessories:view");
+
+  const product = await db.product.findUnique({
+    where: { id: productId },
+    select: {
+      skuCode: true,
+      styleNumber: true,
+      articleNumber: true,
+      garmentNumber: true,
+      actualInwardTotal: true,
+    },
+  });
+  if (!product) return { lines: [], pieces: 0, masterFound: false };
+
+  let master = product.skuCode
+    ? await db.productMaster.findUnique({
+        where: { skuCode: product.skuCode },
+        select: { id: true },
+      })
+    : null;
+  if (!master) {
+    master = await db.productMaster.findFirst({
+      where: {
+        styleNumber: product.styleNumber,
+        articleNumber: product.articleNumber || undefined,
+      },
+      select: { id: true },
+    });
+  }
+  if (!master) return { lines: [], pieces: 0, masterFound: false };
+
+  const bom = await db.productMasterAccessory.findMany({
+    where: { productMasterId: master.id },
+    include: { accessory: true },
+  });
+
+  const pieces =
+    product.actualInwardTotal && product.actualInwardTotal > 0
+      ? product.actualInwardTotal
+      : product.garmentNumber || 0;
+
+  const lines = bom.map((b) => ({
+    accessoryId: b.accessoryId,
+    baseName: b.accessory.baseName,
+    colour: b.accessory.colour,
+    size: b.accessory.size,
+    category: b.accessory.category,
+    unit: b.accessory.unit,
+    quantityPerPiece: Number(b.quantityPerPiece),
+    totalQuantity: pieces * Number(b.quantityPerPiece),
+    notes: b.notes,
+  }));
+
+  return { lines, pieces, masterFound: true };
+}
+
 export type AutoDispatchResult = {
   productId: string;
   articleNumber: string | null;

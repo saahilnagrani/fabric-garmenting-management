@@ -12,6 +12,8 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
 import { createProduct, updateProduct, deleteProduct, getProductLinkedFabricOrders } from "@/actions/products";
+import { getBomForProduct } from "@/actions/accessory-dispatches";
+import { accessoryDisplayName } from "@/lib/accessory-display";
 import { GENDER_LABELS, PRODUCT_STATUS_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { showAutoAdvanceToast } from "@/lib/toast-helpers";
 import { Combobox } from "@/components/ui/combobox";
@@ -231,6 +233,7 @@ const SECTIONS = [
   "fabric1",
   "fabric2",
   "linkedFabricOrders",
+  "accessoryBom",
   "quantities",
   "garmentingCosts",
   "pricing",
@@ -383,7 +386,11 @@ export function ProductOrderSheet({
         (!!editingRow.fabric2Name || !!editingRow.fabric2CostPerKg || !!editingRow.fabric2OrderedQuantityKg);
       setExpandedSections(
         Object.fromEntries(
-          SECTIONS.map((s) => [s, s === "fabric2" ? (!isNew && fabric2HasData) : true])
+          SECTIONS.map((s) => {
+            if (s === "fabric2") return [s, !isNew && fabric2HasData];
+            if (s === "accessoryBom") return [s, false];
+            return [s, true];
+          })
         ) as Record<SectionName, boolean>
       );
     }
@@ -400,6 +407,23 @@ export function ProductOrderSheet({
         .catch(() => setLinkedFabricOrders([]));
     } else {
       setLinkedFabricOrders([]);
+    }
+  }, [open, editingRowId]);
+
+  // Fetch accessory BOM when editing an existing article
+  type BomLine = Awaited<ReturnType<typeof getBomForProduct>>["lines"][number];
+  const [bom, setBom] = useState<{ lines: BomLine[]; pieces: number; masterFound: boolean }>({
+    lines: [],
+    pieces: 0,
+    masterFound: false,
+  });
+  useEffect(() => {
+    if (open && editingRowId) {
+      getBomForProduct(editingRowId)
+        .then((data) => setBom(data))
+        .catch(() => setBom({ lines: [], pieces: 0, masterFound: false }));
+    } else {
+      setBom({ lines: [], pieces: 0, masterFound: false });
     }
   }, [open, editingRowId]);
 
@@ -1030,6 +1054,67 @@ export function ProductOrderSheet({
                     </button>
                   ))}
                 </div>
+              )}
+            </CollapsibleSection>
+          )}
+
+          {/* Accessory BOM - only visible when editing (needs a saved article
+              to resolve the matching ProductMaster). Collapsed by default. */}
+          {isEditing && (
+            <CollapsibleSection
+              title={`Accessory BOM (${bom.lines.length})`}
+              expanded={expandedSections.accessoryBom}
+              onToggle={() => toggleSection("accessoryBom")}
+            >
+              {!bom.masterFound ? (
+                <p className="text-[11px] text-muted-foreground py-1">
+                  No matching ProductMaster found for this SKU — BOM cannot be resolved.
+                </p>
+              ) : bom.lines.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-1">
+                  This article&apos;s ProductMaster has no accessory BOM configured.
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                    <span>
+                      {bom.lines.length} accessor{bom.lines.length === 1 ? "y" : "ies"} ·{" "}
+                      {bom.pieces > 0
+                        ? `${bom.pieces} pcs`
+                        : "no piece count set — totals will be 0"}
+                    </span>
+                  </div>
+                  <div className="border rounded divide-y">
+                    {bom.lines.map((line) => (
+                      <div
+                        key={line.accessoryId}
+                        className="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[9px] text-muted-foreground px-1 py-0.5 rounded bg-muted shrink-0">
+                            {line.category}
+                          </span>
+                          <span className="font-medium truncate">
+                            {accessoryDisplayName({
+                              baseName: line.baseName,
+                              colour: line.colour,
+                              size: line.size,
+                            })}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 text-[10px]">
+                          <span className="text-muted-foreground">
+                            {line.quantityPerPiece} {line.unit.toLowerCase()}/pc
+                          </span>
+                          <span className="font-semibold tabular-nums">
+                            = {line.totalQuantity.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{" "}
+                            {line.unit.toLowerCase()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
               )}
             </CollapsibleSection>
           )}
