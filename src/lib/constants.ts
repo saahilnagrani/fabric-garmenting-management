@@ -20,26 +20,29 @@ export const PRODUCT_STATUS_LABELS: Record<string, string> = {
   DELIVERED: "Delivered",
 };
 
+// Each entry pairs a light-mode bg+text with a dark-mode override so status
+// chips stay legible in both themes. Dark variants use the 900/30 + 200 pattern
+// for subtle fill with readable text on a dark canvas.
 export const PRODUCT_STATUS_COLORS: Record<string, string> = {
-  PLANNED: "bg-slate-100 text-slate-800",
-  FABRIC_ORDERED: "bg-amber-100 text-amber-800",
-  FABRIC_RECEIVED: "bg-yellow-100 text-yellow-800",
-  CUTTING_IN_PROGRESS: "bg-orange-100 text-orange-800",
-  CUTTING_COMPLETED: "bg-orange-200 text-orange-900",
-  CUTTING_REPORT_RECEIVED: "bg-rose-100 text-rose-800",
-  STITCHING_IN_PROGRESS: "bg-sky-100 text-sky-800",
-  STITCHING_COMPLETED: "bg-sky-200 text-sky-900",
-  TRIMS_ACCESSORIES_ATTACHED: "bg-cyan-100 text-cyan-800",
-  QC_IN_PROGRESS: "bg-purple-100 text-purple-800",
-  QC_APPROVED: "bg-violet-200 text-violet-900",
-  QC_FAILED: "bg-red-100 text-red-800",
-  PACKAGING_IN_PROGRESS: "bg-fuchsia-100 text-fuchsia-800",
-  PACKAGING_COMPLETED: "bg-fuchsia-200 text-fuchsia-900",
-  READY_FOR_DISPATCH: "bg-stone-200 text-stone-800",
-  DISPATCHED: "bg-indigo-100 text-indigo-800",
-  RECEIVED_AT_WAREHOUSE: "bg-lime-100 text-lime-800",
-  SHIPPED: "bg-emerald-100 text-emerald-800",
-  DELIVERED: "bg-emerald-200 text-emerald-900",
+  PLANNED: "bg-slate-100 text-slate-800 dark:bg-slate-800/60 dark:text-slate-200",
+  FABRIC_ORDERED: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  FABRIC_RECEIVED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200",
+  CUTTING_IN_PROGRESS: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+  CUTTING_COMPLETED: "bg-orange-200 text-orange-900 dark:bg-orange-800/50 dark:text-orange-100",
+  CUTTING_REPORT_RECEIVED: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+  STITCHING_IN_PROGRESS: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
+  STITCHING_COMPLETED: "bg-sky-200 text-sky-900 dark:bg-sky-800/50 dark:text-sky-100",
+  TRIMS_ACCESSORIES_ATTACHED: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200",
+  QC_IN_PROGRESS: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200",
+  QC_APPROVED: "bg-violet-200 text-violet-900 dark:bg-violet-800/50 dark:text-violet-100",
+  QC_FAILED: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200",
+  PACKAGING_IN_PROGRESS: "bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/40 dark:text-fuchsia-200",
+  PACKAGING_COMPLETED: "bg-fuchsia-200 text-fuchsia-900 dark:bg-fuchsia-800/50 dark:text-fuchsia-100",
+  READY_FOR_DISPATCH: "bg-stone-200 text-stone-800 dark:bg-stone-700/60 dark:text-stone-200",
+  DISPATCHED: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+  RECEIVED_AT_WAREHOUSE: "bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200",
+  SHIPPED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  DELIVERED: "bg-emerald-200 text-emerald-900 dark:bg-emerald-800/50 dark:text-emerald-100",
 };
 
 export const GENDER_LABELS: Record<string, string> = {
@@ -74,10 +77,10 @@ export const FABRIC_STATUS_LABELS: Record<string, string> = {
 };
 
 export const FABRIC_STATUS_COLORS: Record<string, string> = {
-  FULLY_CONSUMED: "bg-emerald-100 text-emerald-800",
-  TO_BE_CONSUMED: "bg-amber-100 text-amber-800",
-  FULLY_INWARDED: "bg-stone-200 text-stone-800",
-  PARTIALLY_INWARDED: "bg-orange-100 text-orange-800",
+  FULLY_CONSUMED: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
+  TO_BE_CONSUMED: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  FULLY_INWARDED: "bg-stone-200 text-stone-800 dark:bg-stone-700/60 dark:text-stone-200",
+  PARTIALLY_INWARDED: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
 };
 
 export const FABRIC_ORDER_STATUS_LABELS: Record<string, string> = {
@@ -92,14 +95,14 @@ export const FABRIC_ORDER_STATUS_LABELS: Record<string, string> = {
 };
 
 export const FABRIC_ORDER_STATUS_COLORS: Record<string, string> = {
-  DRAFT_ORDER: "bg-slate-100 text-slate-800",
-  PO_SENT: "bg-amber-100 text-amber-800",
-  PI_RECEIVED: "bg-yellow-100 text-yellow-800",
-  ADVANCE_PAID: "bg-orange-100 text-orange-800",
-  PARTIALLY_SHIPPED: "bg-sky-100 text-sky-800",
-  DISPATCHED: "bg-indigo-100 text-indigo-800",
-  RECEIVED: "bg-lime-100 text-lime-800",
-  FULLY_SETTLED: "bg-emerald-200 text-emerald-900",
+  DRAFT_ORDER: "bg-slate-100 text-slate-800 dark:bg-slate-800/60 dark:text-slate-200",
+  PO_SENT: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
+  PI_RECEIVED: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200",
+  ADVANCE_PAID: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200",
+  PARTIALLY_SHIPPED: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200",
+  DISPATCHED: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200",
+  RECEIVED: "bg-lime-100 text-lime-800 dark:bg-lime-900/40 dark:text-lime-200",
+  FULLY_SETTLED: "bg-emerald-200 text-emerald-900 dark:bg-emerald-800/50 dark:text-emerald-100",
 };
 
 export const DELIVERY_LOCATIONS = [

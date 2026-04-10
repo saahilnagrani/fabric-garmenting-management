@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { changePassword } from "@/actions/change-password";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { LogOut, KeyRound, ChevronDown } from "lucide-react";
+import { LogOut, KeyRound, ChevronDown, Settings2 } from "lucide-react";
 
 export function UserMenu({ userName }: { userName?: string | null }) {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
@@ -75,6 +76,10 @@ export function UserMenu({ userName }: { userName?: string | null }) {
           <ChevronDown className="h-3 w-3" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem render={<Link href="/preferences" />}>
+            <Settings2 className="mr-2 h-4 w-4" />
+            Preferences
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)}>
             <KeyRound className="mr-2 h-4 w-4" />
             Change Password

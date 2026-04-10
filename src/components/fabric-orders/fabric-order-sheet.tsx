@@ -622,7 +622,7 @@ export function FabricOrderSheet({
                   </div>
                 )}
                 {awaitingTag(form.orderStatus, form.piReceivedAt, form.advancePaidAt) && (
-                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800">
                     {awaitingTag(form.orderStatus, form.piReceivedAt, form.advancePaidAt)}
                   </span>
                 )}

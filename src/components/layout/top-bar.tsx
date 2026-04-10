@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
 import { UserMenu } from "@/components/layout/user-menu";
+import { AppearancePopover } from "@/components/theme/appearance-popover";
 import { PhaseSelector } from "./phase-selector";
 
 type Phase = {
@@ -31,7 +32,8 @@ export function TopBar({
         phases={phases}
         currentPhaseId={currentPhase?.id}
       />
-      <div className="ml-auto">
+      <div className="ml-auto flex items-center gap-1">
+        <AppearancePopover />
         <UserMenu userName={userName} />
       </div>
     </header>

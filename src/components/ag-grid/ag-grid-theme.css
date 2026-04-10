@@ -131,3 +131,65 @@
   align-items: center;
 }
 
+/* ─── Dark mode overrides ─────────────────────────────────────────
+ * Every AG Grid screen keeps the .ag-theme-quartz class; when an
+ * ancestor has .dark (set by next-themes), we flip the CSS vars and
+ * the hardcoded !important overrides below to a dark palette.
+ */
+.dark .ag-theme-quartz {
+  --ag-background-color: #1a1a1a;
+  --ag-foreground-color: #e5e5e5;
+  --ag-header-background-color: #262626;
+  --ag-header-foreground-color: #a3a3a3;
+  --ag-row-hover-color: #2a2a2a;
+  --ag-selected-row-background-color: #1e3a5f;
+  --ag-odd-row-background-color: #1f1f1f;
+  --ag-border-color: #3a3a3a;
+  --ag-secondary-border-color: #3a3a3a;
+  --ag-row-border-color: #3a3a3a;
+  --ag-input-border-color: #4a4a4a;
+  --ag-input-focus-border-color: #60a5fa;
+  --ag-active-color: #60a5fa;
+  --ag-range-selection-border-color: #60a5fa;
+  --ag-checkbox-checked-color: #60a5fa;
+  --ag-header-column-separator-color: #3a3a3a;
+  --ag-column-hover-color: #262626;
+  --ag-cell-horizontal-border: solid 1px #3a3a3a;
+}
+
+.dark .ag-theme-quartz .ag-row-odd {
+  background-color: #1f1f1f !important;
+}
+
+.dark .ag-theme-quartz .ag-row-even {
+  background-color: #1a1a1a !important;
+}
+
+.dark .ag-theme-quartz .ag-cell {
+  border-right: 1px solid #3a3a3a !important;
+}
+
+.dark .ag-theme-quartz .ag-header-cell {
+  border-right: 1px solid #3a3a3a !important;
+}
+
+.dark .ag-theme-quartz .computed-cell {
+  background-color: #262626;
+  color: #cbd5e1;
+}
+
+.dark .ag-theme-quartz .ag-floating-bottom {
+  background-color: #262626;
+  border-top: 2px solid #4a4a4a;
+}
+
+.dark .ag-theme-quartz .ag-sort-ascending-icon,
+.dark .ag-theme-quartz .ag-sort-descending-icon {
+  color: #60a5fa !important;
+}
+
+.dark .ag-theme-quartz .row-span-cell {
+  background-color: #1a1a1a !important;
+  border-bottom: 1px solid #3a3a3a !important;
+}
+
