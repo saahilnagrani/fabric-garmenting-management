@@ -284,7 +284,7 @@ export function FabricOrderGrid({
     {
       field: "fabricName",
       headerName: "Fabric",
-      minWidth: 90,
+      minWidth: 160,
       pinned: "left",
       editable: false,
       rowSpan: (params) => {
@@ -638,7 +638,13 @@ export function FabricOrderGrid({
           }}
           suppressRowTransform
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: false, sortable: false, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true, wrapText: true, autoHeight: true }}
+          // NOTE: wrapText + autoHeight are intentionally OFF here. The
+          // Vendor and Fabric columns use AG Grid's rowSpan feature to
+          // merge cells across consecutive rows with the same value, and
+          // rowSpan requires uniform row heights. Enabling autoHeight
+          // produces misaligned/duplicated cells. Wider minWidth on the
+          // Fabric column gives long names enough room instead.
+          defaultColDef={{ editable: false, sortable: false, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
           animateRows={false}
