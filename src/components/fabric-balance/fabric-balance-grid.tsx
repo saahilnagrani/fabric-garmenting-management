@@ -14,6 +14,7 @@ type FabricMasterOption = {
   vendorId: string;
   vendorName: string;
   coloursAvailable: string[];
+  defaultCostPerKg: number | null;
 };
 
 type PhaseOption = { id: string; label: string };

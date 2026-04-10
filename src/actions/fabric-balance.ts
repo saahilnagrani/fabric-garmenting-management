@@ -34,6 +34,47 @@ export async function createFabricBalance(data: any) {
   return row;
 }
 
+/**
+ * Bulk-create one FabricBalance per (fabricMasterId, colour) entry in a single
+ * submission. Shared fields (cost/kg, source/target phase, notes) are passed
+ * once and stamped on every row. Used by the sheet's multi-colour create mode.
+ */
+export async function createFabricBalancesBulk(input: {
+  fabricMasterId: string;
+  vendorId: string;
+  costPerKg: number;
+  sourcePhaseId: string | null;
+  targetPhaseId: string | null;
+  notes: string | null;
+  entries: Array<{ colour: string; remainingKg: number }>;
+}) {
+  const session = await requirePermission("inventory:fabric_orders:create");
+  if (input.entries.length === 0) {
+    throw new Error("At least one colour row is required");
+  }
+  const rows = await db.$transaction(
+    input.entries.map((e) =>
+      db.fabricBalance.create({
+        data: {
+          fabricMasterId: input.fabricMasterId,
+          vendorId: input.vendorId,
+          colour: e.colour,
+          remainingKg: e.remainingKg,
+          costPerKg: input.costPerKg,
+          sourcePhaseId: input.sourcePhaseId,
+          targetPhaseId: input.targetPhaseId,
+          notes: input.notes,
+        },
+      })
+    )
+  );
+  for (const row of rows) {
+    logAction(session.user!.id!, session.user!.name!, "CREATE", "FabricBalance", row.id);
+  }
+  revalidatePath("/fabric-balance");
+  return rows;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateFabricBalance(id: string, data: any) {
   const session = await requirePermission("inventory:fabric_orders:edit");

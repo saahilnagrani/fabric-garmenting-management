@@ -22,6 +22,7 @@ export default async function FabricBalancePage() {
       vendorId: m.vendorId,
       vendorName: vendorById.get(m.vendorId) || "",
       coloursAvailable: (m.coloursAvailable || []).map(String),
+      defaultCostPerKg: m.mrp != null ? Number(m.mrp) : null,
     }));
 
   const phaseOptions = phases

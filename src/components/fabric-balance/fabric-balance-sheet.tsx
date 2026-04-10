@@ -11,10 +11,10 @@ import {
 } from "@/components/ui/sheet";
 import { Combobox } from "@/components/ui/combobox";
 import {
-  createFabricBalance, updateFabricBalance, deleteFabricBalance,
+  createFabricBalancesBulk, updateFabricBalance, deleteFabricBalance,
 } from "@/actions/fabric-balance";
 import { toast } from "sonner";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Plus, X } from "lucide-react";
 
 export type FabricBalanceRow = {
   id: string;
@@ -38,6 +38,7 @@ type FabricMasterOption = {
   vendorId: string;
   vendorName: string;
   coloursAvailable: string[];
+  defaultCostPerKg: number | null;
 };
 
 type PhaseOption = { id: string; label: string };
@@ -48,24 +49,24 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+type ColourEntry = { colour: string; remainingKg: string };
+
 type FormData = {
   fabricMasterId: string;
-  colour: string;
-  remainingKg: string;
   costPerKg: string;
   sourcePhaseId: string;
   targetPhaseId: string;
   notes: string;
+  entries: ColourEntry[];
 };
 
 const emptyForm: FormData = {
   fabricMasterId: "",
-  colour: "",
-  remainingKg: "",
   costPerKg: "",
   sourcePhaseId: "",
   targetPhaseId: "",
   notes: "",
+  entries: [{ colour: "", remainingKg: "" }],
 };
 
 export function FabricBalanceSheet({
@@ -93,23 +94,18 @@ export function FabricBalanceSheet({
       if (editingRow) {
         setForm({
           fabricMasterId: editingRow.fabricMasterId,
-          colour: editingRow.colour,
-          remainingKg: String(editingRow.remainingKg),
           costPerKg: String(editingRow.costPerKg),
           sourcePhaseId: editingRow.sourcePhaseId || "",
           targetPhaseId: editingRow.targetPhaseId || "",
           notes: editingRow.notes || "",
+          entries: [{ colour: editingRow.colour, remainingKg: String(editingRow.remainingKg) }],
         });
       } else {
-        setForm({ ...emptyForm });
+        setForm({ ...emptyForm, entries: [{ colour: "", remainingKg: "" }] });
       }
       setShowDeleteConfirm(false);
     }
   }, [open, editingRow]);
-
-  function updateField(field: keyof FormData, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  }
 
   const selectedFabric = useMemo(
     () => fabricMasters.find((f) => f.id === form.fabricMasterId) || null,
@@ -121,57 +117,129 @@ export function FabricBalanceSheet({
     [selectedFabric]
   );
 
-  // Reset colour when fabric changes if the current colour is no longer available.
+  // Auto-populate cost/kg and reset colour rows when fabric changes.
+  // Only runs in create mode — edit mode uses whatever's saved on the row.
   useEffect(() => {
+    if (isEdit) return;
     if (!selectedFabric) return;
-    if (form.colour && !selectedFabric.coloursAvailable.includes(form.colour)) {
-      setForm((prev) => ({ ...prev, colour: "" }));
-    }
+    setForm((prev) => ({
+      ...prev,
+      // Only populate if the user hasn't typed a cost yet (don't clobber edits).
+      costPerKg:
+        prev.costPerKg === "" && selectedFabric.defaultCostPerKg != null
+          ? String(selectedFabric.defaultCostPerKg)
+          : prev.costPerKg,
+      // Drop any colour entries that aren't valid for the new fabric.
+      entries: prev.entries.map((e) =>
+        e.colour && !selectedFabric.coloursAvailable.includes(e.colour)
+          ? { ...e, colour: "" }
+          : e
+      ),
+    }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFabric?.id]);
+
+  function updateField<K extends keyof FormData>(field: K, value: FormData[K]) {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function updateEntry(idx: number, patch: Partial<ColourEntry>) {
+    setForm((prev) => ({
+      ...prev,
+      entries: prev.entries.map((e, i) => (i === idx ? { ...e, ...patch } : e)),
+    }));
+  }
+
+  function addEntry() {
+    setForm((prev) => ({ ...prev, entries: [...prev.entries, { colour: "", remainingKg: "" }] }));
+  }
+
+  function removeEntry(idx: number) {
+    setForm((prev) => ({
+      ...prev,
+      entries: prev.entries.length > 1 ? prev.entries.filter((_, i) => i !== idx) : prev.entries,
+    }));
+  }
 
   async function handleSubmit() {
     if (!form.fabricMasterId) {
       toast.error("Fabric is required");
       return;
     }
-    if (!form.colour.trim()) {
-      toast.error("Colour is required");
-      return;
-    }
-    const remainingKg = toNum(form.remainingKg);
-    const costPerKg = toNum(form.costPerKg);
-    if (remainingKg === null || remainingKg <= 0) {
-      toast.error("Remaining weight must be greater than 0");
-      return;
-    }
-    if (costPerKg === null || costPerKg <= 0) {
-      toast.error("Cost per kg must be greater than 0");
-      return;
-    }
     if (!selectedFabric) {
       toast.error("Selected fabric not found");
       return;
     }
+    const costPerKg = toNum(form.costPerKg);
+    if (costPerKg === null || costPerKg <= 0) {
+      toast.error("Cost per kg must be greater than 0");
+      return;
+    }
+
+    // Validate every colour row. Drop fully-blank rows silently so the user
+    // can leave a stray empty row at the bottom without it blocking save.
+    const cleaned: Array<{ colour: string; remainingKg: number }> = [];
+    for (let i = 0; i < form.entries.length; i++) {
+      const e = form.entries[i];
+      const colour = e.colour.trim();
+      const rem = toNum(e.remainingKg);
+      const blankRow = !colour && rem === null;
+      if (blankRow) continue;
+      if (!colour) {
+        toast.error(`Row ${i + 1}: colour is required`);
+        return;
+      }
+      if (rem === null || rem <= 0) {
+        toast.error(`Row ${i + 1}: remaining weight must be greater than 0`);
+        return;
+      }
+      cleaned.push({ colour, remainingKg: rem });
+    }
+    if (cleaned.length === 0) {
+      toast.error("Add at least one colour row with a weight");
+      return;
+    }
+
+    // Prevent duplicate colour rows within a single submission.
+    const seen = new Set<string>();
+    for (const c of cleaned) {
+      const key = c.colour.toLowerCase();
+      if (seen.has(key)) {
+        toast.error(`Duplicate colour "${c.colour}" — merge the rows or remove one`);
+        return;
+      }
+      seen.add(key);
+    }
 
     setSubmitting(true);
     try {
-      const payload = {
-        fabricMasterId: form.fabricMasterId,
-        vendorId: selectedFabric.vendorId,
-        colour: form.colour,
-        remainingKg,
-        costPerKg,
-        sourcePhaseId: form.sourcePhaseId || null,
-        targetPhaseId: form.targetPhaseId || null,
-        notes: form.notes.trim() || null,
-      };
       if (isEdit) {
-        await updateFabricBalance(editingRow.id, payload);
+        // Edit mode: single row only.
+        const e = cleaned[0];
+        await updateFabricBalance(editingRow.id, {
+          fabricMasterId: form.fabricMasterId,
+          vendorId: selectedFabric.vendorId,
+          colour: e.colour,
+          remainingKg: e.remainingKg,
+          costPerKg,
+          sourcePhaseId: form.sourcePhaseId || null,
+          targetPhaseId: form.targetPhaseId || null,
+          notes: form.notes.trim() || null,
+        });
         toast.success("Fabric balance updated");
       } else {
-        await createFabricBalance(payload);
-        toast.success("Fabric balance recorded");
+        const rows = await createFabricBalancesBulk({
+          fabricMasterId: form.fabricMasterId,
+          vendorId: selectedFabric.vendorId,
+          costPerKg,
+          sourcePhaseId: form.sourcePhaseId || null,
+          targetPhaseId: form.targetPhaseId || null,
+          notes: form.notes.trim() || null,
+          entries: cleaned,
+        });
+        toast.success(
+          `Recorded ${rows.length} fabric balance${rows.length === 1 ? "" : " entries"}`
+        );
       }
       onOpenChange(false);
       router.refresh();
@@ -198,17 +266,18 @@ export function FabricBalanceSheet({
     }
   }
 
-  const total = (toNum(form.remainingKg) || 0) * (toNum(form.costPerKg) || 0);
+  const totalKg = form.entries.reduce((s, e) => s + (toNum(e.remainingKg) || 0), 0);
+  const totalCost = totalKg * (toNum(form.costPerKg) || 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="max-w-[480px] w-full overflow-y-auto border-t-4 border-t-blue-500">
+      <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-blue-500">
         <SheetHeader className="pr-12">
           <SheetTitle className="text-sm">{isEdit ? "Edit Fabric Balance" : "New Fabric Balance"}</SheetTitle>
           <SheetDescription className="text-[11px]">
             {isEdit
               ? "Update the surplus fabric record."
-              : "Record leftover fabric carried forward from a phase. Vendor is taken from the selected Fabric Master."}
+              : "Record leftover fabric for one or more colours of a single fabric. Cost/kg is shared across all colours in this batch."}
           </SheetDescription>
         </SheetHeader>
 
@@ -233,53 +302,89 @@ export function FabricBalanceSheet({
           </div>
 
           <div className="space-y-0.5">
-            <Label className="text-[11px]">Colour *</Label>
-            {colourOptions.length > 0 ? (
-              <Combobox
-                value={form.colour}
-                onValueChange={(v) => updateField("colour", v)}
-                options={colourOptions}
-                placeholder="Select colour..."
-              />
-            ) : (
-              <Input
-                className="h-8 text-xs"
-                value={form.colour}
-                onChange={(e) => updateField("colour", e.target.value)}
-                placeholder={selectedFabric ? "No colours on master" : "Select fabric first"}
-                disabled={!selectedFabric}
-              />
+            <Label className="text-[11px]">Cost / kg (Rs) *</Label>
+            <Input
+              type="number"
+              step="0.01"
+              value={form.costPerKg}
+              onChange={(e) => updateField("costPerKg", e.target.value)}
+              className="h-8 text-xs"
+              placeholder={selectedFabric?.defaultCostPerKg != null ? `Default: ₹${selectedFabric.defaultCostPerKg}` : "e.g. 450.00"}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Applied to every colour row below.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <Label className="text-[11px]">Colours *</Label>
+              {!isEdit && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] px-1.5"
+                  onClick={addEntry}
+                  disabled={!selectedFabric}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add colour
+                </Button>
+              )}
+            </div>
+            {form.entries.map((entry, idx) => (
+              <div key={idx} className="grid gap-2" style={{ gridTemplateColumns: "1fr 120px 24px" }}>
+                <div>
+                  {colourOptions.length > 0 ? (
+                    <Combobox
+                      value={entry.colour}
+                      onValueChange={(v) => updateEntry(idx, { colour: v })}
+                      options={colourOptions}
+                      placeholder="Select colour..."
+                    />
+                  ) : (
+                    <Input
+                      className="h-8 text-xs"
+                      value={entry.colour}
+                      onChange={(e) => updateEntry(idx, { colour: e.target.value })}
+                      placeholder={selectedFabric ? "No colours on master" : "Select fabric first"}
+                      disabled={!selectedFabric}
+                    />
+                  )}
+                </div>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={entry.remainingKg}
+                  onChange={(e) => updateEntry(idx, { remainingKg: e.target.value })}
+                  className="h-8 text-xs"
+                  placeholder="kg"
+                  disabled={!selectedFabric}
+                />
+                {!isEdit && form.entries.length > 1 ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 w-6 p-0"
+                    onClick={() => removeEntry(idx)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                ) : (
+                  <div />
+                )}
+              </div>
+            ))}
+            {totalKg > 0 && (
+              <p className="text-[11px] text-muted-foreground pt-1">
+                Total: {totalKg.toLocaleString("en-IN", { maximumFractionDigits: 2 })} kg · ₹{" "}
+                {totalCost.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{" "}
+                attributed
+              </p>
             )}
           </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Remaining (kg) *</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.remainingKg}
-                onChange={(e) => updateField("remainingKg", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Cost / kg (Rs) *</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.costPerKg}
-                onChange={(e) => updateField("costPerKg", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-
-          {total > 0 && (
-            <div className="text-[11px] text-muted-foreground">
-              Cost attributed: ₹ {total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-0.5">
@@ -318,7 +423,7 @@ export function FabricBalanceSheet({
               {submitting ? (
                 <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : "Recording..."}</>
               ) : (
-                isEdit ? "Update Balance" : "Record Balance"
+                isEdit ? "Update Balance" : "Record Balances"
               )}
             </Button>
             {isEdit && !showDeleteConfirm && (
