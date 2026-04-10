@@ -69,6 +69,10 @@ type FormData = {
   isRepeat: boolean;
   orderStatus: string;
   garmentingAt: string;
+  // Read-only display fields (set on the server, not edited via the sheet).
+  poNumber: string;
+  piReceivedAt: string;
+  advancePaidAt: string;
 };
 
 const emptyForm: FormData = {
@@ -87,7 +91,17 @@ const emptyForm: FormData = {
   isRepeat: false,
   orderStatus: "DRAFT_ORDER",
   garmentingAt: "",
+  poNumber: "",
+  piReceivedAt: "",
+  advancePaidAt: "",
 };
+
+function awaitingTag(orderStatus: string, piReceivedAt: string, advancePaidAt: string): string {
+  if (orderStatus === "PO_SENT" && !piReceivedAt) return "Awaiting PI";
+  if (orderStatus === "PI_RECEIVED" && !advancePaidAt) return "Awaiting Advance Payment";
+  if (orderStatus === "RECEIVED") return "Awaiting Full Payment";
+  return "";
+}
 
 const SECTIONS = ["fabricInfo", "orderDetails", "styles", "quantitiesCost", "linkedProducts"] as const;
 
@@ -262,6 +276,9 @@ export function FabricOrderSheet({
         isRepeat: Boolean(row.isRepeat),
         orderStatus: String(row.orderStatus ?? "DRAFT_ORDER"),
         garmentingAt: String(row.garmentingAt ?? ""),
+        poNumber: String(row.poNumber ?? ""),
+        piReceivedAt: row.piReceivedAt ? String(row.piReceivedAt) : "",
+        advancePaidAt: row.advancePaidAt ? String(row.advancePaidAt) : "",
       });
     } else {
       setForm({ ...emptyForm, isRepeat: isRepeatTab });
@@ -596,6 +613,21 @@ export function FabricOrderSheet({
             expanded={expandedSections.orderDetails}
             onToggle={() => toggleSection("orderDetails")}
           >
+            {(form.poNumber || awaitingTag(form.orderStatus, form.piReceivedAt, form.advancePaidAt)) && (
+              <div className="flex items-center gap-2 mb-1">
+                {form.poNumber && (
+                  <div className="text-[11px] flex items-center gap-1">
+                    <span className="text-muted-foreground">PO:</span>
+                    <span className="font-mono font-semibold">{form.poNumber}</span>
+                  </div>
+                )}
+                {awaitingTag(form.orderStatus, form.piReceivedAt, form.advancePaidAt) && (
+                  <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                    {awaitingTag(form.orderStatus, form.piReceivedAt, form.advancePaidAt)}
+                  </span>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-0.5 min-w-0">
                 <Label className="text-[11px]">Order Status *</Label>

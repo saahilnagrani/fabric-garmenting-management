@@ -52,8 +52,23 @@ function toRow(o: any): Record<string, unknown> {
     orderDate: s(o.orderDate),
     isRepeat: Boolean(o.isRepeat),
     orderStatus: s(o.orderStatus),
+    poNumber: s(o.poNumber),
+    piReceivedAt: o.piReceivedAt ? new Date(o.piReceivedAt as string | Date).toISOString() : "",
+    advancePaidAt: o.advancePaidAt ? new Date(o.advancePaidAt as string | Date).toISOString() : "",
     garmentingAt: s(o.garmentingAt),
   };
+}
+
+/**
+ * Compute a derived "awaiting" tag for a fabric order based on its status and
+ * the optional payment timestamps. Returns an empty string if nothing relevant
+ * is being awaited (e.g. status is DRAFT_ORDER or FULLY_SETTLED).
+ */
+function awaitingTag(orderStatus: string, piReceivedAt: string, advancePaidAt: string): string {
+  if (orderStatus === "PO_SENT" && !piReceivedAt) return "Awaiting PI";
+  if (orderStatus === "PI_RECEIVED" && !advancePaidAt) return "Awaiting Advance Payment";
+  if (orderStatus === "RECEIVED") return "Awaiting Full Payment";
+  return "";
 }
 
 const COL_STATE_KEY = "ag-grid-col-state-fabric-orders-v2";
@@ -155,6 +170,9 @@ export function FabricOrderGrid({
         fabricShippedQuantityKg: sumField(rows, "fabricShippedQuantityKg"),
         isRepeat: rows.some((r) => r.isRepeat),
         orderStatus: concatUnique(rows, "orderStatus"),
+        poNumber: concatUnique(rows, "poNumber"),
+        piReceivedAt: rows.find((r) => r.piReceivedAt)?.piReceivedAt ?? "",
+        advancePaidAt: rows.find((r) => r.advancePaidAt)?.advancePaidAt ?? "",
         garmentingAt: concatUnique(rows, "garmentingAt"),
       });
     }
@@ -327,7 +345,29 @@ export function FabricOrderGrid({
       },
       valueFormatter: (p) => formatCurrency(p.value),
     },
-    { field: "orderStatus", headerName: "Status", minWidth: 80, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    { field: "poNumber", headerName: "PO Number", minWidth: 140, editable: false },
+    { field: "orderStatus", headerName: "Status", minWidth: 100, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    {
+      headerName: "Awaiting",
+      minWidth: 130,
+      editable: false,
+      valueGetter: (p) => {
+        if (!p.data) return "";
+        return awaitingTag(
+          String(p.data.orderStatus || ""),
+          String(p.data.piReceivedAt || ""),
+          String(p.data.advancePaidAt || ""),
+        );
+      },
+      cellRenderer: (params: { value: string }) => {
+        if (!params.value) return null;
+        return (
+          <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+            {params.value}
+          </span>
+        );
+      },
+    },
     { field: "garmentingAt", headerName: "Garmenting", minWidth: 90, editable: false },
     {
       field: "isRepeat", headerName: "Repeat Order?", minWidth: 85, maxWidth: 85, editable: false,
