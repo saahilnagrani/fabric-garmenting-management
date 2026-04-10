@@ -841,9 +841,15 @@ export function ProductOrderSheet({
                   <SelectTrigger className="h-8 text-xs md:text-xs w-full">
                     <span className="truncate">{PRODUCT_STATUS_LABELS[form.status] || "Select"}</span>
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent
+                    align="start"
+                    className="min-w-0"
+                    style={{ fontSize: "8px" }}
+                  >
                     {Object.entries(PRODUCT_STATUS_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                      <SelectItem key={k} value={k} className="text-[8px] py-1">
+                        {v}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
