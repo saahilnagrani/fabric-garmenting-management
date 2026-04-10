@@ -349,7 +349,8 @@ export function FabricOrderGrid({
     { field: "orderStatus", headerName: "Status", minWidth: 100, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
     {
       headerName: "Awaiting",
-      minWidth: 130,
+      colId: "awaiting",
+      minWidth: 160,
       editable: false,
       valueGetter: (p) => {
         if (!p.data) return "";
@@ -359,11 +360,19 @@ export function FabricOrderGrid({
           String(p.data.advancePaidAt || ""),
         );
       },
-      cellRenderer: (params: { value: string }) => {
-        if (!params.value) return null;
+      // Compute tag from the row data directly so we never depend on AG Grid
+      // having populated params.value for a column without a `field`.
+      cellRenderer: (params: { data?: Record<string, unknown> }) => {
+        if (!params.data) return null;
+        const tag = awaitingTag(
+          String(params.data.orderStatus || ""),
+          String(params.data.piReceivedAt || ""),
+          String(params.data.advancePaidAt || ""),
+        );
+        if (!tag) return null;
         return (
           <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800">
-            {params.value}
+            {tag}
           </span>
         );
       },
