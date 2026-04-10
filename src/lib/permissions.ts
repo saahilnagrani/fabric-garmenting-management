@@ -29,6 +29,10 @@ export const INVENTORY_PERMISSIONS = [
   "inventory:masters:edit",
   "inventory:lists:view",
   "inventory:lists:edit",
+  "inventory:accessories:view",
+  "inventory:accessories:create",
+  "inventory:accessories:edit",
+  "inventory:accessories:delete",
 ] as const;
 
 export const SOURCING_PERMISSIONS = [
@@ -64,6 +68,7 @@ const INVENTORY_VIEWER_PERMS: Permission[] = [
   "inventory:phases:view",
   "inventory:masters:view",
   "inventory:lists:view",
+  "inventory:accessories:view",
 ];
 
 const INVENTORY_EDITOR_PERMS: Permission[] = [
@@ -78,6 +83,8 @@ const INVENTORY_EDITOR_PERMS: Permission[] = [
   "inventory:vendors:edit",
   "inventory:masters:edit",
   "inventory:lists:edit",
+  "inventory:accessories:create",
+  "inventory:accessories:edit",
 ];
 
 const INVENTORY_MANAGER_PERMS: Permission[] = [
@@ -90,6 +97,7 @@ const INVENTORY_MANAGER_PERMS: Permission[] = [
   "inventory:vendors:delete",
   "inventory:phases:create",
   "inventory:phases:edit",
+  "inventory:accessories:delete",
 ];
 
 const SOURCING_VIEWER_PERMS: Permission[] = [
@@ -134,11 +142,11 @@ export const SOURCING_ROLE_PERMISSIONS: Record<SourcingRole, Permission[]> = {
 
 export const PERMISSION_LABELS: Record<string, string> = {
   "inventory:dashboard:view": "View Dashboard",
-  "inventory:products:view": "View Products",
-  "inventory:products:create": "Create Products",
-  "inventory:products:edit": "Edit Products",
-  "inventory:products:edit_status": "Change Product Status",
-  "inventory:products:delete": "Delete Products",
+  "inventory:products:view": "View Article Orders",
+  "inventory:products:create": "Create Article Orders",
+  "inventory:products:edit": "Edit Article Orders",
+  "inventory:products:edit_status": "Change Article Order Status",
+  "inventory:products:delete": "Delete Article Orders",
   "inventory:fabric_orders:view": "View Fabric Orders",
   "inventory:fabric_orders:create": "Create Fabric Orders",
   "inventory:fabric_orders:edit": "Edit Fabric Orders",
@@ -159,6 +167,10 @@ export const PERMISSION_LABELS: Record<string, string> = {
   "inventory:masters:edit": "Edit Masters",
   "inventory:lists:view": "View Lists",
   "inventory:lists:edit": "Edit Lists",
+  "inventory:accessories:view": "View Accessories",
+  "inventory:accessories:create": "Create Accessories",
+  "inventory:accessories:edit": "Edit Accessories",
+  "inventory:accessories:delete": "Delete Accessories",
   "sourcing:dashboard:view": "View Dashboard",
   "sourcing:suppliers:view": "View Suppliers",
   "sourcing:suppliers:create": "Create Suppliers",

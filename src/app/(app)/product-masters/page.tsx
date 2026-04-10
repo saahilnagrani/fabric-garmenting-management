@@ -3,7 +3,10 @@ import { getProductTypes } from "@/actions/product-types";
 import { getFabricNamesMrp } from "@/actions/fabric-masters";
 import { getColours } from "@/actions/colours";
 import { getPhases } from "@/actions/phases";
+import { getAccessoryMasters } from "@/actions/accessories";
 import { ProductMasterGrid } from "@/components/masters/product-master-grid";
+import { FEATURES } from "@/lib/feature-flags";
+import { accessoryDisplayName } from "@/lib/accessory-display";
 
 export default async function ProductMastersPage({
   searchParams,
@@ -12,13 +15,19 @@ export default async function ProductMastersPage({
 }) {
   const params = await searchParams;
   const showArchived = params.showArchived === "true";
-  const [groupedMasters, types, fabricData, colourRecords, phases] = await Promise.all([
+  const [groupedMasters, types, fabricData, colourRecords, phases, accessoryRows] = await Promise.all([
     getProductMastersGrouped(showArchived),
     getProductTypes(),
     getFabricNamesMrp(),
     getColours(),
     getPhases(),
+    FEATURES.accessories ? getAccessoryMasters() : Promise.resolve([]),
   ]);
+  const accessoryOptions = accessoryRows.map((a) => ({
+    id: a.id,
+    label: accessoryDisplayName(a),
+    unit: a.unit,
+  }));
   const colourNames = colourRecords.map((c) => c.name);
   const coloursWithCode = colourRecords.map((c) => ({ name: c.name, code: c.code }));
   const productTypesWithCode = types.map((t) => ({ name: t.name, code: t.code }));
@@ -42,6 +51,7 @@ export default async function ProductMastersPage({
         colours={colourNames}
         coloursWithCode={coloursWithCode}
         phases={phases.map((p) => ({ id: p.id, name: p.name, number: p.number }))}
+        accessories={accessoryOptions}
         showArchived={showArchived}
       />
     </div>

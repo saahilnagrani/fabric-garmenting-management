@@ -8,12 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -32,13 +32,17 @@ import {
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Shield, User as UserIcon, ChevronDown, ChevronRight } from "lucide-react";
 import {
-  INVENTORY_PERMISSIONS,
-  SOURCING_PERMISSIONS,
   INVENTORY_ROLE_PERMISSIONS,
   SOURCING_ROLE_PERMISSIONS,
-  PERMISSION_LABELS,
   type Permission,
 } from "@/lib/permissions";
+import {
+  INVENTORY_MATRIX,
+  SOURCING_MATRIX,
+  STANDARD_ACTIONS,
+  type PermissionMatrixEntity,
+  type StandardAction,
+} from "@/lib/permission-matrix";
 
 type UserRole = "ADMIN" | "USER";
 type InventoryRole = "VIEWER" | "EDITOR" | "MANAGER";
@@ -104,27 +108,58 @@ export default function AdminUsersPage() {
             Create users and manage their roles and permissions
           </p>
         </div>
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger render={<Button />}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add User
-          </DialogTrigger>
-          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Create New User</DialogTitle>
-            </DialogHeader>
-            <UserForm
-              onSubmit={async (data) => {
-                await createUser(data);
-                toast.success("User created");
-                setCreateOpen(false);
-                loadUsers();
-              }}
-              onCancel={() => setCreateOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
+        <Button onClick={() => setCreateOpen(true)}>
+          <Plus className="mr-2 h-4 w-4" />
+          Add User
+        </Button>
+        <Sheet open={createOpen} onOpenChange={setCreateOpen}>
+          <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle>Create New User</SheetTitle>
+              <SheetDescription>
+                Create a new user account, assign roles, and optionally fine-tune permissions.
+              </SheetDescription>
+            </SheetHeader>
+            <div className="px-4">
+              <UserForm
+                onSubmit={async (data) => {
+                  await createUser(data);
+                  toast.success("User created");
+                  setCreateOpen(false);
+                  loadUsers();
+                }}
+                onCancel={() => setCreateOpen(false)}
+              />
+            </div>
+          </SheetContent>
+        </Sheet>
       </div>
+
+      <Sheet open={editUser !== null} onOpenChange={(open) => { if (!open) setEditUser(null); }}>
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle>Edit User</SheetTitle>
+            <SheetDescription>
+              Update the user&apos;s details, roles, and custom permission overrides.
+            </SheetDescription>
+          </SheetHeader>
+          <div className="px-4">
+            {editUser && (
+              <UserForm
+                key={editUser.id}
+                initialData={editUser}
+                onSubmit={async (data) => {
+                  await updateUser(editUser.id, data);
+                  toast.success("User updated");
+                  setEditUser(null);
+                  loadUsers();
+                }}
+                onCancel={() => setEditUser(null)}
+              />
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Card>
         <CardHeader>
@@ -179,31 +214,13 @@ export default function AdminUsersPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Dialog
-                        open={editUser?.id === user.id}
-                        onOpenChange={(open) =>
-                          setEditUser(open ? user : null)
-                        }
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setEditUser(user)}
                       >
-                        <DialogTrigger render={<Button variant="ghost" size="icon" />}>
-                          <Pencil className="h-4 w-4" />
-                        </DialogTrigger>
-                        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-                          <DialogHeader>
-                            <DialogTitle>Edit User</DialogTitle>
-                          </DialogHeader>
-                          <UserForm
-                            initialData={user}
-                            onSubmit={async (data) => {
-                              await updateUser(user.id, data);
-                              toast.success("User updated");
-                              setEditUser(null);
-                              loadUsers();
-                            }}
-                            onCancel={() => setEditUser(null)}
-                          />
-                        </DialogContent>
-                      </Dialog>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="icon"
@@ -467,71 +484,28 @@ function UserForm({
               </button>
 
               {showOverrides && (
-                <div className="space-y-3 rounded border p-3 text-sm">
+                <div className="space-y-4 rounded border p-3 text-sm">
                   {inventoryRole && (
-                    <div>
-                      <p className="mb-2 font-semibold text-xs uppercase text-muted-foreground">
-                        Fabric & Garmenting Permissions
-                      </p>
-                      <div className="grid gap-1">
-                        {INVENTORY_PERMISSIONS.map((perm) => (
-                          <label
-                            key={perm}
-                            className={`flex items-center gap-2 cursor-pointer py-0.5 ${
-                              isOverridden(perm) ? "font-medium" : ""
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isPermissionGranted(perm)}
-                              onChange={(e) =>
-                                toggleOverride(perm, e.target.checked)
-                              }
-                              className="h-3.5 w-3.5 border-input"
-                            />
-                            <span>{PERMISSION_LABELS[perm] ?? perm}</span>
-                            {isOverridden(perm) && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                custom
-                              </Badge>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    <PermissionMatrix
+                      title="Fabric & Garmenting"
+                      entities={INVENTORY_MATRIX}
+                      isGranted={isPermissionGranted}
+                      isOverridden={isOverridden}
+                      onToggle={toggleOverride}
+                    />
                   )}
                   {sourcingRole && (
-                    <div>
-                      <p className="mb-2 font-semibold text-xs uppercase text-muted-foreground">
-                        Sourcing Agent Permissions
-                      </p>
-                      <div className="grid gap-1">
-                        {SOURCING_PERMISSIONS.map((perm) => (
-                          <label
-                            key={perm}
-                            className={`flex items-center gap-2 cursor-pointer py-0.5 ${
-                              isOverridden(perm) ? "font-medium" : ""
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isPermissionGranted(perm)}
-                              onChange={(e) =>
-                                toggleOverride(perm, e.target.checked)
-                              }
-                              className="h-3.5 w-3.5 border-input"
-                            />
-                            <span>{PERMISSION_LABELS[perm] ?? perm}</span>
-                            {isOverridden(perm) && (
-                              <Badge variant="outline" className="text-[10px] px-1 py-0">
-                                custom
-                              </Badge>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+                    <PermissionMatrix
+                      title="Sourcing Agent"
+                      entities={SOURCING_MATRIX}
+                      isGranted={isPermissionGranted}
+                      isOverridden={isOverridden}
+                      onToggle={toggleOverride}
+                    />
                   )}
+                  <p className="text-[11px] text-muted-foreground italic">
+                    Checked cells are granted. Cells marked with a dot are customised — they differ from the default for this role.
+                  </p>
                 </div>
               )}
             </div>
@@ -552,5 +526,127 @@ function UserForm({
         </Button>
       </div>
     </form>
+  );
+}
+
+function PermissionMatrix({
+  title,
+  entities,
+  isGranted,
+  isOverridden,
+  onToggle,
+}: {
+  title: string;
+  entities: PermissionMatrixEntity[];
+  isGranted: (perm: Permission) => boolean;
+  isOverridden: (perm: Permission) => boolean;
+  onToggle: (perm: Permission, granted: boolean) => void;
+}) {
+  // How many entities have extras — decides whether to render the Other column
+  const hasExtras = entities.some((e) => e.extras && e.extras.length > 0);
+
+  const actionHeader = (action: StandardAction) => {
+    switch (action) {
+      case "view": return "View";
+      case "create": return "Create";
+      case "edit": return "Edit";
+      case "delete": return "Delete";
+    }
+  };
+
+  return (
+    <div>
+      <p className="mb-2 font-semibold text-xs uppercase text-muted-foreground tracking-wider">
+        {title}
+      </p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs border rounded overflow-hidden">
+          <thead className="bg-muted">
+            <tr>
+              <th className="text-left p-1.5 font-medium w-[180px]">Module</th>
+              {STANDARD_ACTIONS.map((a) => (
+                <th key={a} className="text-center p-1.5 font-medium w-[60px]">
+                  {actionHeader(a)}
+                </th>
+              ))}
+              {hasExtras && (
+                <th className="text-left p-1.5 font-medium">Other</th>
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y">
+            {entities.map((entity) => (
+              <tr key={entity.key} className="hover:bg-muted/30">
+                <td className="p-1.5 font-medium">{entity.label}</td>
+                {STANDARD_ACTIONS.map((action) => {
+                  const perm = entity.actions[action];
+                  if (!perm) {
+                    return (
+                      <td key={action} className="p-1.5 text-center text-muted-foreground/50">
+                        —
+                      </td>
+                    );
+                  }
+                  const granted = isGranted(perm);
+                  const overridden = isOverridden(perm);
+                  return (
+                    <td key={action} className="p-1.5 text-center">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={granted}
+                          onChange={(e) => onToggle(perm, e.target.checked)}
+                          className="h-4 w-4 cursor-pointer border-input"
+                        />
+                        {overridden && (
+                          <span
+                            className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-amber-500"
+                            title="Customised"
+                          />
+                        )}
+                      </label>
+                    </td>
+                  );
+                })}
+                {hasExtras && (
+                  <td className="p-1.5">
+                    {entity.extras && entity.extras.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5">
+                        {entity.extras.map((x) => {
+                          const granted = isGranted(x.permission);
+                          const overridden = isOverridden(x.permission);
+                          return (
+                            <label
+                              key={x.permission}
+                              className="relative inline-flex items-center gap-1 cursor-pointer px-1.5 py-0.5 rounded border bg-background hover:bg-muted/50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={granted}
+                                onChange={(e) => onToggle(x.permission, e.target.checked)}
+                                className="h-3 w-3 cursor-pointer border-input"
+                              />
+                              <span className="text-[11px]">{x.label}</span>
+                              {overridden && (
+                                <span
+                                  className="h-1.5 w-1.5 rounded-full bg-amber-500"
+                                  title="Customised"
+                                />
+                              )}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground/50">—</span>
+                    )}
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }

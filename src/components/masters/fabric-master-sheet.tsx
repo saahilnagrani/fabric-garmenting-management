@@ -26,6 +26,7 @@ export type FabricMasterRow = {
   deletedArticleNumbers: string[];
   coloursAvailable: string[];
   mrp: number | null;
+  hsnCode: string | null;
   comments: string | null;
   [key: string]: unknown;
 };
@@ -46,6 +47,7 @@ type FormData = {
   articleNumbers: string[];
   coloursAvailable: string[];
   mrp: string;
+  hsnCode: string;
   comments: string;
 };
 
@@ -56,6 +58,7 @@ const emptyForm: FormData = {
   articleNumbers: [],
   coloursAvailable: [],
   mrp: "",
+  hsnCode: "",
   comments: "",
 };
 
@@ -68,6 +71,7 @@ function rowToForm(row: FabricMasterRow): FormData {
     articleNumbers: row.articleNumbers || [],
     coloursAvailable: row.coloursAvailable || [],
     mrp: s(row.mrp),
+    hsnCode: s(row.hsnCode),
     comments: s(row.comments),
   };
 }
@@ -245,6 +249,7 @@ export function FabricMasterSheet({
         articleNumbers: form.articleNumbers,
         coloursAvailable: form.coloursAvailable,
         mrp: toNum(form.mrp),
+        hsnCode: form.hsnCode.trim() || null,
         comments: form.comments.trim() || null,
       };
 
@@ -351,6 +356,12 @@ export function FabricMasterSheet({
                 <Input type="number" step="0.01" value={form.mrp} onChange={(e) => updateField("mrp", e.target.value)} className="h-8 text-xs" />
               </div>
             </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">HSN Code</Label>
+                <Input value={form.hsnCode} onChange={(e) => updateField("hsnCode", e.target.value)} placeholder="e.g. 6004" className="h-8 text-xs" />
+              </div>
+            </div>
           </CollapsibleSection>
 
           {/* Phase Costs */}
@@ -444,7 +455,7 @@ export function FabricMasterSheet({
 
         <SheetFooter>
           <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
-            <Button size="lg" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1">
+            <Button size="lg" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1 min-h-9">
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

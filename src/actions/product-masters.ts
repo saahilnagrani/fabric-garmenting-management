@@ -14,6 +14,17 @@ export const getProductMasters = cache(async (includeArchived = false) => {
   });
 });
 
+/** Fetch a single ProductMaster with its BOM lines and joined accessory rows. */
+export async function getProductMasterBom(id: string) {
+  await requirePermission("inventory:masters:view");
+  const links = await db.productMasterAccessory.findMany({
+    where: { productMasterId: id },
+    include: { accessory: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return JSON.parse(JSON.stringify(links));
+}
+
 async function linkArticleToFabricMaster(fabricName: string | null | undefined, articleNumber: string) {
   if (!fabricName || !articleNumber || articleNumber === "-") return;
   const master = await db.fabricMaster.findFirst({
@@ -55,10 +66,31 @@ async function unlinkArticleFromFabricMaster(fabricName: string | null | undefin
   }
 }
 
+type BomLine = { accessoryId: string; quantityPerPiece: number; notes?: string | null };
+
+async function syncBomLines(productMasterId: string, lines: BomLine[]) {
+  await db.productMasterAccessory.deleteMany({ where: { productMasterId } });
+  if (lines.length === 0) return;
+  await db.productMasterAccessory.createMany({
+    data: lines.map((l) => ({
+      productMasterId,
+      accessoryId: l.accessoryId,
+      quantityPerPiece: l.quantityPerPiece,
+      notes: l.notes ?? null,
+    })),
+    skipDuplicates: true,
+  });
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createProductMaster(data: any) {
   const session = await requirePermission("inventory:masters:edit");
-  const master = await db.productMaster.create({ data });
+  // Pull bomLines off the payload before passing to Prisma
+  const bomLines: BomLine[] | undefined = data.bomLines;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { bomLines: _bom, ...createData } = data;
+  const master = await db.productMaster.create({ data: createData });
+  if (bomLines) await syncBomLines(master.id, bomLines);
   await linkArticleToFabricMaster(data.fabricName, data.articleNumber);
   await linkArticleToFabricMaster(data.fabric2Name, data.articleNumber);
   logAction(session.user!.id!, session.user!.name!, "CREATE", "ProductMaster", master.id);
@@ -70,7 +102,12 @@ export async function createProductMaster(data: any) {
 export async function updateProductMaster(id: string, data: any) {
   const session = await requirePermission("inventory:masters:edit");
   const previous = await db.productMaster.findUnique({ where: { id } });
-  const master = await db.productMaster.update({ where: { id }, data });
+  // Pull bomLines off the payload before passing to Prisma
+  const bomLines: BomLine[] | undefined = data.bomLines;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { bomLines: _bom, ...updateData } = data;
+  const master = await db.productMaster.update({ where: { id }, data: updateData });
+  if (bomLines !== undefined) await syncBomLines(id, bomLines);
   // Reverse sync: if article number changed (renamed), unlink old without marking as deleted
   if (previous && previous.articleNumber && previous.articleNumber !== master.articleNumber) {
     await unlinkArticleFromFabricMaster(previous.fabricName, previous.articleNumber, false);

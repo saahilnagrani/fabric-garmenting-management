@@ -2,6 +2,7 @@
 
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/require-permission";
+import { getAlertRulesMerged } from "./alert-rules";
 
 export type DashboardAlert = {
   id: string;
@@ -21,11 +22,14 @@ function daysSince(date: Date): number {
  * Computes actionable alerts for the current phase.
  * Uses `updatedAt` as a proxy for "time since last progression" — not perfect
  * (any field change resets the clock), but adequate for stale-detection.
+ *
+ * Thresholds and enable/disable flags are loaded from the AlertRule DB table
+ * (merged against catalog defaults). Admins edit them via /admin/alert-rules.
  */
 export async function getDashboardAlerts(phaseId: string): Promise<DashboardAlert[]> {
   await requirePermission("inventory:dashboard:view");
 
-  const [products, fabricOrders, phase] = await Promise.all([
+  const [products, fabricOrders, phase, ruleRows] = await Promise.all([
     db.product.findMany({
       where: { phaseId, isStrikedThrough: false },
       include: { fabricOrderLinks: true },
@@ -35,20 +39,30 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
       include: { productLinks: true },
     }),
     db.phase.findUnique({ where: { id: phaseId } }),
+    getAlertRulesMerged(),
   ]);
+
+  const rulesById = new Map(ruleRows.map((r) => [r.id, r]));
+  const ruleEnabled = (id: string) => rulesById.get(id)?.enabled ?? true;
+  const ruleThreshold = (id: string, fallback: number) =>
+    rulesById.get(id)?.thresholdDays ?? fallback;
+  const ruleCritical = (id: string, fallback: number) =>
+    rulesById.get(id)?.criticalThresholdDays ?? fallback;
 
   const alerts: DashboardAlert[] = [];
 
   // 1. Phase deadline approaching with unshipped articles
-  if (phase?.endDate) {
+  if (ruleEnabled("phase-deadline") && phase?.endDate) {
+    const warnDays = ruleThreshold("phase-deadline", 7);
+    const critDays = ruleCritical("phase-deadline", 3);
     const daysUntil = Math.floor(
       (phase.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );
     const unshipped = products.filter((p) => p.status !== "SHIPPED");
-    if (daysUntil >= 0 && daysUntil <= 7 && unshipped.length > 0) {
+    if (daysUntil >= 0 && daysUntil <= warnDays && unshipped.length > 0) {
       alerts.push({
         id: "phase-deadline",
-        severity: daysUntil <= 3 ? "critical" : "warning",
+        severity: daysUntil <= critDays ? "critical" : "warning",
         title: `Phase ends in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
         message: `${unshipped.length} article order${unshipped.length === 1 ? "" : "s"} not yet shipped to customer`,
         count: unshipped.length,
@@ -58,102 +72,118 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
     }
   }
 
-  // 2. Stale fabric orders: ORDERED > 7 days
-  const staleOrdered = fabricOrders.filter(
-    (f) => f.orderStatus === "ORDERED" && daysSince(f.updatedAt) > 7
-  );
-  if (staleOrdered.length > 0) {
-    alerts.push({
-      id: "stale-ordered",
-      severity: "warning",
-      title: "Stale fabric orders",
-      message: `${staleOrdered.length} fabric order${staleOrdered.length === 1 ? "" : "s"} in Ordered state for more than 7 days`,
-      count: staleOrdered.length,
-      actionUrl: "/fabric-orders",
-      actionLabel: "Review",
-    });
+  // 2. Stale fabric orders: ORDERED > N days
+  if (ruleEnabled("stale-ordered")) {
+    const n = ruleThreshold("stale-ordered", 7);
+    const staleOrdered = fabricOrders.filter(
+      (f) => f.orderStatus === "ORDERED" && daysSince(f.updatedAt) > n
+    );
+    if (staleOrdered.length > 0) {
+      alerts.push({
+        id: "stale-ordered",
+        severity: "warning",
+        title: "Stale fabric orders",
+        message: `${staleOrdered.length} fabric order${staleOrdered.length === 1 ? "" : "s"} in Ordered state for more than ${n} days`,
+        count: staleOrdered.length,
+        actionUrl: "/fabric-orders",
+        actionLabel: "Review",
+      });
+    }
   }
 
-  // 3. Missing cutting reports: products in FABRIC_RECEIVED > 3 days without cutting report
-  const missingCuttingReport = products.filter(
-    (p) =>
-      p.status === "FABRIC_RECEIVED" &&
-      p.cuttingReportGarmentsPerKg === null &&
-      p.cuttingReportGarmentsPerKg2 === null &&
-      daysSince(p.updatedAt) > 3
-  );
-  if (missingCuttingReport.length > 0) {
-    alerts.push({
-      id: "missing-cutting-report",
-      severity: "warning",
-      title: "Awaiting cutting reports",
-      message: `${missingCuttingReport.length} article${missingCuttingReport.length === 1 ? "" : "s"} with fabric received but no cutting report entered (>3 days)`,
-      count: missingCuttingReport.length,
-      actionUrl: "/products?status=FABRIC_RECEIVED",
-      actionLabel: "Enter reports",
-    });
+  // 3. Missing cutting reports: FABRIC_RECEIVED > N days without cutting report
+  if (ruleEnabled("missing-cutting-report")) {
+    const n = ruleThreshold("missing-cutting-report", 3);
+    const missingCuttingReport = products.filter(
+      (p) =>
+        p.status === "FABRIC_RECEIVED" &&
+        p.cuttingReportGarmentsPerKg === null &&
+        p.cuttingReportGarmentsPerKg2 === null &&
+        daysSince(p.updatedAt) > n
+    );
+    if (missingCuttingReport.length > 0) {
+      alerts.push({
+        id: "missing-cutting-report",
+        severity: "warning",
+        title: "Awaiting cutting reports",
+        message: `${missingCuttingReport.length} article${missingCuttingReport.length === 1 ? "" : "s"} with fabric received but no cutting report entered (>${n} days)`,
+        count: missingCuttingReport.length,
+        actionUrl: "/products?status=FABRIC_RECEIVED",
+        actionLabel: "Enter reports",
+      });
+    }
   }
 
-  // 4. Sampling overdue > 5 days
-  const samplingOverdue = products.filter(
-    (p) => p.status === "SAMPLING" && daysSince(p.updatedAt) > 5
-  );
-  if (samplingOverdue.length > 0) {
-    alerts.push({
-      id: "sampling-overdue",
-      severity: "warning",
-      title: "Sampling overdue",
-      message: `${samplingOverdue.length} article${samplingOverdue.length === 1 ? "" : "s"} in Sampling for more than 5 days`,
-      count: samplingOverdue.length,
-      actionUrl: "/products?status=SAMPLING",
-      actionLabel: "Review",
-    });
+  // 4. Sampling overdue > N days
+  if (ruleEnabled("sampling-overdue")) {
+    const n = ruleThreshold("sampling-overdue", 5);
+    const samplingOverdue = products.filter(
+      (p) => p.status === "SAMPLING" && daysSince(p.updatedAt) > n
+    );
+    if (samplingOverdue.length > 0) {
+      alerts.push({
+        id: "sampling-overdue",
+        severity: "warning",
+        title: "Sampling overdue",
+        message: `${samplingOverdue.length} article${samplingOverdue.length === 1 ? "" : "s"} in Sampling for more than ${n} days`,
+        count: samplingOverdue.length,
+        actionUrl: "/products?status=SAMPLING",
+        actionLabel: "Review",
+      });
+    }
   }
 
-  // 5. Production stalled > 14 days
-  const productionStalled = products.filter(
-    (p) => p.status === "IN_PRODUCTION" && daysSince(p.updatedAt) > 14
-  );
-  if (productionStalled.length > 0) {
-    alerts.push({
-      id: "production-stalled",
-      severity: "warning",
-      title: "Production stalled",
-      message: `${productionStalled.length} article${productionStalled.length === 1 ? "" : "s"} in Production for more than 14 days`,
-      count: productionStalled.length,
-      actionUrl: "/products?status=IN_PRODUCTION",
-      actionLabel: "Review",
-    });
+  // 5. Production stalled > N days
+  if (ruleEnabled("production-stalled")) {
+    const n = ruleThreshold("production-stalled", 14);
+    const productionStalled = products.filter(
+      (p) => p.status === "IN_PRODUCTION" && daysSince(p.updatedAt) > n
+    );
+    if (productionStalled.length > 0) {
+      alerts.push({
+        id: "production-stalled",
+        severity: "warning",
+        title: "Production stalled",
+        message: `${productionStalled.length} article${productionStalled.length === 1 ? "" : "s"} in Production for more than ${n} days`,
+        count: productionStalled.length,
+        actionUrl: "/products?status=IN_PRODUCTION",
+        actionLabel: "Review",
+      });
+    }
   }
 
-  // 6. Unlinked fabric orders (no matched products) — may indicate data entry issues
-  const unlinkedFabricOrders = fabricOrders.filter((f) => f.productLinks.length === 0);
-  if (unlinkedFabricOrders.length > 0) {
-    alerts.push({
-      id: "unlinked-fabric",
-      severity: "info",
-      title: "Unlinked fabric orders",
-      message: `${unlinkedFabricOrders.length} fabric order${unlinkedFabricOrders.length === 1 ? "" : "s"} not linked to any article order — check article numbers, colour, and fabric name match`,
-      count: unlinkedFabricOrders.length,
-      actionUrl: "/fabric-orders",
-      actionLabel: "Reconcile",
-    });
+  // 6. Unlinked fabric orders (no matched products)
+  if (ruleEnabled("unlinked-fabric")) {
+    const unlinkedFabricOrders = fabricOrders.filter((f) => f.productLinks.length === 0);
+    if (unlinkedFabricOrders.length > 0) {
+      alerts.push({
+        id: "unlinked-fabric",
+        severity: "info",
+        title: "Unlinked fabric orders",
+        message: `${unlinkedFabricOrders.length} fabric order${unlinkedFabricOrders.length === 1 ? "" : "s"} not linked to any article order — check article numbers, colour, and fabric name match`,
+        count: unlinkedFabricOrders.length,
+        actionUrl: "/fabric-orders",
+        actionLabel: "Reconcile",
+      });
+    }
   }
 
-  // 7. Unlinked article orders (no matched fabric orders) — waiting for fabric to be ordered
-  const unlinkedProducts = products.filter(
-    (p) => p.status === "PLANNED" && p.fabricOrderLinks.length === 0
-  );
-  if (unlinkedProducts.length > 0) {
-    alerts.push({
-      id: "unlinked-products",
-      severity: "info",
-      title: "Articles awaiting fabric orders",
-      message: `${unlinkedProducts.length} planned article${unlinkedProducts.length === 1 ? "" : "s"} have no fabric orders linked yet`,
-      count: unlinkedProducts.length,
-      actionUrl: "/products?status=PLANNED",
-      actionLabel: "Review",
-    });
+  // 7. Unlinked planned articles (no matched fabric orders)
+  if (ruleEnabled("unlinked-products")) {
+    const unlinkedProducts = products.filter(
+      (p) => p.status === "PLANNED" && p.fabricOrderLinks.length === 0
+    );
+    if (unlinkedProducts.length > 0) {
+      alerts.push({
+        id: "unlinked-products",
+        severity: "info",
+        title: "Articles awaiting fabric orders",
+        message: `${unlinkedProducts.length} planned article${unlinkedProducts.length === 1 ? "" : "s"} have no fabric orders linked yet`,
+        count: unlinkedProducts.length,
+        actionUrl: "/products?status=PLANNED",
+        actionLabel: "Review",
+      });
+    }
   }
 
   // Sort: critical first, then warning, then info

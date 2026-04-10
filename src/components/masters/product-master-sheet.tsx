@@ -19,7 +19,9 @@ import {
   deleteProductMaster,
   batchCreateProductMasters,
   getNextStyleSequence,
+  getProductMasterBom,
 } from "@/actions/product-masters";
+import { FEATURES } from "@/lib/feature-flags";
 import { getFabricMasterColours } from "@/actions/fabric-masters";
 import { getPhaseCosts, upsertPhaseCost } from "@/actions/phase-costs";
 import { GENDER_LABELS } from "@/lib/constants";
@@ -200,6 +202,9 @@ type Phase = { id: string; name: string; number: number };
 type ProductTypeWithCode = { name: string; code: string };
 type ColourWithCode = { name: string; code: string };
 
+type AccessoryOption = { id: string; label: string; unit: string };
+type BomLine = { accessoryId: string; quantityPerPiece: string };
+
 export function ProductMasterSheet({
   open,
   onOpenChange,
@@ -210,6 +215,7 @@ export function ProductMasterSheet({
   colours = [],
   coloursWithCode = [],
   phases = [],
+  accessories = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -220,6 +226,7 @@ export function ProductMasterSheet({
   colours?: string[];
   coloursWithCode?: ColourWithCode[];
   phases?: Phase[];
+  accessories?: AccessoryOption[];
 }) {
   const router = useRouter();
   const [form, setForm] = useState<StyleFormData>({ ...emptyStyleForm });
@@ -240,6 +247,9 @@ export function ProductMasterSheet({
 
   // Phase cost overrides
   const [phaseCostOverrides, setPhaseCostOverrides] = useState<Record<string, Record<string, string>>>({});
+
+  // BOM lines (article-level — applied to every SKU on save)
+  const [bomLines, setBomLines] = useState<BomLine[]>([]);
 
   // Collapsible section state (for edit mode)
   const [expandedSections, setExpandedSections] = useState<Record<SectionName, boolean>>(() =>
@@ -328,6 +338,34 @@ export function ProductMasterSheet({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingRow]);
+
+  // Load BOM lines for edit (article-level — fetched from first SKU; replicated to all on save)
+  useEffect(() => {
+    if (open && FEATURES.accessories && editingRow && editingRow.skus.length > 0) {
+      getProductMasterBom(editingRow.skus[0].id)
+        .then((links) => {
+          setBomLines(
+            (links as Array<{ accessoryId: string; quantityPerPiece: unknown }>).map((l) => ({
+              accessoryId: l.accessoryId,
+              quantityPerPiece: String(l.quantityPerPiece ?? ""),
+            }))
+          );
+        })
+        .catch(() => setBomLines([]));
+    } else if (open && !editingRow) {
+      setBomLines([]);
+    }
+  }, [open, editingRow]);
+
+  function addBomLine() {
+    setBomLines((prev) => [...prev, { accessoryId: "", quantityPerPiece: "" }]);
+  }
+  function updateBomLine(idx: number, patch: Partial<BomLine>) {
+    setBomLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
+  }
+  function removeBomLine(idx: number) {
+    setBomLines((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   // Load phase costs for edit
   useEffect(() => {
@@ -506,6 +544,13 @@ export function ProductMasterSheet({
 
     setSubmitting(true);
     try {
+      // Build BOM payload (only valid lines with both fields). Replicated across all SKUs.
+      const bomPayload = FEATURES.accessories
+        ? bomLines
+            .filter((l) => l.accessoryId && l.quantityPerPiece && Number(l.quantityPerPiece) > 0)
+            .map((l) => ({ accessoryId: l.accessoryId, quantityPerPiece: Number(l.quantityPerPiece) }))
+        : undefined;
+
       const sharedPayload = {
         styleNumber: form.styleNumber || form.articleNumber || skuEntries[0]?.skuCode?.split(" ").slice(0, 2).join(" ") || "",
         articleNumber: form.articleNumber || null,
@@ -542,12 +587,14 @@ export function ProductMasterSheet({
               ...sharedPayload,
               skuCode: entry.skuCode,
               coloursAvailable: [entry.colour],
+              ...(bomPayload !== undefined ? { bomLines: bomPayload } : {}),
             });
           } else {
             await createProductMaster({
               ...sharedPayload,
               skuCode: entry.skuCode,
               coloursAvailable: [entry.colour],
+              ...(bomPayload !== undefined ? { bomLines: bomPayload } : {}),
             });
           }
         }
@@ -1133,6 +1180,73 @@ export function ProductMasterSheet({
                   </div>
                 </div>
               </CollapsibleSection>
+
+              {/* Accessories (BOM) */}
+              {FEATURES.accessories && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="px-2 py-1 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                    <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+                      Accessories (BOM)
+                    </span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={addBomLine}
+                      className="h-6 px-1.5 text-[10px]"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                  <div className="px-2 py-1.5 space-y-1.5">
+                    {bomLines.length === 0 && (
+                      <p className="text-[11px] text-muted-foreground italic">
+                        No accessories defined for this article. Click &ldquo;Add&rdquo; to declare per-piece quantities.
+                      </p>
+                    )}
+                    {bomLines.map((line, idx) => {
+                      const acc = accessories.find((a) => a.id === line.accessoryId);
+                      return (
+                        <div key={idx} className="flex items-center gap-1.5">
+                          <div className="flex-1 min-w-0">
+                            <select
+                              value={line.accessoryId}
+                              onChange={(e) => updateBomLine(idx, { accessoryId: e.target.value })}
+                              className="h-7 text-xs w-full border rounded px-1"
+                            >
+                              <option value="">Select accessory...</option>
+                              {accessories.map((a) => (
+                                <option key={a.id} value={a.id}>{a.label}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <Input
+                            type="number"
+                            step="0.0001"
+                            placeholder="qty/pc"
+                            value={line.quantityPerPiece}
+                            onChange={(e) => updateBomLine(idx, { quantityPerPiece: e.target.value })}
+                            className="h-7 text-xs w-20 shrink-0"
+                          />
+                          <span className="text-[10px] text-muted-foreground w-12 shrink-0">
+                            {acc?.unit || ""}
+                          </span>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeBomLine(idx)}
+                            className="h-6 w-6 p-0 shrink-0"
+                          >
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Phase Costs */}
               {phases.length > 0 && (

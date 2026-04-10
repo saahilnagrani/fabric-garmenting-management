@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { getFabricOrderPrefillFromProduct } from "@/actions/products";
-import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, RowClickedEvent } from "ag-grid-community";
+import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, RowClickedEvent, SelectionChangedEvent } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatCurrency } from "@/lib/formatters";
-import { Plus, Check } from "lucide-react";
+import { Plus, Check, FileText } from "lucide-react";
 import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
@@ -80,6 +80,7 @@ export function FabricOrderGrid({
   const gridApiRef = useRef<GridApi | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRows, setEditingRows] = useState<Record<string, unknown>[]>([]);
+  const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
   const colSaveTimer = useRef<NodeJS.Timeout | null>(null);
 
   // Custom columns
@@ -230,6 +231,22 @@ export function FabricOrderGrid({
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     {
+      colId: "__select",
+      headerName: "",
+      width: 42,
+      minWidth: 42,
+      maxWidth: 42,
+      pinned: "left",
+      editable: false,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      checkboxSelection: true,
+      headerCheckboxSelection: true,
+      headerCheckboxSelectionFilteredOnly: true,
+      suppressMovable: true,
+    },
+    {
       field: "fabricName",
       headerName: "Fabric",
       minWidth: 90,
@@ -276,7 +293,7 @@ export function FabricOrderGrid({
         return dates.map((d) => {
           const parsed = new Date(d);
           if (isNaN(parsed.getTime())) return d;
-          return parsed.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+          return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
         }).join(", ");
       },
     },
@@ -387,6 +404,21 @@ export function FabricOrderGrid({
     setSheetOpen(true);
   }
 
+  const handleSelectionChanged = useCallback((event: SelectionChangedEvent) => {
+    const rows = event.api.getSelectedRows() as Record<string, unknown>[];
+    setSelectedRows(rows);
+  }, []);
+
+  function handleGeneratePO() {
+    if (selectedRows.length === 0) return;
+    const ids = selectedRows.flatMap((r) => {
+      const sourceIds = r.__sourceIds as string[] | undefined;
+      return sourceIds && sourceIds.length > 0 ? sourceIds : [String(r.id)];
+    });
+    const unique = [...new Set(ids)];
+    window.open(`/fabric-orders/purchase-order?ids=${unique.join(",")}`, "_blank");
+  }
+
   // Open sheet with prefill data when navigated from product "Create matching fabric order"
   const prefillProductId = searchParams.get("prefillFromProductId");
   const processedPrefillRef = useRef<string | null>(null);
@@ -405,6 +437,30 @@ export function FabricOrderGrid({
       })
       .catch(() => toast.error("Failed to load prefill data"));
   }, [prefillProductId]);
+
+  // Open sheet for an existing fabric order when navigated from another
+  // sheet's "Linked Fabric Orders" section via ?openId=<fabricOrderId>.
+  const openIdParam = searchParams.get("openId");
+  const processedOpenIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openIdParam) return;
+    if (processedOpenIdRef.current === openIdParam) return;
+    processedOpenIdRef.current = openIdParam;
+    // The row grid aggregates by vendor — find the underlying source row whose
+    // id matches. rowData holds aggregated rows, so we search __sourceIds.
+    const match = rowData.find((r) => {
+      const sourceIds = (r.__sourceIds as string[] | undefined) || [];
+      return sourceIds.includes(openIdParam) || r.id === openIdParam;
+    });
+    if (match) {
+      setEditingRows([match]);
+      setSheetOpen(true);
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("openId");
+    const qs = params.toString();
+    router.replace(`/fabric-orders${qs ? `?${qs}` : ""}`);
+  }, [openIdParam, rowData, router, searchParams]);
 
   function applyFilter(key: string, value: string | null) {
     const params = new URLSearchParams(searchParams.toString());
@@ -448,6 +504,15 @@ export function FabricOrderGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Fabric Order
         </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleGeneratePO}
+          disabled={selectedRows.length === 0}
+        >
+          <FileText className="mr-1.5 h-3.5 w-3.5" />
+          Generate Purchase Orders{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
+        </Button>
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
           colStateKey={COL_STATE_KEY}
@@ -489,7 +554,14 @@ export function FabricOrderGrid({
                   if (cs.colId && noSortCols.has(cs.colId)) { patched.sort = null; patched.sortIndex = null; }
                   return patched;
                 });
-                e.api.applyColumnState({ state: merged, applyOrder: true });
+                // Ensure __select column is always first and pinned left, even for users
+                // whose saved column state predates it.
+                const withoutSelect = merged.filter((cs) => cs.colId !== "__select");
+                const finalState: ColumnState[] = [
+                  { colId: "__select", pinned: "left", hide: false, width: 42 },
+                  ...withoutSelect,
+                ];
+                e.api.applyColumnState({ state: finalState, applyOrder: true });
               } catch {
                 // ignore
               }
@@ -499,6 +571,9 @@ export function FabricOrderGrid({
             // Recalculate spans based on actual grid display order
             recalcGroupSpans();
           }}
+          rowSelection="multiple"
+          suppressRowClickSelection
+          onSelectionChanged={handleSelectionChanged}
           onRowClicked={handleRowClicked}
           onColumnMoved={saveColumnState}
           onColumnResized={saveColumnStateDebounced}

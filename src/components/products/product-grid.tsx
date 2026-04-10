@@ -32,7 +32,7 @@ import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-type Vendor = { id: string; name: string };
+type Vendor = { id: string; name: string; type?: string };
 type ProductMasterType = Record<string, unknown>;
 
 function toNum(v: unknown): number | null {
@@ -86,6 +86,7 @@ export function ProductGrid({
   currentTab,
   phaseId,
   productMasters,
+  fabricMasters = [],
   sizeDistributions = [],
 }: {
   products: unknown[];
@@ -93,6 +94,7 @@ export function ProductGrid({
   currentTab: string;
   phaseId: string;
   productMasters: ProductMasterType[];
+  fabricMasters?: ProductMasterType[];
   sizeDistributions?: SizeDistItem[];
 }) {
   const router = useRouter();
@@ -140,10 +142,18 @@ export function ProductGrid({
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     { field: "styleNumber", headerName: "Style # (legacy)", pinned: "left", minWidth: 90, editable: false },
-    { field: "orderDate", headerName: "Order Date", minWidth: 130, editable: false },
+    {
+      field: "orderDate", headerName: "Order Date", minWidth: 120, editable: false,
+      valueFormatter: (p) => {
+        if (!p.value) return "";
+        const d = new Date(String(p.value));
+        if (isNaN(d.getTime())) return String(p.value);
+        return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+      },
+    },
     { field: "skuCode", headerName: "Article Code", minWidth: 90, editable: false },
     { field: "articleNumber", headerName: "Article #", minWidth: 80, editable: false },
-    { field: "colourOrdered", headerName: "Colour Ordered", minWidth: 100, editable: false },
+    { field: "colourOrdered", headerName: "Colour", minWidth: 100, editable: false },
     { field: "productName", headerName: "Product Name", minWidth: 110, editable: false },
     { field: "type", headerName: "Product Type", minWidth: 90, editable: false },
     { field: "gender", headerName: "Gender", minWidth: 85, editable: false, valueFormatter: (p) => GENDER_LABELS[p.value] || p.value || "" },
@@ -257,6 +267,26 @@ export function ProductGrid({
     setSheetOpen(true);
   }
 
+  // Open sheet for an existing article order when navigated from another
+  // sheet's "Linked Article Orders" section via ?openId=<productId>.
+  const openIdParam = searchParams.get("openId");
+  const processedOpenIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!openIdParam) return;
+    if (processedOpenIdRef.current === openIdParam) return;
+    processedOpenIdRef.current = openIdParam;
+    const row = rowData.find((r) => r.id === openIdParam);
+    if (row) {
+      setEditingRow(row);
+      setSheetOpen(true);
+    }
+    // Strip the param from the URL so it doesn't re-trigger on refresh.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("openId");
+    const qs = params.toString();
+    router.replace(`/products${qs ? `?${qs}` : ""}`);
+  }, [openIdParam, rowData, router, searchParams]);
+
   // Open sheet with prefill data when navigated from fabric order "Create matching article order"
   const prefillFabricOrderId = searchParams.get("prefillFromFabricOrderId");
   const processedPrefillRef = useRef<string | null>(null);
@@ -330,7 +360,7 @@ export function ProductGrid({
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
-          Add Product Order
+          Add Article Order
         </Button>
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
@@ -344,6 +374,7 @@ export function ProductGrid({
         vendors={vendors}
         phaseId={phaseId}
         productMasters={productMasters}
+        fabricMasters={fabricMasters}
         isRepeatTab={currentTab === "repeat"}
         editingRow={editingRow}
         sizeDistributions={sizeDistributions}

@@ -412,7 +412,7 @@ export function ProductForm({
       </Card>
 
       <div className="flex gap-3">
-        <Button type="submit" disabled={isSubmitting}>
+        <Button type="submit" disabled={isSubmitting} size="lg" className="min-h-9">
           {isSubmitting ? "Saving..." : isEditing ? "Update Product" : "Create Product"}
         </Button>
         <Button type="button" variant="outline" onClick={() => router.back()}>

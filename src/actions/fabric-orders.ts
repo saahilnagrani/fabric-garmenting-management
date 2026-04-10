@@ -246,6 +246,64 @@ export async function findExistingOrdersForFabricColour(
   });
 }
 
+export async function getFabricOrdersByIds(ids: string[]) {
+  await requirePermission("inventory:fabric_orders:view");
+  if (!ids.length) return [];
+  return db.fabricOrder.findMany({
+    where: { id: { in: ids } },
+    include: { fabricVendor: true, phase: true },
+    orderBy: [{ fabricVendorId: "asc" }, { fabricName: "asc" }, { colour: "asc" }],
+  });
+}
+
+/**
+ * Fetches fabric orders plus related data needed to render a purchase order:
+ * - fabric masters (for HSN codes), keyed by fabricName
+ * - garmenter vendors (for shipping addresses), keyed by vendor name
+ *   (resolved from FabricOrder.garmentingAt, which stores a location name
+ *   that should match a Vendor record of type GARMENTING)
+ */
+export async function getPurchaseOrderData(ids: string[]) {
+  await requirePermission("inventory:fabric_orders:view");
+  if (!ids.length) return { orders: [], fabricMastersByName: {}, garmentersByName: {} };
+
+  const orders = await db.fabricOrder.findMany({
+    where: { id: { in: ids } },
+    include: { fabricVendor: true, phase: true },
+    orderBy: [{ fabricVendorId: "asc" }, { fabricName: "asc" }, { colour: "asc" }],
+  });
+
+  const fabricNames = [...new Set(orders.map((o) => o.fabricName).filter(Boolean))];
+  const garmenterNames = [...new Set(orders.map((o) => o.garmentingAt).filter((n): n is string => !!n))];
+
+  const [fabricMasters, garmenters] = await Promise.all([
+    fabricNames.length
+      ? db.fabricMaster.findMany({
+          where: { fabricName: { in: fabricNames } },
+          select: { fabricName: true, hsnCode: true },
+        })
+      : Promise.resolve([]),
+    garmenterNames.length
+      ? db.vendor.findMany({
+          where: { name: { in: garmenterNames }, type: "GARMENTING" },
+          select: { name: true, address: true, contactInfo: true },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const fabricMastersByName: Record<string, { hsnCode: string | null }> = {};
+  for (const fm of fabricMasters) {
+    fabricMastersByName[fm.fabricName] = { hsnCode: fm.hsnCode };
+  }
+
+  const garmentersByName: Record<string, { name: string; address: string | null; contactInfo: string | null }> = {};
+  for (const g of garmenters) {
+    garmentersByName[g.name] = { name: g.name, address: g.address, contactInfo: g.contactInfo };
+  }
+
+  return { orders, fabricMastersByName, garmentersByName };
+}
+
 export async function mergeOrder(
   existingOrderId: string,
   additionalQty: number,

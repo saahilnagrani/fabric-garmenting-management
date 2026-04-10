@@ -51,9 +51,11 @@ model Phase {
   isStrikedThrough Boolean       @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
-  products         Product[]
-  fabricOrders     FabricOrder[]
-  expenses         Expense[]
+  products             Product[]
+  fabricOrders         FabricOrder[]
+  expenses             Expense[]
+  accessoryPurchases   AccessoryPurchase[]
+  accessoryDispatches  AccessoryDispatch[]
 }
 
 model Vendor {
@@ -65,11 +67,13 @@ model Vendor {
   isStrikedThrough Boolean       @default(false)
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
-  productsByFabricVendor   Product[]      @relation("ProductFabricVendor")
-  productsByFabric2Vendor  Product[]      @relation("ProductFabric2Vendor")
-  fabricOrders             FabricOrder[]  @relation("FabricOrderVendor")
-  expenses                 Expense[]      @relation("ExpenseVendor")
-  fabricMasters            FabricMaster[] @relation("FabricMasterVendor")
+  productsByFabricVendor   Product[]            @relation("ProductFabricVendor")
+  productsByFabric2Vendor  Product[]            @relation("ProductFabric2Vendor")
+  fabricOrders             FabricOrder[]        @relation("FabricOrderVendor")
+  expenses                 Expense[]            @relation("ExpenseVendor")
+  fabricMasters            FabricMaster[]       @relation("FabricMasterVendor")
+  accessoryMasters         AccessoryMaster[]    @relation("AccessoryMasterVendor")
+  accessoryPurchases       AccessoryPurchase[]  @relation("AccessoryPurchaseVendor")
 }
 
 enum VendorType {
@@ -175,7 +179,8 @@ model Product {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  fabricOrderLinks ProductFabricOrder[]
+  fabricOrderLinks    ProductFabricOrder[]
+  accessoryDispatches AccessoryDispatch[]  @relation("ProductAccessoryDispatch")
 
   @@index([phaseId])
   @@index([styleNumber])
@@ -373,6 +378,7 @@ model FabricMaster {
   deletedArticleNumbers String[] @default([])
   coloursAvailable      String[]
   mrp              Decimal? @db.Decimal(10, 2)
+  hsnCode          String?
   comments         String?
   isStrikedThrough Boolean  @default(false)
   createdAt        DateTime @default(now())
@@ -413,6 +419,14 @@ model PhaseCost {
 
   @@unique([phaseId, entityType, entityId])
   @@index([entityType, entityId])
+}
+
+model AlertRule {
+  id                    String   @id  // matches the rule id in src/lib/alert-rules-catalog.ts
+  enabled               Boolean  @default(true)
+  thresholdDays         Int?
+  criticalThresholdDays Int?     // only used by phase-deadline rule
+  updatedAt             DateTime @updatedAt
 }
 
 model AuditLog {
@@ -465,6 +479,111 @@ model ProductMaster {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  accessoryLinks      ProductMasterAccessory[]
+
   @@index([skuCode])
   @@index([styleNumber])
+}
+
+// ─── ACCESSORIES ─────────────────────────────────────────────────
+
+enum AccessoryUnit {
+  PIECES
+  METERS
+  KG
+  GRAMS
+  ROLLS
+  PACKS
+}
+
+model AccessoryMaster {
+  id                 String        @id @default(cuid())
+  baseName           String
+  colour             String?
+  size               String?
+  category           String
+  unit               AccessoryUnit
+  vendorId           String?
+  vendor             Vendor?       @relation("AccessoryMasterVendor", fields: [vendorId], references: [id])
+  defaultCostPerUnit Decimal?      @db.Decimal(10, 2)
+  hsnCode            String?
+  comments           String?
+  isStrikedThrough   Boolean       @default(false)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  purchases    AccessoryPurchase[]
+  dispatches   AccessoryDispatch[]
+  productLinks ProductMasterAccessory[]
+
+  @@unique([baseName, colour, size])
+  @@index([category])
+  @@index([vendorId])
+}
+
+model AccessoryPurchase {
+  id            String          @id @default(cuid())
+  phaseId       String
+  phase         Phase           @relation(fields: [phaseId], references: [id])
+  accessoryId   String
+  accessory     AccessoryMaster @relation(fields: [accessoryId], references: [id])
+  vendorId      String?
+  vendor        Vendor?         @relation("AccessoryPurchaseVendor", fields: [vendorId], references: [id])
+
+  quantity      Decimal   @db.Decimal(12, 2)
+  costPerUnit   Decimal?  @db.Decimal(10, 2)
+  invoiceNumber String?
+  purchaseDate  DateTime?
+  comments      String?
+
+  isStrikedThrough Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([phaseId])
+  @@index([accessoryId])
+  @@index([vendorId])
+}
+
+model AccessoryDispatch {
+  id          String          @id @default(cuid())
+  phaseId     String
+  phase       Phase           @relation(fields: [phaseId], references: [id])
+  accessoryId String
+  accessory   AccessoryMaster @relation(fields: [accessoryId], references: [id])
+
+  quantity Decimal @db.Decimal(12, 2)
+
+  destinationGarmenter String?
+
+  productId String?
+  product   Product? @relation("ProductAccessoryDispatch", fields: [productId], references: [id])
+
+  dispatchDate DateTime?
+  comments     String?
+
+  isStrikedThrough Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([phaseId])
+  @@index([accessoryId])
+  @@index([productId])
+}
+
+model ProductMasterAccessory {
+  id              String          @id @default(cuid())
+  productMasterId String
+  productMaster   ProductMaster   @relation(fields: [productMasterId], references: [id], onDelete: Cascade)
+  accessoryId     String
+  accessory       AccessoryMaster @relation(fields: [accessoryId], references: [id])
+
+  quantityPerPiece Decimal @db.Decimal(10, 4)
+  notes            String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([productMasterId, accessoryId])
+  @@index([productMasterId])
+  @@index([accessoryId])
 }

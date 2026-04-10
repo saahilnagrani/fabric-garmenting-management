@@ -24,6 +24,7 @@ type FabricData = { name: string; mrp: number | null };
 type Phase = { id: string; name: string; number: number };
 type ProductTypeWithCode = { name: string; code: string };
 type ColourWithCode = { name: string; code: string };
+type AccessoryOption = { id: string; label: string; unit: string };
 
 export function ProductMasterGrid({
   groupedMasters,
@@ -33,6 +34,7 @@ export function ProductMasterGrid({
   colours = [],
   coloursWithCode = [],
   phases = [],
+  accessories = [],
   showArchived = false,
 }: {
   groupedMasters: GroupedStyleRow[];
@@ -42,6 +44,7 @@ export function ProductMasterGrid({
   colours?: string[];
   coloursWithCode?: ColourWithCode[];
   phases?: Phase[];
+  accessories?: AccessoryOption[];
   showArchived?: boolean;
 }) {
   const router = useRouter();
@@ -238,6 +241,7 @@ export function ProductMasterGrid({
         colours={colours}
         coloursWithCode={coloursWithCode}
         phases={phases}
+        accessories={accessories}
       />
     </>
   );

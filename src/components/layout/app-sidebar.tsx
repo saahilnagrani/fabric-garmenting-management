@@ -15,7 +15,12 @@ import {
   ClipboardList,
   List,
   CalendarPlus,
+  ShoppingBag,
+  Send,
+  Scale,
+  Boxes,
 } from "lucide-react";
+import { FEATURES } from "@/lib/feature-flags";
 import {
   Sidebar,
   SidebarContent,
@@ -43,6 +48,13 @@ const navItems: NavItem[] = [
   { title: "Phase Planning", href: "/phase-planning", icon: CalendarPlus, permission: "inventory:phases:view" },
   { title: "Article Orders", href: "/products", icon: Package, permission: "inventory:products:view" },
   { title: "Fabric Orders", href: "/fabric-orders", icon: Scissors, permission: "inventory:fabric_orders:view" },
+  ...(FEATURES.accessories
+    ? [
+        { title: "Accessory Purchases", href: "/accessory-purchases", icon: ShoppingBag, permission: "inventory:accessories:view" as const },
+        { title: "Accessory Dispatches", href: "/accessory-dispatches", icon: Send, permission: "inventory:accessories:view" as const },
+        { title: "Accessory Balance", href: "/accessory-balance", icon: Scale, permission: "inventory:accessories:view" as const },
+      ]
+    : []),
   { title: "Expenses", href: "/expenses", icon: Receipt, permission: "inventory:expenses:view" },
   { title: "Vendors", href: "/vendors", icon: Users, permission: "inventory:vendors:view" },
   { title: "Phases", href: "/phases", icon: Layers, permission: "inventory:phases:view" },
@@ -51,6 +63,11 @@ const navItems: NavItem[] = [
 const masterItems: NavItem[] = [
   { title: "Fabrics Master DB", href: "/fabric-masters", icon: BookOpen, permission: "inventory:masters:view" },
   { title: "Article Master DB", href: "/product-masters", icon: ClipboardList, permission: "inventory:masters:view" },
+  ...(FEATURES.accessories
+    ? [
+        { title: "Accessories Master DB", href: "/accessory-masters", icon: Boxes, permission: "inventory:accessories:view" as const },
+      ]
+    : []),
 ];
 
 const listItems: NavItem[] = [

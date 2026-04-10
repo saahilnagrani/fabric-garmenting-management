@@ -2,6 +2,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import { getProducts } from "@/actions/products";
 import { getVendors } from "@/actions/vendors";
 import { getProductMasters } from "@/actions/product-masters";
+import { getFabricMasters } from "@/actions/fabric-masters";
 import { getSizeDistributions } from "@/actions/size-distributions";
 import { ProductGrid } from "@/components/products/product-grid";
 
@@ -19,7 +20,7 @@ export default async function ProductsPage({
   const tab = params.tab || "all";
   const isRepeat = tab === "new" ? false : tab === "repeat" ? true : undefined;
 
-  const [products, vendors, productMasters, sizeDistributions] = await Promise.all([
+  const [products, vendors, productMasters, fabricMasters, sizeDistributions] = await Promise.all([
     getProducts(phase.id, {
       isRepeat,
       search: params.search || undefined,
@@ -29,6 +30,7 @@ export default async function ProductsPage({
     }),
     getVendors(),
     getProductMasters(),
+    getFabricMasters(),
     getSizeDistributions(),
   ]);
 
@@ -46,6 +48,7 @@ export default async function ProductsPage({
         currentTab={tab}
         phaseId={phase.id}
         productMasters={JSON.parse(JSON.stringify(productMasters))}
+        fabricMasters={JSON.parse(JSON.stringify(fabricMasters))}
         sizeDistributions={sizeDistributions.map((d) => ({ size: d.size, percentage: d.percentage }))}
       />
     </div>

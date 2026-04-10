@@ -31,12 +31,20 @@ function toISODate(v: string | null): string | null {
   return d.toISOString();
 }
 
-function formatDateHuman(v: unknown): string {
+/** Parse any stored date format to yyyy-mm-dd for <input type="date">. */
+function toIsoInputValue(v: unknown): string {
   if (!v) return "";
-  const s = String(v);
-  const d = new Date(s);
-  if (isNaN(d.getTime())) return s; // already human-readable or unparseable, keep as-is
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+  const d = new Date(String(v));
+  if (isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/** Format a yyyy-mm-dd ISO date value as "10 Apr 2026". */
+function isoToDisplayDate(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 function toNum(v: unknown): number | null {
@@ -72,7 +80,7 @@ const emptyForm: FormData = {
   gender: "",
   invoiceNumber: "",
   receivedAt: "",
-  orderDate: new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }),
+  orderDate: new Date().toISOString().slice(0, 10),
   costPerUnit: "",
   fabricOrderedQuantityKg: "",
   fabricShippedQuantityKg: "",
@@ -246,8 +254,8 @@ export function FabricOrderSheet({
         availableColour: String(row.availableColour ?? ""),
         gender: String(row.gender ?? ""),
         invoiceNumber: String(row.invoiceNumber ?? ""),
-        receivedAt: formatDateHuman(row.receivedAt),
-        orderDate: formatDateHuman(row.orderDate),
+        receivedAt: toIsoInputValue(row.receivedAt),
+        orderDate: toIsoInputValue(row.orderDate),
         costPerUnit: row.costPerUnit != null ? String(row.costPerUnit) : "",
         fabricOrderedQuantityKg: row.fabricOrderedQuantityKg != null ? String(row.fabricOrderedQuantityKg) : "",
         fabricShippedQuantityKg: row.fabricShippedQuantityKg != null ? String(row.fabricShippedQuantityKg) : "",
@@ -520,7 +528,7 @@ export function FabricOrderSheet({
               <div className="space-y-0.5 min-w-0 overflow-hidden">
                 <Label className="text-[11px]">Vendor *</Label>
                 <Select value={form.fabricVendorId} onValueChange={(v) => updateField("fabricVendorId", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs w-full overflow-hidden">
+                  <SelectTrigger className="h-8 text-xs md:text-xs w-full overflow-hidden">
                     <span className="truncate block">{vendorLabels[form.fabricVendorId] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -540,7 +548,7 @@ export function FabricOrderSheet({
                     placeholder="Colour..."
                   />
                 ) : (
-                  <Input className="h-8 text-xs" value={form.colour} onChange={(e) => updateField("colour", e.target.value)} placeholder={form.fabricName ? "No colours" : "Fabric first"} />
+                  <Input className="h-8 text-xs md:text-xs" value={form.colour} onChange={(e) => updateField("colour", e.target.value)} placeholder={form.fabricName ? "No colours" : "Fabric first"} />
                 )}
               </div>
             </div>
@@ -555,15 +563,15 @@ export function FabricOrderSheet({
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Cost/Unit (Rs) *</Label>
-                <Input className="h-8 text-xs" type="number" step="0.01" value={form.costPerUnit} onChange={(e) => updateField("costPerUnit", e.target.value)} />
+                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.costPerUnit} onChange={(e) => updateField("costPerUnit", e.target.value)} />
               </div>
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Ordered Qty (kg) *</Label>
-                <Input className="h-8 text-xs" type="number" step="0.01" value={form.fabricOrderedQuantityKg} onChange={(e) => updateField("fabricOrderedQuantityKg", e.target.value)} />
+                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabricOrderedQuantityKg} onChange={(e) => updateField("fabricOrderedQuantityKg", e.target.value)} />
               </div>
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Shipped Qty (kg)</Label>
-                <Input className="h-8 text-xs" type="number" step="0.01" value={form.fabricShippedQuantityKg} onChange={(e) => updateField("fabricShippedQuantityKg", e.target.value)} />
+                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabricShippedQuantityKg} onChange={(e) => updateField("fabricShippedQuantityKg", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -592,7 +600,7 @@ export function FabricOrderSheet({
               <div className="space-y-0.5 min-w-0">
                 <Label className="text-[11px]">Order Status *</Label>
                 <Select value={form.orderStatus} onValueChange={(v) => updateField("orderStatus", v ?? "DRAFT_ORDER")}>
-                  <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
                     <span className="truncate">{FABRIC_ORDER_STATUS_LABELS[form.orderStatus] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -605,7 +613,7 @@ export function FabricOrderSheet({
               <div className="space-y-0.5 min-w-0">
                 <Label className="text-[11px]">Garmenting At *</Label>
                 <Select value={form.garmentingAt} onValueChange={(v) => updateField("garmentingAt", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
                     <span className="truncate">{form.garmentingAt || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -617,17 +625,33 @@ export function FabricOrderSheet({
               </div>
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Invoice #</Label>
-                <Input className="h-8 text-xs" value={form.invoiceNumber} onChange={(e) => updateField("invoiceNumber", e.target.value)} />
+                <Input className="h-8 text-xs md:text-xs" value={form.invoiceNumber} onChange={(e) => updateField("invoiceNumber", e.target.value)} />
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Order Date</Label>
-                <Input className="h-8 text-xs" value={form.orderDate} onChange={(e) => updateField("orderDate", e.target.value)} placeholder="e.g. 15 Nov 2025" />
+                <Input
+                  type="date"
+                  className="h-8 text-xs md:text-xs"
+                  value={form.orderDate}
+                  onChange={(e) => updateField("orderDate", e.target.value)}
+                />
+                {form.orderDate && (
+                  <p className="text-[10px] text-muted-foreground">{isoToDisplayDate(form.orderDate)}</p>
+                )}
               </div>
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Received At</Label>
-                <Input className="h-8 text-xs" value={form.receivedAt} onChange={(e) => updateField("receivedAt", e.target.value)} placeholder="e.g. 15 Nov 2025" />
+                <Input
+                  type="date"
+                  className="h-8 text-xs md:text-xs"
+                  value={form.receivedAt}
+                  onChange={(e) => updateField("receivedAt", e.target.value)}
+                />
+                {form.receivedAt && (
+                  <p className="text-[10px] text-muted-foreground">{isoToDisplayDate(form.receivedAt)}</p>
+                )}
               </div>
               <div className="flex items-end pb-1 gap-1.5">
                 <button
@@ -666,7 +690,7 @@ export function FabricOrderSheet({
               <div className="space-y-0.5 min-w-0">
                 <Label className="text-[11px]">Gender</Label>
                 <Select value={form.gender} onValueChange={(v) => updateField("gender", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
                     <span className="truncate">{GENDER_LABELS[form.gender] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
@@ -692,9 +716,17 @@ export function FabricOrderSheet({
               ) : (
                 <div className="border rounded divide-y">
                   {linkedProducts.map((lp) => (
-                    <div key={lp.id} className="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]">
+                    <button
+                      key={lp.id}
+                      type="button"
+                      onClick={() => {
+                        onOpenChange(false);
+                        router.push(`/products?openId=${lp.id}`);
+                      }}
+                      className="w-full flex items-center justify-between gap-2 px-2 py-1.5 text-[11px] text-left hover:bg-muted transition-colors cursor-pointer"
+                    >
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="font-medium">{lp.articleNumber || "—"}</span>
+                        <span className="font-medium text-blue-600 underline-offset-2 hover:underline">{lp.articleNumber || "—"}</span>
                         <span className="text-muted-foreground">/</span>
                         <span>{lp.colourOrdered}</span>
                         <span className="text-[9px] text-muted-foreground px-1 py-0.5 rounded bg-muted">
@@ -709,7 +741,7 @@ export function FabricOrderSheet({
                           {PRODUCT_STATUS_LABELS[lp.status] || lp.status}
                         </span>
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}
@@ -719,7 +751,7 @@ export function FabricOrderSheet({
 
         <SheetFooter className="flex-col gap-1.5 pt-2">
           <div className={`flex gap-2 ${isEditing ? "" : "flex-col"}`}>
-            <Button size="lg" onClick={handleSubmit} disabled={submitting || deleting} className="flex-1">
+            <Button size="lg" onClick={handleSubmit} disabled={submitting || deleting} className="flex-1 min-h-9">
               {submitting ? (
                 <>
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

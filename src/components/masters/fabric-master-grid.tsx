@@ -51,6 +51,7 @@ export function FabricMasterGrid({
         deletedArticleNumbers: (m.deletedArticleNumbers as string[]) || [],
         coloursAvailable: (m.coloursAvailable as string[]) || [],
         mrp: toNum(m.mrp),
+        hsnCode: (m.hsnCode as string) || null,
         comments: (m.comments as string) || null,
         isStrikedThrough: Boolean(m.isStrikedThrough),
       })),
@@ -106,6 +107,12 @@ export function FabricMasterGrid({
         headerName: "Cost/kg (Rs)",
         minWidth: 90,
         type: "numericColumn",
+        editable: false,
+      },
+      {
+        field: "hsnCode",
+        headerName: "HSN Code",
+        minWidth: 100,
         editable: false,
       },
       {
@@ -182,6 +189,7 @@ export function FabricMasterGrid({
             articleNumbers: data.articleNumbers || [],
             coloursAvailable: data.coloursAvailable || [],
             mrp: toNum(data.mrp),
+            hsnCode: (data.hsnCode as string | null) || null,
           };
           return createFabricMaster(payload);
         }}
@@ -193,6 +201,7 @@ export function FabricMasterGrid({
             articleNumbers: data.articleNumbers || [],
             coloursAvailable: data.coloursAvailable || [],
             mrp: toNum(data.mrp),
+            hsnCode: (data.hsnCode as string | null) || null,
           };
           return updateFabricMaster(id, payload);
         }}
