@@ -394,6 +394,11 @@ export function DataGrid<T extends Record<string, unknown>>({
             minWidth: 60,
             wrapHeaderText: true,
             autoHeaderHeight: true,
+            // Wrap cell text onto multiple lines when the column is narrow
+            // and let the row grow vertically to accommodate. Applies to
+            // every column unless a specific col def opts out.
+            wrapText: true,
+            autoHeight: true,
           }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents", skipHeader: true }}
           rowSelection={rowSelection}

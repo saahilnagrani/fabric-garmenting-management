@@ -363,7 +363,7 @@ export function ExpenseGrid({
               if (st && st !== "MANUAL") return false;
               return true;
             },
-            sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true,
+            sortable: true, unSortIcon: true, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true, wrapText: true, autoHeight: true,
           }}
           autoSizeStrategy={{ type: "fitCellContents" }}
           pinnedBottomRowData={pinnedBottomRowData}

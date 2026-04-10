@@ -22,7 +22,7 @@ import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
-type Vendor = { id: string; name: string };
+type Vendor = { id: string; name: string; type?: string };
 type FabricMasterType = Record<string, unknown>;
 type ProductMasterType = Record<string, unknown>;
 
@@ -546,7 +546,9 @@ export function FabricOrderGrid({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Vendors</SelectItem>
-            {vendors.map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
+            {vendors
+              .filter((v) => v.type === "FABRIC_SUPPLIER")
+              .map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
           </SelectContent>
         </Select>
       </div>
@@ -636,7 +638,7 @@ export function FabricOrderGrid({
           }}
           suppressRowTransform
           getRowId={(params) => String(params.data.id)}
-          defaultColDef={{ editable: false, sortable: false, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true }}
+          defaultColDef={{ editable: false, sortable: false, filter: false, resizable: true, minWidth: 60, wrapHeaderText: true, autoHeaderHeight: true, wrapText: true, autoHeight: true }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents" }}
           rowClass="group"
           animateRows={false}
