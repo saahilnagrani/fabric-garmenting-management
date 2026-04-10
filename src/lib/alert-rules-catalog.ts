@@ -29,6 +29,8 @@ export type AlertRuleDefinition = {
   supportsThreshold: boolean;
   /** True if this rule has a separate "critical" threshold (phase-deadline). */
   supportsCriticalThreshold: boolean;
+  /** Default enabled state for new installs / catalog merge. */
+  defaultEnabled: boolean;
 };
 
 export const ALERT_RULE_CATALOG: AlertRuleDefinition[] = [
@@ -43,54 +45,21 @@ export const ALERT_RULE_CATALOG: AlertRuleDefinition[] = [
     defaultCriticalThresholdDays: 3,
     supportsThreshold: true,
     supportsCriticalThreshold: true,
+    defaultEnabled: true,
   },
   {
-    id: "stale-ordered",
-    title: "Stale fabric orders",
+    id: "stale-state",
+    title: "Stale order state",
     severity: "warning",
-    trigger: "Fabric order status is ORDERED and has not changed in N days",
-    thresholdLabel: "Days since last update",
-    action: "/fabric-orders",
+    trigger:
+      "Any non-terminal article order or fabric order whose status hasn't changed in N days. Replaces the older per-stage stale rules.",
+    thresholdLabel: "Days since last status change",
+    action: "/products",
     defaultThresholdDays: 7,
     defaultCriticalThresholdDays: null,
     supportsThreshold: true,
     supportsCriticalThreshold: false,
-  },
-  {
-    id: "missing-cutting-report",
-    title: "Awaiting cutting reports",
-    severity: "warning",
-    trigger: "Article is in FABRIC_RECEIVED with no cutting report after N days",
-    thresholdLabel: "Days since fabric received",
-    action: "/products?status=FABRIC_RECEIVED",
-    defaultThresholdDays: 3,
-    defaultCriticalThresholdDays: null,
-    supportsThreshold: true,
-    supportsCriticalThreshold: false,
-  },
-  {
-    id: "sampling-overdue",
-    title: "Sampling overdue",
-    severity: "warning",
-    trigger: "Article is in SAMPLING for more than N days",
-    thresholdLabel: "Days in Sampling",
-    action: "/products?status=SAMPLING",
-    defaultThresholdDays: 5,
-    defaultCriticalThresholdDays: null,
-    supportsThreshold: true,
-    supportsCriticalThreshold: false,
-  },
-  {
-    id: "production-stalled",
-    title: "Production stalled",
-    severity: "warning",
-    trigger: "Article is in IN_PRODUCTION for more than N days",
-    thresholdLabel: "Days in Production",
-    action: "/products?status=IN_PRODUCTION",
-    defaultThresholdDays: 14,
-    defaultCriticalThresholdDays: null,
-    supportsThreshold: true,
-    supportsCriticalThreshold: false,
+    defaultEnabled: true,
   },
   {
     id: "unlinked-fabric",
@@ -103,6 +72,7 @@ export const ALERT_RULE_CATALOG: AlertRuleDefinition[] = [
     defaultCriticalThresholdDays: null,
     supportsThreshold: false,
     supportsCriticalThreshold: false,
+    defaultEnabled: true,
   },
   {
     id: "unlinked-products",
@@ -115,6 +85,49 @@ export const ALERT_RULE_CATALOG: AlertRuleDefinition[] = [
     defaultCriticalThresholdDays: null,
     supportsThreshold: false,
     supportsCriticalThreshold: false,
+    defaultEnabled: true,
+  },
+  // ── Legacy rules (disabled by default; superseded by stale-state) ──
+  // Kept in the catalog so existing AlertRule rows continue to deserialize
+  // and so admins can re-enable them if they really want stage-specific noise.
+  {
+    id: "stale-ordered",
+    title: "Stale fabric orders (legacy)",
+    severity: "warning",
+    trigger: "DEPRECATED — superseded by stale-state.",
+    thresholdLabel: "Days since last update",
+    action: "/fabric-orders",
+    defaultThresholdDays: 7,
+    defaultCriticalThresholdDays: null,
+    supportsThreshold: true,
+    supportsCriticalThreshold: false,
+    defaultEnabled: false,
+  },
+  {
+    id: "missing-cutting-report",
+    title: "Awaiting cutting reports (legacy)",
+    severity: "warning",
+    trigger: "DEPRECATED — superseded by stale-state.",
+    thresholdLabel: "Days since fabric received",
+    action: "/products?status=FABRIC_RECEIVED",
+    defaultThresholdDays: 3,
+    defaultCriticalThresholdDays: null,
+    supportsThreshold: true,
+    supportsCriticalThreshold: false,
+    defaultEnabled: false,
+  },
+  {
+    id: "production-stalled",
+    title: "Production stalled (legacy)",
+    severity: "warning",
+    trigger: "DEPRECATED — superseded by stale-state.",
+    thresholdLabel: "Days in Stitching",
+    action: "/products?status=STITCHING_IN_PROGRESS",
+    defaultThresholdDays: 14,
+    defaultCriticalThresholdDays: null,
+    supportsThreshold: true,
+    supportsCriticalThreshold: false,
+    defaultEnabled: false,
   },
 ];
 

@@ -826,12 +826,9 @@ export function ProductOrderSheet({
                     <span className="truncate">{PRODUCT_STATUS_LABELS[form.status] || "Select"}</span>
                   </SelectTrigger>
                   <SelectContent>
-                    {Object.entries(PRODUCT_STATUS_LABELS)
-                      // Hide SAMPLING for repeat articles (state machine rule)
-                      .filter(([k]) => !(form.isRepeat && k === "SAMPLING"))
-                      .map(([k, v]) => (
-                        <SelectItem key={k} value={k}>{v}</SelectItem>
-                      ))}
+                    {Object.entries(PRODUCT_STATUS_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

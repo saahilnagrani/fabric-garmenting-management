@@ -3,7 +3,7 @@
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/require-permission";
 import { accessoryDisplayName } from "@/lib/accessory-display";
-import type { AccessoryUnit } from "@/generated/prisma";
+import type { AccessoryUnit } from "@/generated/prisma/client";
 
 export type AccessoryBalanceRow = {
   accessoryId: string;

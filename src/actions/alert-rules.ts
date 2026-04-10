@@ -36,7 +36,7 @@ export async function getAlertRulesMerged(): Promise<AlertRuleRow[]> {
     const row = byId.get(def.id);
     return {
       ...def,
-      enabled: row?.enabled ?? true,
+      enabled: row?.enabled ?? def.defaultEnabled,
       thresholdDays: row?.thresholdDays ?? def.defaultThresholdDays,
       criticalThresholdDays:
         row?.criticalThresholdDays ?? def.defaultCriticalThresholdDays,
@@ -66,7 +66,7 @@ export async function updateAlertRule(
     n == null ? null : Math.max(0, Math.floor(n));
 
   const upsertData = {
-    enabled: data.enabled ?? true,
+    enabled: data.enabled ?? def.defaultEnabled,
     thresholdDays:
       data.thresholdDays !== undefined
         ? clamp(data.thresholdDays)
@@ -119,12 +119,12 @@ export async function resetAlertRule(id: string) {
     where: { id },
     create: {
       id,
-      enabled: true,
+      enabled: def.defaultEnabled,
       thresholdDays: def.defaultThresholdDays,
       criticalThresholdDays: def.defaultCriticalThresholdDays,
     },
     update: {
-      enabled: true,
+      enabled: def.defaultEnabled,
       thresholdDays: def.defaultThresholdDays,
       criticalThresholdDays: def.defaultCriticalThresholdDays,
     },

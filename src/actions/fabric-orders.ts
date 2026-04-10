@@ -132,6 +132,22 @@ export async function updateFabricOrder(id: string, data: any) {
   // Fetch previous state to detect invoice number changes
   const previousOrder = await db.fabricOrder.findUnique({ where: { id } });
 
+  // Stamp statusChangedAt whenever the orderStatus actually moves.
+  if (
+    previousOrder &&
+    data.orderStatus !== undefined &&
+    data.orderStatus !== previousOrder.orderStatus
+  ) {
+    data.statusChangedAt = new Date();
+    // Also stamp piReceivedAt and advancePaidAt the first time those states are entered.
+    if (data.orderStatus === "PI_RECEIVED" && !previousOrder.piReceivedAt) {
+      data.piReceivedAt = new Date();
+    }
+    if (data.orderStatus === "ADVANCE_PAID" && !previousOrder.advancePaidAt) {
+      data.advancePaidAt = new Date();
+    }
+  }
+
   const order = await db.fabricOrder.update({ where: { id }, data });
   const changes = previousOrder ? computeDiff(previousOrder as unknown as Record<string, unknown>, order as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "FabricOrder", id, changes);

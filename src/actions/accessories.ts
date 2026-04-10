@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
-import type { AccessoryUnit } from "@/generated/prisma";
+import type { AccessoryUnit } from "@/generated/prisma/client";
 
 export const getAccessoryMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:accessories:view");

@@ -160,7 +160,9 @@ export async function updateProduct(id: string, data: any) {
   const previousProduct = await db.product.findUnique({ where: { id } });
 
   // State machine enforcement: reject invalid manual status transitions
-  if (previousProduct && data.status !== undefined && data.status !== previousProduct.status) {
+  const statusChanging =
+    previousProduct && data.status !== undefined && data.status !== previousProduct.status;
+  if (statusChanging) {
     // isRepeat in the new payload takes precedence if included (e.g. user flips both at once)
     const effectiveIsRepeat = data.isRepeat ?? previousProduct.isRepeat;
     const error = validateStatusTransition(
@@ -170,6 +172,8 @@ export async function updateProduct(id: string, data: any) {
     if (error) {
       throw new Error(error);
     }
+    // Stamp statusChangedAt whenever the status actually moves.
+    data.statusChangedAt = new Date();
   }
 
   const product = await db.product.update({ where: { id }, data });

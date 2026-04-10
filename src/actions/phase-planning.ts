@@ -125,7 +125,7 @@ export async function createPlanOrders(
           costPerUnit: fabric.costPerUnit,
           isRepeat: fabric.isRepeat,
           gender: fabric.gender as "MENS" | "WOMENS" | "KIDS" | null,
-          orderStatus: (fabric.orderStatus || "DRAFT_ORDER") as "DRAFT_ORDER" | "DISCUSSED_WITH_VENDOR" | "ORDERED" | "PARTIALLY_SHIPPED" | "SHIPPED" | "RECEIVED",
+          orderStatus: (fabric.orderStatus || "DRAFT_ORDER") as "DRAFT_ORDER" | "PO_SENT" | "PI_RECEIVED" | "ADVANCE_PAID" | "PARTIALLY_SHIPPED" | "DISPATCHED" | "RECEIVED" | "FULLY_SETTLED",
           garmentingAt: fabric.garmentingAt,
         },
       });

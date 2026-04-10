@@ -27,7 +27,7 @@ interface MergeDialogProps {
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT_ORDER: "Draft",
-  ORDERED: "Ordered",
+  PO_SENT: "PO Sent",
 };
 
 export function MergeDialog({

@@ -10,16 +10,16 @@ datasource db {
 // ─── AUTH ────────────────────────────────────────────────────────
 
 model User {
-  id                  String          @id @default(cuid())
+  id                  String         @id @default(cuid())
   name                String
-  email               String          @unique
+  email               String         @unique
   passwordHash        String
-  role                UserRole        @default(USER)
+  role                UserRole       @default(USER)
   inventoryRole       InventoryRole?
   sourcingRole        SourcingRole?
-  permissionOverrides String[]        @default([])
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
+  permissionOverrides String[]       @default([])
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 }
 
 enum UserRole {
@@ -42,38 +42,41 @@ enum SourcingRole {
 // ─── CORE DOMAIN ─────────────────────────────────────────────────
 
 model Phase {
-  id           String        @id @default(cuid())
-  name         String
-  number       Int           @unique
-  startDate    DateTime?
-  endDate      DateTime?
-  isCurrent        Boolean       @default(false)
-  isStrikedThrough Boolean       @default(false)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  id                   String              @id @default(cuid())
+  name                 String
+  number               Int                 @unique
+  startDate            DateTime?
+  endDate              DateTime?
+  isCurrent            Boolean             @default(false)
+  isStrikedThrough     Boolean             @default(false)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
   products             Product[]
   fabricOrders         FabricOrder[]
   expenses             Expense[]
   accessoryPurchases   AccessoryPurchase[]
   accessoryDispatches  AccessoryDispatch[]
+  fabricBalancesSource FabricBalance[]     @relation("FabricBalanceSourcePhase")
+  fabricBalancesTarget FabricBalance[]     @relation("FabricBalanceTargetPhase")
 }
 
 model Vendor {
-  id               String        @id @default(cuid())
-  name             String        @unique
-  type             VendorType
-  contactInfo      String?
-  address          String?
-  isStrikedThrough Boolean       @default(false)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-  productsByFabricVendor   Product[]            @relation("ProductFabricVendor")
-  productsByFabric2Vendor  Product[]            @relation("ProductFabric2Vendor")
-  fabricOrders             FabricOrder[]        @relation("FabricOrderVendor")
-  expenses                 Expense[]            @relation("ExpenseVendor")
-  fabricMasters            FabricMaster[]       @relation("FabricMasterVendor")
-  accessoryMasters         AccessoryMaster[]    @relation("AccessoryMasterVendor")
-  accessoryPurchases       AccessoryPurchase[]  @relation("AccessoryPurchaseVendor")
+  id                      String              @id @default(cuid())
+  name                    String              @unique
+  type                    VendorType
+  contactInfo             String?
+  address                 String?
+  isStrikedThrough        Boolean             @default(false)
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  productsByFabricVendor  Product[]           @relation("ProductFabricVendor")
+  productsByFabric2Vendor Product[]           @relation("ProductFabric2Vendor")
+  fabricOrders            FabricOrder[]       @relation("FabricOrderVendor")
+  expenses                Expense[]           @relation("ExpenseVendor")
+  fabricMasters           FabricMaster[]      @relation("FabricMasterVendor")
+  accessoryMasters        AccessoryMaster[]   @relation("AccessoryMasterVendor")
+  accessoryPurchases      AccessoryPurchase[] @relation("AccessoryPurchaseVendor")
+  fabricBalances          FabricBalance[]     @relation("FabricBalanceVendor")
 }
 
 enum VendorType {
@@ -92,44 +95,45 @@ model Product {
   // Identity
   orderDate     String  @default("15 Nov 2025")
   styleNumber   String
-  articleNumber  String?
-  skuCode        String?
-  colourOrdered  String
-  isRepeat       Boolean @default(false)
+  articleNumber String?
+  skuCode       String?
+  colourOrdered String
+  isRepeat      Boolean @default(false)
 
   // Classification
-  type          String
-  gender        Gender
-  productName   String?
+  type        String
+  gender      Gender
+  productName String?
 
   // Status
-  status        ProductStatus @default(PLANNED)
+  status          ProductStatus @default(PLANNED)
+  statusChangedAt DateTime      @default(now())
 
   // Primary Fabric
   fabricVendorId             String
-  fabricVendor               Vendor @relation("ProductFabricVendor", fields: [fabricVendorId], references: [id])
+  fabricVendor               Vendor   @relation("ProductFabricVendor", fields: [fabricVendorId], references: [id])
   fabricName                 String
   fabricGsm                  Decimal? @db.Decimal(10, 2)
   fabricCostPerKg            Decimal? @db.Decimal(10, 2)
   assumedFabricGarmentsPerKg Decimal? @db.Decimal(10, 2)
 
   // Secondary Fabric
-  fabric2Name                    String?
-  fabric2CostPerKg               Decimal? @db.Decimal(10, 2)
-  assumedFabric2GarmentsPerKg    Decimal? @db.Decimal(10, 2)
-  fabric2VendorId                String?
-  fabric2Vendor                  Vendor?  @relation("ProductFabric2Vendor", fields: [fabric2VendorId], references: [id])
+  fabric2Name                 String?
+  fabric2CostPerKg            Decimal? @db.Decimal(10, 2)
+  assumedFabric2GarmentsPerKg Decimal? @db.Decimal(10, 2)
+  fabric2VendorId             String?
+  fabric2Vendor               Vendor?  @relation("ProductFabric2Vendor", fields: [fabric2VendorId], references: [id])
 
   // Cutting report - actual garments per kg measured after cutting
   cuttingReportGarmentsPerKg  Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg2 Decimal? @db.Decimal(10, 2)
 
   // Quantities
-  fabricOrderedQuantityKg   Decimal? @db.Decimal(10, 2)
-  fabricShippedQuantityKg   Decimal? @db.Decimal(10, 2)
-  fabric2OrderedQuantityKg  Decimal? @db.Decimal(10, 2)
-  fabric2ShippedQuantityKg  Decimal? @db.Decimal(10, 2)
-  garmentNumber             Int?
+  fabricOrderedQuantityKg  Decimal? @db.Decimal(10, 2)
+  fabricShippedQuantityKg  Decimal? @db.Decimal(10, 2)
+  fabric2OrderedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabric2ShippedQuantityKg Decimal? @db.Decimal(10, 2)
+  garmentNumber            Int?
 
   // Actual Stitched Size Breakdown
   actualStitchedXS  Int @default(0)
@@ -200,13 +204,22 @@ enum ProductStatus {
   PLANNED
   FABRIC_ORDERED
   FABRIC_RECEIVED
-  SAMPLING
-  CUTTING_REPORT
-  IN_PRODUCTION
-  READY_AT_GARMENTER
-  SHIPPED_TO_WAREHOUSE
+  CUTTING_IN_PROGRESS
+  CUTTING_COMPLETED
+  CUTTING_REPORT_RECEIVED
+  STITCHING_IN_PROGRESS
+  STITCHING_COMPLETED
+  TRIMS_ACCESSORIES_ATTACHED
+  QC_IN_PROGRESS
+  QC_APPROVED
+  QC_FAILED
+  PACKAGING_IN_PROGRESS
+  PACKAGING_COMPLETED
+  READY_FOR_DISPATCH
+  DISPATCHED
   RECEIVED_AT_WAREHOUSE
   SHIPPED
+  DELIVERED
 }
 
 model FabricOrder {
@@ -216,12 +229,12 @@ model FabricOrder {
   fabricVendorId String
   fabricVendor   Vendor @relation("FabricOrderVendor", fields: [fabricVendorId], references: [id])
 
-  gender          Gender?
-  invoiceNumber   String?
-  receivedAt      String?
-  orderDate       DateTime?
+  gender        Gender?
+  invoiceNumber String?
+  receivedAt    String?
+  orderDate     DateTime?
 
-  articleNumbers   String
+  articleNumbers  String
   fabricName      String
   colour          String
   availableColour String?
@@ -232,8 +245,12 @@ model FabricOrder {
 
   isRepeat Boolean @default(false)
 
-  orderStatus      FabricOrderStatus @default(DRAFT_ORDER)
-  garmentingAt     String?
+  orderStatus     FabricOrderStatus @default(DRAFT_ORDER)
+  statusChangedAt DateTime          @default(now())
+  poNumber        String?           @unique
+  piReceivedAt    DateTime?
+  advancePaidAt   DateTime?
+  garmentingAt    String?
 
   // Link to auto-created expense
   expenseId String?
@@ -257,7 +274,7 @@ model ProductFabricOrder {
   product       Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
   fabricOrderId String
   fabricOrder   FabricOrder @relation(fields: [fabricOrderId], references: [id], onDelete: Cascade)
-  fabricSlot    Int         // 1 = primary fabric, 2 = secondary fabric
+  fabricSlot    Int // 1 = primary fabric, 2 = secondary fabric
   createdAt     DateTime    @default(now())
 
   @@unique([productId, fabricOrderId, fabricSlot])
@@ -267,11 +284,19 @@ model ProductFabricOrder {
 
 enum FabricOrderStatus {
   DRAFT_ORDER
-  DISCUSSED_WITH_VENDOR
-  ORDERED
+  PO_SENT
+  PI_RECEIVED
+  ADVANCE_PAID
   PARTIALLY_SHIPPED
-  SHIPPED
+  DISPATCHED
   RECEIVED
+  FULLY_SETTLED
+}
+
+model PoCounter {
+  fiscalYear String   @id // e.g. "2026-27"
+  lastNumber Int      @default(100) // next allocation = lastNumber + 1, so default 100 → first PO is 0101
+  updatedAt  DateTime @updatedAt
 }
 
 model Expense {
@@ -287,7 +312,7 @@ model Expense {
   date          DateTime?
   description   String?
   quantity      String?
-  amount        Decimal @db.Decimal(12, 2)
+  amount        Decimal           @db.Decimal(12, 2)
 
   deliveredAt String?
   productNote String?
@@ -369,22 +394,51 @@ model SizeDistribution {
 // ─── MASTER DATA ──────────────────────────────────────────────────
 
 model FabricMaster {
-  id               String   @id @default(cuid())
-  fabricName       String   @unique
-  vendorId         String
-  vendor           Vendor   @relation("FabricMasterVendor", fields: [vendorId], references: [id])
+  id                    String   @id @default(cuid())
+  fabricName            String   @unique
+  vendorId              String
+  vendor                Vendor   @relation("FabricMasterVendor", fields: [vendorId], references: [id])
   genders               String[]
   articleNumbers        String[]
   deletedArticleNumbers String[] @default([])
   coloursAvailable      String[]
-  mrp              Decimal? @db.Decimal(10, 2)
-  hsnCode          String?
-  comments         String?
+  mrp                   Decimal? @db.Decimal(10, 2)
+  hsnCode               String?
+  comments              String?
+  isStrikedThrough      Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  fabricBalances FabricBalance[]
+
+  @@index([vendorId])
+}
+
+model FabricBalance {
+  id             String       @id @default(cuid())
+  fabricMasterId String
+  fabricMaster   FabricMaster @relation(fields: [fabricMasterId], references: [id])
+  vendorId       String
+  vendor         Vendor       @relation("FabricBalanceVendor", fields: [vendorId], references: [id])
+  colour         String
+  remainingKg    Decimal      @db.Decimal(12, 2)
+  costPerKg      Decimal      @db.Decimal(10, 2)
+  // costAttributed = remainingKg * costPerKg, computed at read time
+
+  sourcePhaseId String?
+  sourcePhase   Phase?  @relation("FabricBalanceSourcePhase", fields: [sourcePhaseId], references: [id])
+  targetPhaseId String?
+  targetPhase   Phase?  @relation("FabricBalanceTargetPhase", fields: [targetPhaseId], references: [id])
+
+  notes            String?
   isStrikedThrough Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  @@index([fabricMasterId])
   @@index([vendorId])
+  @@index([sourcePhaseId])
+  @@index([targetPhaseId])
 }
 
 model Colour {
@@ -396,36 +450,36 @@ model Colour {
 }
 
 model PhaseCost {
-  id             String   @id @default(cuid())
-  phaseId        String
-  entityType     String   // "FABRIC_MASTER" or "PRODUCT_MASTER"
-  entityId       String
+  id         String @id @default(cuid())
+  phaseId    String
+  entityType String // "FABRIC_MASTER" or "PRODUCT_MASTER"
+  entityId   String
 
-  fabricCostPerKg   Decimal? @db.Decimal(10, 2)
-  fabric2CostPerKg  Decimal? @db.Decimal(10, 2)
-  stitchingCost     Decimal? @db.Decimal(10, 2)
-  brandLogoCost     Decimal? @db.Decimal(10, 2)
-  neckTwillCost     Decimal? @db.Decimal(10, 2)
-  reflectorsCost    Decimal? @db.Decimal(10, 2)
-  fusingCost        Decimal? @db.Decimal(10, 2)
-  accessoriesCost   Decimal? @db.Decimal(10, 2)
-  brandTagCost      Decimal? @db.Decimal(10, 2)
-  sizeTagCost       Decimal? @db.Decimal(10, 2)
-  packagingCost     Decimal? @db.Decimal(10, 2)
-  inwardShipping    Decimal? @db.Decimal(10, 2)
+  fabricCostPerKg  Decimal? @db.Decimal(10, 2)
+  fabric2CostPerKg Decimal? @db.Decimal(10, 2)
+  stitchingCost    Decimal? @db.Decimal(10, 2)
+  brandLogoCost    Decimal? @db.Decimal(10, 2)
+  neckTwillCost    Decimal? @db.Decimal(10, 2)
+  reflectorsCost   Decimal? @db.Decimal(10, 2)
+  fusingCost       Decimal? @db.Decimal(10, 2)
+  accessoriesCost  Decimal? @db.Decimal(10, 2)
+  brandTagCost     Decimal? @db.Decimal(10, 2)
+  sizeTagCost      Decimal? @db.Decimal(10, 2)
+  packagingCost    Decimal? @db.Decimal(10, 2)
+  inwardShipping   Decimal? @db.Decimal(10, 2)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([phaseId, entityType, entityId])
   @@index([entityType, entityId])
 }
 
 model AlertRule {
-  id                    String   @id  // matches the rule id in src/lib/alert-rules-catalog.ts
+  id                    String   @id // matches the rule id in src/lib/alert-rules-catalog.ts
   enabled               Boolean  @default(true)
   thresholdDays         Int?
-  criticalThresholdDays Int?     // only used by phase-deadline rule
+  criticalThresholdDays Int? // only used by phase-deadline rule
   updatedAt             DateTime @updatedAt
 }
 
@@ -433,10 +487,10 @@ model AuditLog {
   id         String   @id @default(cuid())
   userId     String
   userName   String
-  action     String   // CREATE, UPDATE, DELETE, ARCHIVE, MERGE
-  entityType String   // e.g. "FabricMaster", "ProductMaster", "FabricOrder"
+  action     String // CREATE, UPDATE, DELETE, ARCHIVE, MERGE
+  entityType String // e.g. "FabricMaster", "ProductMaster", "FabricOrder"
   entityId   String
-  changes    String?  // JSON string of {field: {old, new}} diffs
+  changes    String? // JSON string of {field: {old, new}} diffs
   timestamp  DateTime @default(now())
 
   @@index([entityType, entityId])
@@ -446,40 +500,40 @@ model AuditLog {
 }
 
 model ProductMaster {
-  id                  String   @id @default(cuid())
-  skuCode             String   @unique
-  styleNumber         String
-  articleNumber       String?
-  fabricName          String
-  fabric2Name         String?
-  type                String
-  gender              Gender
-  productName         String?
-  coloursAvailable    String[]
-  colours2Available   String[]
-  garmentsPerKg       Decimal? @db.Decimal(10, 2)
-  garmentsPerKg2      Decimal? @db.Decimal(10, 2)
+  id                          String   @id @default(cuid())
+  skuCode                     String   @unique
+  styleNumber                 String
+  articleNumber               String?
+  fabricName                  String
+  fabric2Name                 String?
+  type                        String
+  gender                      Gender
+  productName                 String?
+  coloursAvailable            String[]
+  colours2Available           String[]
+  garmentsPerKg               Decimal? @db.Decimal(10, 2)
+  garmentsPerKg2              Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg  Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg2 Decimal? @db.Decimal(10, 2)
-  stitchingCost       Decimal? @db.Decimal(10, 2)
-  brandLogoCost       Decimal? @db.Decimal(10, 2)
-  neckTwillCost       Decimal? @db.Decimal(10, 2)
-  reflectorsCost      Decimal? @db.Decimal(10, 2)
-  fusingCost          Decimal? @db.Decimal(10, 2)
-  accessoriesCost     Decimal? @db.Decimal(10, 2)
-  brandTagCost        Decimal? @db.Decimal(10, 2)
-  sizeTagCost         Decimal? @db.Decimal(10, 2)
-  packagingCost       Decimal? @db.Decimal(10, 2)
-  fabricCostPerKg     Decimal? @db.Decimal(10, 2)
-  fabric2CostPerKg    Decimal? @db.Decimal(10, 2)
-  inwardShipping      Decimal? @db.Decimal(10, 2)
-  proposedMrp         Decimal? @db.Decimal(10, 2)
-  onlineMrp           Decimal? @db.Decimal(10, 2)
-  isStrikedThrough    Boolean  @default(false)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  stitchingCost               Decimal? @db.Decimal(10, 2)
+  brandLogoCost               Decimal? @db.Decimal(10, 2)
+  neckTwillCost               Decimal? @db.Decimal(10, 2)
+  reflectorsCost              Decimal? @db.Decimal(10, 2)
+  fusingCost                  Decimal? @db.Decimal(10, 2)
+  accessoriesCost             Decimal? @db.Decimal(10, 2)
+  brandTagCost                Decimal? @db.Decimal(10, 2)
+  sizeTagCost                 Decimal? @db.Decimal(10, 2)
+  packagingCost               Decimal? @db.Decimal(10, 2)
+  fabricCostPerKg             Decimal? @db.Decimal(10, 2)
+  fabric2CostPerKg            Decimal? @db.Decimal(10, 2)
+  inwardShipping              Decimal? @db.Decimal(10, 2)
+  proposedMrp                 Decimal? @db.Decimal(10, 2)
+  onlineMrp                   Decimal? @db.Decimal(10, 2)
+  isStrikedThrough            Boolean  @default(false)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 
-  accessoryLinks      ProductMasterAccessory[]
+  accessoryLinks ProductMasterAccessory[]
 
   @@index([skuCode])
   @@index([styleNumber])
@@ -522,13 +576,13 @@ model AccessoryMaster {
 }
 
 model AccessoryPurchase {
-  id            String          @id @default(cuid())
-  phaseId       String
-  phase         Phase           @relation(fields: [phaseId], references: [id])
-  accessoryId   String
-  accessory     AccessoryMaster @relation(fields: [accessoryId], references: [id])
-  vendorId      String?
-  vendor        Vendor?         @relation("AccessoryPurchaseVendor", fields: [vendorId], references: [id])
+  id          String          @id @default(cuid())
+  phaseId     String
+  phase       Phase           @relation(fields: [phaseId], references: [id])
+  accessoryId String
+  accessory   AccessoryMaster @relation(fields: [accessoryId], references: [id])
+  vendorId    String?
+  vendor      Vendor?         @relation("AccessoryPurchaseVendor", fields: [vendorId], references: [id])
 
   quantity      Decimal   @db.Decimal(12, 2)
   costPerUnit   Decimal?  @db.Decimal(10, 2)

@@ -1,44 +1,30 @@
 import { db } from "@/lib/db";
 import { logAction } from "@/lib/audit";
 import type { ProductStatus, FabricOrderStatus } from "@/generated/prisma/client";
+import { PRODUCT_STATUS_SEQUENCE, statusRank } from "@/lib/state-machine";
 
 /**
- * Ordered state machine. Higher index = further along.
- * Auto-transitions only move FORWARD — never regress.
- */
-const PRODUCT_STATUS_ORDER: ProductStatus[] = [
-  "PLANNED",
-  "FABRIC_ORDERED",
-  "FABRIC_RECEIVED",
-  "SAMPLING",
-  "CUTTING_REPORT",
-  "IN_PRODUCTION",
-  "READY_AT_GARMENTER",
-  "SHIPPED_TO_WAREHOUSE",
-  "RECEIVED_AT_WAREHOUSE",
-  "SHIPPED",
-];
-
-function rank(status: ProductStatus): number {
-  return PRODUCT_STATUS_ORDER.indexOf(status);
-}
-
-/**
- * Treat these fabric order statuses as "past the vendor discussion stage" —
- * i.e. the fabric has been committed/ordered and the article should advance past PLANNED.
+ * Treat these fabric order statuses as "PO has been issued and committed" —
+ * i.e. the fabric has been ordered and the article should advance past PLANNED
+ * to FABRIC_ORDERED.
  */
 const FABRIC_ORDER_COMMITTED: FabricOrderStatus[] = [
-  "ORDERED",
+  "PO_SENT",
+  "PI_RECEIVED",
+  "ADVANCE_PAID",
   "PARTIALLY_SHIPPED",
-  "SHIPPED",
+  "DISPATCHED",
   "RECEIVED",
+  "FULLY_SETTLED",
 ];
+
+const FABRIC_ORDER_RECEIVED: FabricOrderStatus[] = ["RECEIVED", "FULLY_SETTLED"];
 
 /**
  * Infers the product's status from hard evidence on the database:
- * - If cutting report yield is entered → at least CUTTING_REPORT
- * - If all linked fabric orders are RECEIVED → at least FABRIC_RECEIVED
- * - If any linked fabric order is in a committed status → at least FABRIC_ORDERED
+ * - If cutting report yield is entered → at least CUTTING_REPORT_RECEIVED
+ * - If all linked fabric orders are RECEIVED/FULLY_SETTLED → at least FABRIC_RECEIVED
+ * - If any linked fabric order has had its PO issued → at least FABRIC_ORDERED
  * Returns the highest-evidence status. Caller compares against current and decides
  * whether to advance (never regress).
  */
@@ -54,14 +40,14 @@ export async function inferProductStatus(productId: string): Promise<ProductStat
   // Evidence: cutting report yield entered
   const hasCuttingReport =
     product.cuttingReportGarmentsPerKg !== null || product.cuttingReportGarmentsPerKg2 !== null;
-  if (hasCuttingReport) return "CUTTING_REPORT";
+  if (hasCuttingReport) return "CUTTING_REPORT_RECEIVED";
 
   // No fabric orders linked → no automatic advancement beyond PLANNED
   const links = product.fabricOrderLinks;
   if (links.length === 0) return "PLANNED";
 
   // All linked fabric orders received → FABRIC_RECEIVED
-  const allReceived = links.every((l) => l.fabricOrder.orderStatus === "RECEIVED");
+  const allReceived = links.every((l) => FABRIC_ORDER_RECEIVED.includes(l.fabricOrder.orderStatus));
   if (allReceived) return "FABRIC_RECEIVED";
 
   // Any linked fabric order in committed state → FABRIC_ORDERED
@@ -104,16 +90,16 @@ export async function autoAdvanceProduct(
   if (!product) return null;
 
   const inferred = await inferProductStatus(productId);
-  if (rank(inferred) <= rank(product.status)) return null;
+  if (statusRank(inferred) <= statusRank(product.status)) return null;
 
   await db.product.update({
     where: { id: productId },
-    data: { status: inferred },
+    data: { status: inferred, statusChangedAt: new Date() },
   });
 
   if (actor) {
     logAction(actor.id, actor.name, "UPDATE", "Product", productId, {
-      status: { old: product.status, new: inferred, autoAdvanceReason: reason },
+      status: { old: product.status, new: `${inferred} (auto: ${reason})` },
     });
   }
 
@@ -148,3 +134,6 @@ export async function autoAdvanceProductsForFabricOrder(
   }
   return results;
 }
+
+// Re-export for callers that imported from this module historically.
+export { PRODUCT_STATUS_SEQUENCE };

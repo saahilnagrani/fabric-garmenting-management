@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
-import type { Gender } from "@/generated/prisma";
+import type { Gender } from "@/generated/prisma/client";
 
 export const getFabricMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:masters:view");

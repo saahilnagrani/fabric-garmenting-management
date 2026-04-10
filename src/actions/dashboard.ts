@@ -3,6 +3,8 @@
 import { db } from "@/lib/db";
 import { requirePermission } from "@/lib/require-permission";
 import { getAlertRulesMerged } from "./alert-rules";
+import type { ProductStatus, FabricOrderStatus } from "@/generated/prisma/client";
+import { PRODUCT_STATUS_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 
 export type DashboardAlert = {
   id: string;
@@ -58,7 +60,8 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
     const daysUntil = Math.floor(
       (phase.endDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)
     );
-    const unshipped = products.filter((p) => p.status !== "SHIPPED");
+    const TERMINAL_PRODUCT: ProductStatus[] = ["SHIPPED", "DELIVERED"];
+    const unshipped = products.filter((p) => !TERMINAL_PRODUCT.includes(p.status));
     if (daysUntil >= 0 && daysUntil <= warnDays && unshipped.length > 0) {
       alerts.push({
         id: "phase-deadline",
@@ -72,81 +75,54 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
     }
   }
 
-  // 2. Stale fabric orders: ORDERED > N days
-  if (ruleEnabled("stale-ordered")) {
-    const n = ruleThreshold("stale-ordered", 7);
-    const staleOrdered = fabricOrders.filter(
-      (f) => f.orderStatus === "ORDERED" && daysSince(f.updatedAt) > n
+  // 2. Generic stale-state alert: any non-terminal article or fabric order
+  //    whose statusChangedAt is older than N days. Replaces the older
+  //    stage-specific rules (stale-ordered, missing-cutting-report,
+  //    sampling-overdue, production-stalled).
+  if (ruleEnabled("stale-state")) {
+    const n = ruleThreshold("stale-state", 7);
+
+    const TERMINAL_PRODUCT: ProductStatus[] = ["SHIPPED", "DELIVERED"];
+    const TERMINAL_FABRIC_ORDER: FabricOrderStatus[] = ["FULLY_SETTLED"];
+
+    const staleArticles = products.filter(
+      (p) => !TERMINAL_PRODUCT.includes(p.status) && daysSince(p.statusChangedAt) > n
     );
-    if (staleOrdered.length > 0) {
+    const staleFabricOrders = fabricOrders.filter(
+      (f) => !TERMINAL_FABRIC_ORDER.includes(f.orderStatus) && daysSince(f.statusChangedAt) > n
+    );
+
+    if (staleArticles.length > 0) {
+      // Group by status for a more useful message
+      const byStatus = new Map<ProductStatus, number>();
+      for (const p of staleArticles) byStatus.set(p.status, (byStatus.get(p.status) ?? 0) + 1);
+      const breakdown = [...byStatus.entries()]
+        .map(([s, c]) => `${c} ${PRODUCT_STATUS_LABELS[s] ?? s}`)
+        .join(", ");
       alerts.push({
-        id: "stale-ordered",
+        id: "stale-state-articles",
+        severity: "warning",
+        title: "Stale article orders",
+        message: `${staleArticles.length} article${staleArticles.length === 1 ? "" : "s"} unchanged for more than ${n} days (${breakdown})`,
+        count: staleArticles.length,
+        actionUrl: "/products",
+        actionLabel: "Review",
+      });
+    }
+
+    if (staleFabricOrders.length > 0) {
+      const byStatus = new Map<FabricOrderStatus, number>();
+      for (const f of staleFabricOrders) byStatus.set(f.orderStatus, (byStatus.get(f.orderStatus) ?? 0) + 1);
+      const breakdown = [...byStatus.entries()]
+        .map(([s, c]) => `${c} ${FABRIC_ORDER_STATUS_LABELS[s] ?? s}`)
+        .join(", ");
+      alerts.push({
+        id: "stale-state-fabric-orders",
         severity: "warning",
         title: "Stale fabric orders",
-        message: `${staleOrdered.length} fabric order${staleOrdered.length === 1 ? "" : "s"} in Ordered state for more than ${n} days`,
-        count: staleOrdered.length,
+        message: `${staleFabricOrders.length} fabric order${staleFabricOrders.length === 1 ? "" : "s"} unchanged for more than ${n} days (${breakdown})`,
+        count: staleFabricOrders.length,
         actionUrl: "/fabric-orders",
-        actionLabel: "Review",
-      });
-    }
-  }
-
-  // 3. Missing cutting reports: FABRIC_RECEIVED > N days without cutting report
-  if (ruleEnabled("missing-cutting-report")) {
-    const n = ruleThreshold("missing-cutting-report", 3);
-    const missingCuttingReport = products.filter(
-      (p) =>
-        p.status === "FABRIC_RECEIVED" &&
-        p.cuttingReportGarmentsPerKg === null &&
-        p.cuttingReportGarmentsPerKg2 === null &&
-        daysSince(p.updatedAt) > n
-    );
-    if (missingCuttingReport.length > 0) {
-      alerts.push({
-        id: "missing-cutting-report",
-        severity: "warning",
-        title: "Awaiting cutting reports",
-        message: `${missingCuttingReport.length} article${missingCuttingReport.length === 1 ? "" : "s"} with fabric received but no cutting report entered (>${n} days)`,
-        count: missingCuttingReport.length,
-        actionUrl: "/products?status=FABRIC_RECEIVED",
-        actionLabel: "Enter reports",
-      });
-    }
-  }
-
-  // 4. Sampling overdue > N days
-  if (ruleEnabled("sampling-overdue")) {
-    const n = ruleThreshold("sampling-overdue", 5);
-    const samplingOverdue = products.filter(
-      (p) => p.status === "SAMPLING" && daysSince(p.updatedAt) > n
-    );
-    if (samplingOverdue.length > 0) {
-      alerts.push({
-        id: "sampling-overdue",
-        severity: "warning",
-        title: "Sampling overdue",
-        message: `${samplingOverdue.length} article${samplingOverdue.length === 1 ? "" : "s"} in Sampling for more than ${n} days`,
-        count: samplingOverdue.length,
-        actionUrl: "/products?status=SAMPLING",
-        actionLabel: "Review",
-      });
-    }
-  }
-
-  // 5. Production stalled > N days
-  if (ruleEnabled("production-stalled")) {
-    const n = ruleThreshold("production-stalled", 14);
-    const productionStalled = products.filter(
-      (p) => p.status === "IN_PRODUCTION" && daysSince(p.updatedAt) > n
-    );
-    if (productionStalled.length > 0) {
-      alerts.push({
-        id: "production-stalled",
-        severity: "warning",
-        title: "Production stalled",
-        message: `${productionStalled.length} article${productionStalled.length === 1 ? "" : "s"} in Production for more than ${n} days`,
-        count: productionStalled.length,
-        actionUrl: "/products?status=IN_PRODUCTION",
         actionLabel: "Review",
       });
     }

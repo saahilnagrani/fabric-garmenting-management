@@ -6,11 +6,13 @@ import { Database, Workflow, Layers, Zap } from "lucide-react";
 
 const FABRIC_ORDER_SEQUENCE = [
   "DRAFT_ORDER",
-  "DISCUSSED_WITH_VENDOR",
-  "ORDERED",
+  "PO_SENT",
+  "PI_RECEIVED",
+  "ADVANCE_PAID",
   "PARTIALLY_SHIPPED",
-  "SHIPPED",
+  "DISPATCHED",
   "RECEIVED",
+  "FULLY_SETTLED",
 ];
 
 export default async function AdminDocsPage() {
@@ -122,7 +124,7 @@ export default async function AdminDocsPage() {
               <ul className="list-disc list-inside text-muted-foreground space-y-0.5 ml-2">
                 <li>ProductFabricOrder join rows are bidirectionally synced. Editing either side triggers rebuild.</li>
                 <li>Product status only moves forward (state machine enforces this).</li>
-                <li>Repeat articles cannot enter SAMPLING state.</li>
+                <li>Sampling is now handled by a separate flow — articles never enter a SAMPLING state in this pipeline.</li>
                 <li>Auto-advance never regresses. Manual admin bulk action is the only escape hatch.</li>
                 <li>Cutting report values sync from Product back to ProductMaster on save.</li>
               </ul>
@@ -218,20 +220,13 @@ export default async function AdminDocsPage() {
             <div>
               <h3 className="font-semibold mb-2">Article Order Status Flow</h3>
               <p className="text-muted-foreground text-xs mb-3">
-                Forward only. Repeat articles skip SAMPLING automatically.
+                Forward only. QC_FAILED branches off the QC stage and can return to STITCHING_IN_PROGRESS for rework.
               </p>
               <div className="flex flex-wrap items-center gap-1">
                 {PRODUCT_STATUS_SEQUENCE.map((s, i) => (
                   <div key={s} className="flex items-center gap-1">
-                    <span
-                      className={`text-[11px] font-mono px-2 py-1 rounded ${
-                        s === "SAMPLING" ? "bg-amber-50 border border-amber-200" : "bg-blue-50 border border-blue-200"
-                      }`}
-                    >
+                    <span className="text-[11px] font-mono px-2 py-1 rounded bg-blue-50 border border-blue-200">
                       {PRODUCT_STATUS_LABELS[s]}
-                      {s === "SAMPLING" && (
-                        <span className="ml-1 text-[9px] text-amber-700">(skipped for repeats)</span>
-                      )}
                     </span>
                     {i < PRODUCT_STATUS_SEQUENCE.length - 1 && (
                       <span className="text-muted-foreground">&rarr;</span>
@@ -268,16 +263,16 @@ export default async function AdminDocsPage() {
                 </thead>
                 <tbody className="divide-y">
                   <tr>
-                    <td className="p-2">Any linked fabric order reaches ORDERED or later</td>
+                    <td className="p-2">Any linked fabric order reaches PO_SENT or later</td>
                     <td className="p-2">Product advances to FABRIC_ORDERED</td>
                   </tr>
                   <tr>
-                    <td className="p-2">ALL linked fabric orders reach RECEIVED</td>
+                    <td className="p-2">ALL linked fabric orders reach RECEIVED / FULLY_SETTLED</td>
                     <td className="p-2">Product advances to FABRIC_RECEIVED</td>
                   </tr>
                   <tr>
                     <td className="p-2">cuttingReportGarmentsPerKg or _2 is set on a product</td>
-                    <td className="p-2">Product advances to CUTTING_REPORT</td>
+                    <td className="p-2">Product advances to CUTTING_REPORT_RECEIVED</td>
                   </tr>
                 </tbody>
               </table>
@@ -290,7 +285,7 @@ export default async function AdminDocsPage() {
               <h3 className="font-semibold mb-2">Validation Rules (manual edits)</h3>
               <ul className="list-disc list-inside text-muted-foreground space-y-0.5 ml-2 text-xs">
                 <li>Cannot regress status through the edit sheet. Use admin bulk action.</li>
-                <li>Repeat articles cannot be set to SAMPLING.</li>
+                <li>SAMPLING is no longer part of the article order flow — handled separately for new designs.</li>
                 <li>Fabric orders with linked products trigger auto-advance when their status changes.</li>
               </ul>
             </div>
