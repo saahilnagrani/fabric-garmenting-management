@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, useState, useEffect, useMemo } from "react";
-import { Shield, ScrollText, BookOpen, Bell } from "lucide-react";
+import { Shield, ScrollText, BookOpen, Bell, Hash } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +26,7 @@ interface NavItem {
 
 const adminItems: NavItem[] = [
   { title: "Alert Rules", href: "/admin/alert-rules", icon: Bell },
+  { title: "PO Counter", href: "/admin/po-counter", icon: Hash },
   { title: "Audit Log", href: "/admin/audit-log", icon: ScrollText },
   { title: "User Management", href: "/admin/users", icon: Shield },
   { title: "Documentation", href: "/admin/docs", icon: BookOpen },

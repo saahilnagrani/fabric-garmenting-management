@@ -67,18 +67,6 @@ function amountInWords(amount: number): string {
   return `Rupees ${rupeeWords} and ${numberToIndianWords(paise)} Paise Only.`;
 }
 
-// Deterministic short PO number derived from the first order id + date.
-// Format: FFA/PO/<FY>/<4-char-hash>
-function makePoNumber(seedId: string, today: Date): string {
-  const month = today.getMonth(); // 0=Jan
-  const year = today.getFullYear();
-  // Indian FY: April-March
-  const fyStart = month >= 3 ? year : year - 1;
-  const fyLabel = `${fyStart}-${String(fyStart + 1).slice(-2)}`;
-  const hash = seedId.slice(-6).toUpperCase();
-  return `${PO_DEFAULTS.poNumberPrefix}/${fyLabel}/${hash}`;
-}
-
 export default async function PurchaseOrderPage({
   searchParams,
 }: {
@@ -98,7 +86,8 @@ export default async function PurchaseOrderPage({
     );
   }
 
-  const { orders, fabricMastersByName, garmentersByName } = await getPurchaseOrderData(ids);
+  const { orders, fabricMastersByName, garmentersByName, poNumbersByVendorId } =
+    await getPurchaseOrderData(ids);
 
   if (orders.length === 0) {
     return (
@@ -118,9 +107,6 @@ export default async function PurchaseOrderPage({
 
   const today = new Date();
   const todayStr = formatDate(today);
-  const deliveryDate = new Date(today);
-  deliveryDate.setDate(deliveryDate.getDate() + PO_DEFAULTS.deliveryDays);
-  const deliveryDateStr = formatDate(deliveryDate);
 
   return (
     <div className="min-h-screen bg-white text-black">
@@ -144,7 +130,7 @@ export default async function PurchaseOrderPage({
       <div className="mx-auto max-w-[210mm] px-8 py-6 print:px-0 print:py-0">
         {Array.from(byVendor.entries()).map(([vendorId, vendorOrders]) => {
           const vendor = vendorOrders[0].fabricVendor;
-          const poNumber = makePoNumber(vendorOrders[0].id, today);
+          const poNumber = poNumbersByVendorId[vendorId] ?? vendorOrders[0].poNumber ?? "—";
 
           // Combine rows: sum qty for each (fabricName, colour) pair.
           // Rate is weighted-average when orders have different rates; we round to 2dp.
@@ -217,17 +203,11 @@ export default async function PurchaseOrderPage({
                 </div>
                 <table className="w-full text-[11px]">
                   <tbody>
-                    <tr className="border-b border-black">
+                    <tr>
                       <td className="border-r border-black px-2 py-1 font-semibold w-1/4">PO NUMBER</td>
                       <td className="border-r border-black px-2 py-1 w-1/4">{poNumber}</td>
                       <td className="border-r border-black px-2 py-1 font-semibold w-1/4">PO DATE</td>
                       <td className="px-2 py-1 w-1/4">{todayStr}</td>
-                    </tr>
-                    <tr>
-                      <td className="border-r border-black px-2 py-1 font-semibold">DELIVERY DATE</td>
-                      <td className="border-r border-black px-2 py-1">{deliveryDateStr}</td>
-                      <td className="border-r border-black px-2 py-1 font-semibold">PAYMENT TERMS</td>
-                      <td className="px-2 py-1">{PO_DEFAULTS.paymentTerms}</td>
                     </tr>
                   </tbody>
                 </table>

@@ -6,6 +6,7 @@ import { syncExpenseForInvoice } from "./invoice-expense-sync";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import { autoAdvanceProductsForFabricOrder } from "@/lib/auto-transitions";
+import { ensurePoNumberForGroup } from "@/lib/po-numbering";
 
 /**
  * Rebuilds ProductFabricOrder join rows for a single fabric order.
@@ -280,8 +281,10 @@ export async function getFabricOrdersByIds(ids: string[]) {
  *   that should match a Vendor record of type GARMENTING)
  */
 export async function getPurchaseOrderData(ids: string[]) {
-  await requirePermission("inventory:fabric_orders:view");
-  if (!ids.length) return { orders: [], fabricMastersByName: {}, garmentersByName: {} };
+  // Allocates new PO numbers for any vendor groups that don't have one yet,
+  // so requires :edit, not just :view.
+  await requirePermission("inventory:fabric_orders:edit");
+  if (!ids.length) return { orders: [], fabricMastersByName: {}, garmentersByName: {}, poNumbersByVendorId: {} as Record<string, string> };
 
   const orders = await db.fabricOrder.findMany({
     where: { id: { in: ids } },
@@ -317,7 +320,26 @@ export async function getPurchaseOrderData(ids: string[]) {
     garmentersByName[g.name] = { name: g.name, address: g.address, contactInfo: g.contactInfo };
   }
 
-  return { orders, fabricMastersByName, garmentersByName };
+  // Allocate / reuse a PO number per vendor group. Each vendor's bundle of fabric
+  // orders becomes a single PO and shares one number; reprints find the existing
+  // numbers and don't burn new ones.
+  const ordersByVendor = new Map<string, typeof orders>();
+  for (const o of orders) {
+    const list = ordersByVendor.get(o.fabricVendorId) ?? [];
+    list.push(o);
+    ordersByVendor.set(o.fabricVendorId, list);
+  }
+
+  const poNumbersByVendorId: Record<string, string> = {};
+  for (const [vendorId, vendorOrders] of ordersByVendor.entries()) {
+    const poNumber = await ensurePoNumberForGroup(vendorOrders.map((o) => o.id));
+    poNumbersByVendorId[vendorId] = poNumber;
+    // Reflect the freshly-stamped poNumber on the in-memory orders we'll return,
+    // so the print page sees the up-to-date value without an extra fetch.
+    for (const o of vendorOrders) o.poNumber = poNumber;
+  }
+
+  return { orders, fabricMastersByName, garmentersByName, poNumbersByVendorId };
 }
 
 export async function mergeOrder(
