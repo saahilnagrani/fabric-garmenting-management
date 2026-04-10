@@ -613,9 +613,25 @@ export function ProductOrderSheet({
       };
 
       if (isEditing && editingRow.id) {
-        const { autoAdvanced } = await updateProduct(editingRow.id as string, payload);
+        const { autoAdvanced, dispatchResult } = await updateProduct(editingRow.id as string, payload);
         toast.success("Article order updated");
         showAutoAdvanceToast(autoAdvanced ? [autoAdvanced] : []);
+        if (dispatchResult) {
+          if (dispatchResult.warning) {
+            toast.warning(`Accessory auto-dispatch skipped: ${dispatchResult.warning}`, { duration: 7000 });
+          } else if (dispatchResult.created > 0) {
+            toast.success(
+              `Generated ${dispatchResult.created} draft accessory dispatch${dispatchResult.created === 1 ? "" : "es"} from BOM${dispatchResult.skipped > 0 ? ` (${dispatchResult.skipped} already existed)` : ""}`,
+              {
+                action: {
+                  label: "Review",
+                  onClick: () => router.push("/accessory-dispatches"),
+                },
+                duration: 8000,
+              }
+            );
+          }
+        }
       } else {
         const { product, linkedCount } = await createProduct(payload);
         if (linkedCount > 0) {

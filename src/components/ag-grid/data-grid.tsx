@@ -34,6 +34,7 @@ type DataGridProps<T extends Record<string, unknown>> = {
   onRowClicked?: (data: T) => void;
   getRowClass?: (params: { data?: T }) => string;
   onGridApiReady?: (api: GridApi<T>) => void;
+  rowSelection?: "single" | "multiple";
 };
 
 let tempIdCounter = 0;
@@ -59,6 +60,7 @@ export function DataGrid<T extends Record<string, unknown>>({
   onRowClicked,
   getRowClass,
   onGridApiReady,
+  rowSelection,
 }: DataGridProps<T>) {
   const gridRef = useRef<AgGridReact<T>>(null);
   const gridApiRef = useRef<GridApi<T> | null>(null);
@@ -394,6 +396,8 @@ export function DataGrid<T extends Record<string, unknown>>({
             autoHeaderHeight: true,
           }}
           autoSizeStrategy={hasSavedColState ? undefined : { type: "fitCellContents", skipHeader: true }}
+          rowSelection={rowSelection}
+          suppressRowClickSelection={!!rowSelection}
           pinnedBottomRowData={pinnedBottomRowData}
           singleClickEdit={true}
           stopEditingWhenCellsLoseFocus={true}

@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+import { Plus, Printer } from "lucide-react";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { AccessoryDispatchSheet, type AccessoryDispatchRow } from "./accessory-dispatch-sheet";
 import { accessoryDisplayName } from "@/lib/accessory-display";
@@ -74,8 +74,10 @@ export function AccessoryDispatchGrid({
       {
         field: "dispatchDate",
         headerName: "Date",
-        minWidth: 110,
+        minWidth: 130,
         editable: false,
+        checkboxSelection: true,
+        headerCheckboxSelection: true,
         valueFormatter: (p) =>
           p.value ? new Date(p.value).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "",
       },
@@ -101,12 +103,27 @@ export function AccessoryDispatchGrid({
     []
   );
 
+  function generateDispatchNote() {
+    if (!gridApiRef.current) return;
+    const selected = gridApiRef.current.getSelectedRows() as AccessoryDispatchRow[];
+    if (selected.length === 0) {
+      alert("Select at least one dispatch row first.");
+      return;
+    }
+    const ids = selected.map((r) => r.id).join(",");
+    window.open(`/accessory-dispatches/dispatch-note?ids=${ids}`, "_blank");
+  }
+
   return (
     <>
       <div className="flex items-center gap-2 mb-3">
         <Button variant="outline" size="sm" onClick={() => { setEditingRow(null); setSheetOpen(true); }}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Dispatch
+        </Button>
+        <Button variant="outline" size="sm" onClick={generateDispatchNote}>
+          <Printer className="mr-1.5 h-3.5 w-3.5" />
+          Generate Dispatch Note
         </Button>
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
@@ -121,6 +138,7 @@ export function AccessoryDispatchGrid({
         onGridApiReady={(api) => { gridApiRef.current = api; }}
         defaultSort={[{ colId: "dispatchDate", sort: "desc" }]}
         hideAddRowButtons
+        rowSelection="multiple"
         onRowClicked={(data) => { setEditingRow(data); setSheetOpen(true); }}
         onCreate={async () => undefined}
         onSave={async () => undefined}

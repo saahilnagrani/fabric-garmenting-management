@@ -8,6 +8,7 @@ import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import { autoAdvanceProduct } from "@/lib/auto-transitions";
 import { validateStatusTransition } from "@/lib/state-machine";
+import { autoCreateDispatchesForProduct, type AutoDispatchResult } from "./accessory-dispatches";
 
 /**
  * Rebuilds ProductFabricOrder join rows for a single product.
@@ -225,6 +226,20 @@ export async function updateProduct(id: string, data: any) {
     );
   }
 
+  // Auto-create draft accessory dispatches the first time an article enters
+  // CUTTING_REPORT_RECEIVED. Idempotent — safe to fire multiple times. Surfaces
+  // a result the caller can render as a toast.
+  let dispatchResult: AutoDispatchResult | null = null;
+  const enteredCuttingReportReceived =
+    (statusChanging && product.status === "CUTTING_REPORT_RECEIVED") ||
+    autoAdvanced?.newStatus === "CUTTING_REPORT_RECEIVED";
+  if (enteredCuttingReportReceived) {
+    dispatchResult = await autoCreateDispatchesForProduct(product.id, {
+      id: session.user!.id!,
+      name: session.user!.name!,
+    });
+  }
+
   // Sync expense if invoice number exists or changed
   const hasInvoice = !!product.invoiceNumber;
   const hadInvoice = !!previousProduct?.invoiceNumber;
@@ -239,7 +254,7 @@ export async function updateProduct(id: string, data: any) {
     });
   }
 
-  return { product, autoAdvanced };
+  return { product, autoAdvanced, dispatchResult };
 }
 
 export async function deleteProduct(id: string) {
