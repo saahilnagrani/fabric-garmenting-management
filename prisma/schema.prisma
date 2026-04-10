@@ -247,7 +247,9 @@ model FabricOrder {
 
   orderStatus     FabricOrderStatus @default(DRAFT_ORDER)
   statusChangedAt DateTime          @default(now())
-  poNumber        String?           @unique
+  // Not unique: multiple FabricOrder rows in one vendor batch share a single
+  // PO number (one printed PO, multiple fabric line items).
+  poNumber        String?
   piReceivedAt    DateTime?
   advancePaidAt   DateTime?
   garmentingAt    String?
