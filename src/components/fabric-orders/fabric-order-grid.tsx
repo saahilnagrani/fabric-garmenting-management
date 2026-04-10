@@ -374,7 +374,7 @@ export function FabricOrderGrid({
         const tag = String((params.value ?? params.data?.awaitingTag) || "");
         if (!tag) return null;
         return (
-          <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800">
+          <span className="inline-flex items-center rounded-md bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800 px-1.5 text-[11px] font-medium whitespace-nowrap h-5">
             {tag}
           </span>
         );
