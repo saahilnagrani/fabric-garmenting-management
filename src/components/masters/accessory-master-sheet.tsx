@@ -304,7 +304,7 @@ export function AccessoryMasterSheet({
 
           {/* Variant axes */}
           {isEdit ? (
-            <div className="border border-gray-200 rounded p-2 space-y-1.5">
+            <div className="border border-border rounded p-2 space-y-1.5">
               <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
                 Variant
               </div>
@@ -330,7 +330,7 @@ export function AccessoryMasterSheet({
               </div>
             </div>
           ) : (
-            <div className="border border-gray-200 rounded p-2 space-y-1.5">
+            <div className="border border-border rounded p-2 space-y-1.5">
               <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
                 Variants (comma-separated, leave blank if not applicable)
               </div>

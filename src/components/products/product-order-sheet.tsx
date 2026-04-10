@@ -263,11 +263,11 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -759,7 +759,7 @@ export function ProductOrderSheet({
             <button
               type="button"
               onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
             >
               <ChevronsUpDown className="h-3 w-3" />
               {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
@@ -1166,7 +1166,7 @@ export function ProductOrderSheet({
                 ))}
                 <div className="space-y-0.5">
                   <Label className="text-[10px] text-center block font-semibold">Total</Label>
-                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-gray-50 rounded border">
+                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-muted/50 rounded border border-border">
                     {stitchedTotal}
                   </div>
                 </div>
@@ -1195,7 +1195,7 @@ export function ProductOrderSheet({
                 ))}
                 <div className="space-y-0.5">
                   <Label className="text-[10px] text-center block font-semibold">Total</Label>
-                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-gray-50 rounded border">
+                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-muted/50 rounded border border-border">
                     {inwardTotal}
                   </div>
                 </div>
@@ -1258,7 +1258,7 @@ export function ProductOrderSheet({
           </CollapsibleSection>
 
           {/* Computed Summary (always visible) */}
-          <div className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1.5 space-y-1.5">
+          <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
             <h4 className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
             <div className="grid grid-cols-3 gap-2 text-sm">
               <div>

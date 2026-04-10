@@ -47,7 +47,7 @@ export function AddColumnButton({
             onClick={() => setOpen(false)}
           />
           {/* Popover */}
-          <div className="absolute top-full left-0 mt-1 z-50 w-72 bg-white border border-gray-200 rounded-lg shadow-lg p-3 space-y-3">
+          <div className="absolute top-full left-0 mt-1 z-50 w-72 bg-white border border-border rounded-lg shadow-lg p-3 space-y-3">
             <p className="text-sm font-medium text-gray-900">
               Add Custom Column
             </p>
@@ -77,7 +77,7 @@ export function AddColumnButton({
                 {columns.map((col) => (
                   <div
                     key={col.field}
-                    className="flex items-center justify-between py-1.5 px-2 rounded bg-gray-50"
+                    className="flex items-center justify-between py-1.5 px-2 rounded bg-muted/50"
                   >
                     <span className="text-sm text-gray-700">
                       {col.headerName}

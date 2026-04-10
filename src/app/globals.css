@@ -88,23 +88,30 @@
 }
 
 .dark {
-  --background: oklch(0.15 0 0);
-  --foreground: oklch(0.96 0 0);
-  --card: oklch(0.20 0 0);
-  --card-foreground: oklch(0.96 0 0);
-  --popover: oklch(0.20 0 0);
-  --popover-foreground: oklch(0.96 0 0);
-  --primary: oklch(0.96 0 0);
-  --primary-foreground: oklch(0.20 0 0);
-  --secondary: oklch(0.27 0 0);
-  --secondary-foreground: oklch(0.96 0 0);
-  --muted: oklch(0.27 0 0);
-  --muted-foreground: oklch(0.65 0 0);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.98 0 0);
+  /* Card and popover are ~6 percent lighter than the backdrop so layered
+     surfaces (sheets, dialogs, dropdowns) read as distinct foregrounded
+     layers instead of blending into the page. */
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.98 0 0);
+  --popover: oklch(0.21 0 0);
+  --popover-foreground: oklch(0.98 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.21 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.98 0 0);
+  --muted: oklch(0.269 0 0);
+  /* Bumped from 0.65 so section labels and helper text stay readable
+     against the slightly lighter card background. */
+  --muted-foreground: oklch(0.72 0 0);
   --accent: oklch(0.65 0.16 45);
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  /* Borders pushed from 10 to 18 percent opacity so the outline of every
+     collapsible section, card, and input is clearly traceable. */
+  --border: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 22%);
   --ring: oklch(0.65 0.16 45);
   --chart-1: oklch(0.72 0.14 45);
   --chart-2: oklch(0.78 0.10 55);

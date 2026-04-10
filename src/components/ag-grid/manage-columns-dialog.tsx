@@ -132,7 +132,7 @@ export function ManageColumnsDialog({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setEditingId(null); }} />
-          <div className="absolute top-full left-0 mt-1 z-50 w-80 bg-white border border-gray-200 rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="absolute top-full left-0 mt-1 z-50 w-80 bg-white border border-border rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
               Columns ({columns.length})
             </p>
@@ -141,7 +141,7 @@ export function ManageColumnsDialog({
               {columns.map((col, index) => (
                 <div
                   key={col.colId}
-                  className="flex items-center gap-1 py-1 px-1.5 rounded hover:bg-gray-50 group"
+                  className="flex items-center gap-1 py-1 px-1.5 rounded hover:bg-muted/50 group"
                 >
                   {/* Name (editable) */}
                   {editingId === col.colId ? (

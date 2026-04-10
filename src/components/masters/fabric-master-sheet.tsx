@@ -98,11 +98,11 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -322,7 +322,7 @@ export function FabricMasterSheet({
             <button
               type="button"
               onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
             >
               <ChevronsUpDown className="h-3 w-3" />
               {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}

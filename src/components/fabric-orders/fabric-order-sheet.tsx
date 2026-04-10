@@ -128,11 +128,11 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 rounded overflow-hidden">
+    <div className="border border-border rounded overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -517,7 +517,7 @@ export function FabricOrderSheet({
             <button
               type="button"
               onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded border border-border hover:bg-muted/50 shrink-0"
             >
               <ChevronsUpDown className="h-3 w-3" />
               {allExpanded ? "Collapse" : "Expand"}
@@ -592,13 +592,13 @@ export function FabricOrderSheet({
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded bg-gray-50 border border-gray-200 px-2 py-1.5">
+              <div className="rounded bg-muted/50 border border-border px-2 py-1.5">
                 <div className="text-[9px] text-muted-foreground">Expected = Unit x Ordered</div>
                 <div className="text-xs font-semibold">
                   {computedExpectedCost > 0 ? `Rs ${computedExpectedCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
                 </div>
               </div>
-              <div className="rounded bg-gray-50 border border-gray-200 px-2 py-1.5">
+              <div className="rounded bg-muted/50 border border-border px-2 py-1.5">
                 <div className="text-[9px] text-muted-foreground">Actual = Unit x Shipped</div>
                 <div className="text-xs font-semibold">
                   {computedActualCost > 0 ? `Rs ${computedActualCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}

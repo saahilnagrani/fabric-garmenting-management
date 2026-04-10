@@ -177,11 +177,11 @@ function CollapsibleSection({
   children: React.ReactNode;
 }) {
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-border rounded-lg overflow-hidden">
       <button
         type="button"
         onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
       >
         {expanded ? (
           <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -698,7 +698,7 @@ export function ProductMasterSheet({
               <button
                 type="button"
                 onClick={() => setAllSections(allExpanded ? false : true)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-gray-200 hover:bg-gray-50 shrink-0"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
               >
                 <ChevronsUpDown className="h-3 w-3" />
                 {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
@@ -835,7 +835,7 @@ export function ProductMasterSheet({
                           className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
                             isSelected
                               ? "bg-amber-100 border-amber-400 text-amber-800 font-medium"
-                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                              : "bg-white border-border text-gray-600 hover:bg-muted/50"
                           }`}
                         >
                           {colour}
@@ -937,7 +937,7 @@ export function ProductMasterSheet({
               </CollapsibleSection>
 
               {/* Summary */}
-              <div className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1.5 space-y-1.5">
+              <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
                 <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
@@ -1090,7 +1090,7 @@ export function ProductMasterSheet({
                           className={`px-2 py-1 rounded-full text-xs border transition-colors ${
                             isSelected
                               ? "bg-amber-100 border-amber-400 text-amber-800 font-medium"
-                              : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                              : "bg-white border-border text-gray-600 hover:bg-muted/50"
                           }`}
                         >
                           {colour}
@@ -1183,8 +1183,8 @@ export function ProductMasterSheet({
 
               {/* Accessories (BOM) */}
               {FEATURES.accessories && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <div className="px-2 py-1 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="px-2 py-1 bg-muted/50 border-b border-border flex items-center justify-between">
                     <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
                       Accessories (BOM)
                     </span>
@@ -1308,7 +1308,7 @@ export function ProductMasterSheet({
                           <button
                             type="button"
                             onClick={() => setExpandedPhases((prev) => ({ ...prev, [phase.id]: !prev[phase.id] }))}
-                            className="w-full flex items-center justify-between px-2 py-1.5 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+                            className="w-full flex items-center justify-between px-2 py-1.5 bg-muted/50 hover:bg-muted transition-colors text-left"
                           >
                             <div className="text-[11px] font-semibold truncate max-w-[120px]" title={phase.name}>{phase.name}</div>
                             <div className="flex items-center gap-2 text-[10px] shrink-0">
@@ -1351,7 +1351,7 @@ export function ProductMasterSheet({
               )}
 
               {/* Summary */}
-              <div className="rounded-lg bg-gray-50 border border-gray-200 px-2 py-1.5 space-y-1.5">
+              <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
                 <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>

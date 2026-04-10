@@ -92,9 +92,9 @@ export const MultiTagEditor = forwardRef(
     );
 
     return (
-      <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 min-w-[220px] max-w-[350px]">
+      <div className="bg-white border border-border rounded-lg shadow-lg p-2 min-w-[220px] max-w-[350px]">
         {/* Selected tags + input */}
-        <div className="flex flex-wrap items-center gap-1 min-h-[32px] border border-gray-200 rounded-md px-1.5 py-1 bg-white focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-100">
+        <div className="flex flex-wrap items-center gap-1 min-h-[32px] border border-border rounded-md px-1.5 py-1 bg-white focus-within:border-blue-400 focus-within:ring-1 focus-within:ring-blue-100">
           {selected.map((tag, i) => (
             <span
               key={tag}
@@ -134,7 +134,7 @@ export const MultiTagEditor = forwardRef(
                   e.stopPropagation();
                   addTag(option);
                 }}
-                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-gray-50 transition-colors cursor-pointer"
+                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-muted/50 transition-colors cursor-pointer"
               >
                 {option}
               </button>
