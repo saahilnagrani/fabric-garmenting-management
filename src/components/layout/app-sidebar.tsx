@@ -48,6 +48,7 @@ const navItems: NavItem[] = [
   { title: "Phase Planning", href: "/phase-planning", icon: CalendarPlus, permission: "inventory:phases:view" },
   { title: "Article Orders", href: "/products", icon: Package, permission: "inventory:products:view" },
   { title: "Fabric Orders", href: "/fabric-orders", icon: Scissors, permission: "inventory:fabric_orders:view" },
+  { title: "Fabric Balance", href: "/fabric-balance", icon: Scale, permission: "inventory:fabric_orders:view" },
   ...(FEATURES.accessories
     ? [
         { title: "Accessory Purchases", href: "/accessory-purchases", icon: ShoppingBag, permission: "inventory:accessories:view" as const },
