@@ -60,14 +60,27 @@ function toRow(o: any): Record<string, unknown> {
 }
 
 /**
- * Compute a derived "awaiting" tag for a fabric order based on its status and
- * the optional payment timestamps. Returns an empty string if nothing relevant
- * is being awaited (e.g. status is DRAFT_ORDER or FULLY_SETTLED).
+ * Compute a derived "awaiting" tag from a set of underlying fabric order rows
+ * that share the same aggregated grid key (vendor, fabric, colour). A single
+ * key can cover multiple rows in mixed states, so we walk the set and pick
+ * the most-urgent pending condition.
+ *
+ * Priority order (highest first):
+ *  1. Awaiting Full Payment - any row is RECEIVED (goods in, not settled)
+ *  2. Awaiting Advance Payment - any row is PI_RECEIVED with no advancePaidAt
+ *  3. Awaiting PI - any row is PO_SENT with no piReceivedAt
  */
-function awaitingTag(orderStatus: string, piReceivedAt: string, advancePaidAt: string): string {
-  if (orderStatus === "PO_SENT" && !piReceivedAt) return "Awaiting PI";
-  if (orderStatus === "PI_RECEIVED" && !advancePaidAt) return "Awaiting Advance Payment";
-  if (orderStatus === "RECEIVED") return "Awaiting Full Payment";
+function awaitingTagForRows(rows: Array<Record<string, unknown>>): string {
+  const hasReceived = rows.some((r) => r.orderStatus === "RECEIVED");
+  if (hasReceived) return "Awaiting Full Payment";
+  const hasPiPending = rows.some(
+    (r) => r.orderStatus === "PI_RECEIVED" && !r.advancePaidAt,
+  );
+  if (hasPiPending) return "Awaiting Advance Payment";
+  const hasPoPending = rows.some(
+    (r) => r.orderStatus === "PO_SENT" && !r.piReceivedAt,
+  );
+  if (hasPoPending) return "Awaiting PI";
   return "";
 }
 
@@ -173,6 +186,10 @@ export function FabricOrderGrid({
         poNumber: concatUnique(rows, "poNumber"),
         piReceivedAt: rows.find((r) => r.piReceivedAt)?.piReceivedAt ?? "",
         advancePaidAt: rows.find((r) => r.advancePaidAt)?.advancePaidAt ?? "",
+        // Pre-compute from the underlying rows so groups that span multiple
+        // statuses (e.g. one DRAFT + one PO_SENT) still show the most urgent
+        // awaiting tag instead of collapsing to empty.
+        awaitingTag: awaitingTagForRows(rows),
         garmentingAt: concatUnique(rows, "garmentingAt"),
       });
     }
@@ -348,27 +365,13 @@ export function FabricOrderGrid({
     { field: "poNumber", headerName: "PO Number", minWidth: 140, editable: false },
     { field: "orderStatus", headerName: "Status", minWidth: 100, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
     {
+      field: "awaitingTag",
       headerName: "Awaiting",
       colId: "awaiting",
       minWidth: 160,
       editable: false,
-      valueGetter: (p) => {
-        if (!p.data) return "";
-        return awaitingTag(
-          String(p.data.orderStatus || ""),
-          String(p.data.piReceivedAt || ""),
-          String(p.data.advancePaidAt || ""),
-        );
-      },
-      // Compute tag from the row data directly so we never depend on AG Grid
-      // having populated params.value for a column without a `field`.
-      cellRenderer: (params: { data?: Record<string, unknown> }) => {
-        if (!params.data) return null;
-        const tag = awaitingTag(
-          String(params.data.orderStatus || ""),
-          String(params.data.piReceivedAt || ""),
-          String(params.data.advancePaidAt || ""),
-        );
+      cellRenderer: (params: { value?: string; data?: Record<string, unknown> }) => {
+        const tag = String((params.value ?? params.data?.awaitingTag) || "");
         if (!tag) return null;
         return (
           <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/40 dark:text-amber-200 dark:border-amber-800">
