@@ -12,12 +12,14 @@ import { accessoryDisplayName } from "@/lib/accessory-display";
 type Vendor = { id: string; name: string };
 type AccessoryOption = {
   id: string;
-  baseName: string;
-  colour: string | null;
-  size: string | null;
+  displayName: string;
+  category: string;
   unit: string;
   defaultCostPerUnit: number | null;
   vendorId: string | null;
+  baseName?: string | null;
+  colour?: string | null;
+  size?: string | null;
 };
 
 function toNum(v: unknown): number | null {
@@ -51,11 +53,7 @@ export function AccessoryPurchaseGrid({
           phaseId: p.phaseId as string,
           accessoryId: p.accessoryId as string,
           accessoryDisplayName: acc
-            ? accessoryDisplayName({
-                baseName: String(acc.baseName ?? ""),
-                colour: (acc.colour as string | null) ?? null,
-                size: (acc.size as string | null) ?? null,
-              })
+            ? accessoryDisplayName(acc)
             : "(unknown)",
           accessoryUnit: String((acc?.unit as string) || ""),
           vendorId: (p.vendorId as string | null) ?? null,

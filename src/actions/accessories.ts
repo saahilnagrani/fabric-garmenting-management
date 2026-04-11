@@ -6,16 +6,78 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import type { AccessoryUnit } from "@/generated/prisma/client";
+import { composeDisplayName, type PriceTier } from "@/lib/accessory-categories";
 
 export const getAccessoryMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:accessories:view");
   return db.accessoryMaster.findMany({
     where: includeArchived ? {} : { isStrikedThrough: false },
     include: { vendor: true },
-    orderBy: [{ category: "asc" }, { baseName: "asc" }, { colour: "asc" }, { size: "asc" }],
+    orderBy: [{ category: "asc" }, { displayName: "asc" }],
   });
 });
 
+export type AccessoryMasterInput = {
+  category: string;
+  attributes: Record<string, unknown>;
+  unit: AccessoryUnit;
+  vendorId?: string | null;
+  vendorPageRef?: string | null;
+  defaultCostPerUnit?: number | null;
+  priceTiers?: PriceTier[];
+  hsnCode?: string | null;
+  comments?: string | null;
+};
+
+function normalizeAttributes(attrs: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === "") continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Create a single AccessoryMaster from structured input. The display name is
+ * composed from the category config so every row has a consistent label.
+ */
+export async function createAccessoryMaster(input: AccessoryMasterInput) {
+  const session = await requirePermission("inventory:accessories:create");
+
+  if (!input.category.trim()) throw new Error("Category is required");
+
+  const attributes = normalizeAttributes(input.attributes);
+  const displayName = composeDisplayName(input.category, attributes);
+  if (!displayName.trim()) throw new Error("Accessory has no identifying attributes");
+
+  const master = await db.accessoryMaster.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    data: {
+      displayName,
+      category: input.category.trim(),
+      attributes: attributes as any,
+      priceTiers: (input.priceTiers ?? []) as any,
+      vendorPageRef: input.vendorPageRef?.trim() || null,
+      unit: input.unit,
+      vendorId: input.vendorId || null,
+      defaultCostPerUnit: input.defaultCostPerUnit ?? null,
+      hsnCode: input.hsnCode?.trim() || null,
+      comments: input.comments?.trim() || null,
+    } as any,
+  });
+
+  logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", master.id);
+  revalidatePath("/accessory-masters");
+  return master;
+}
+
+/**
+ * Backwards-compat wrapper: the old UI created Cartesian products of
+ * (colours × sizes) under a baseName. Kept so existing callers in the sheet
+ * continue to work while we migrate the UI. Each combination becomes an
+ * independent AccessoryMaster row.
+ */
 export type CreateAccessoryMastersInput = {
   baseName: string;
   category: string;
@@ -24,15 +86,10 @@ export type CreateAccessoryMastersInput = {
   defaultCostPerUnit?: number | null;
   hsnCode?: string | null;
   comments?: string | null;
-  colours: string[]; // empty → single null variant
-  sizes: string[]; // empty → single null variant
+  colours: string[];
+  sizes: string[];
 };
 
-/**
- * Create one or many accessory master rows from a Cartesian product of
- * (colours × sizes). Empty colour/size arrays produce a single row with that
- * axis null. Runs in a transaction so partial failures roll back.
- */
 export async function createAccessoryMasters(input: CreateAccessoryMastersInput) {
   const session = await requirePermission("inventory:accessories:create");
 
@@ -43,35 +100,43 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
   const colours = input.colours.length > 0 ? input.colours : [null];
   const sizes = input.sizes.length > 0 ? input.sizes : [null];
 
-  const rows = [] as Array<{
-    baseName: string;
-    colour: string | null;
-    size: string | null;
-    category: string;
-    unit: AccessoryUnit;
-    vendorId: string | null;
-    defaultCostPerUnit: number | null;
-    hsnCode: string | null;
-    comments: string | null;
-  }>;
+  const payloads: AccessoryMasterInput[] = [];
   for (const c of colours) {
     for (const s of sizes) {
-      rows.push({
-        baseName,
-        colour: c,
-        size: s,
-        category: input.category.trim(),
+      const attributes: Record<string, unknown> = { baseName };
+      if (c) attributes.colour = c;
+      if (s) attributes.size = s;
+      payloads.push({
+        category: input.category,
+        attributes,
         unit: input.unit,
-        vendorId: input.vendorId || null,
-        defaultCostPerUnit: input.defaultCostPerUnit ?? null,
-        hsnCode: input.hsnCode?.trim() || null,
-        comments: input.comments?.trim() || null,
+        vendorId: input.vendorId,
+        defaultCostPerUnit: input.defaultCostPerUnit,
+        hsnCode: input.hsnCode,
+        comments: input.comments,
       });
     }
   }
 
   const created = await db.$transaction(
-    rows.map((data) => db.accessoryMaster.create({ data }))
+    payloads.map((p) => {
+      const attributes = normalizeAttributes(p.attributes);
+      const displayName = composeDisplayName(p.category, attributes);
+      return db.accessoryMaster.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: {
+          displayName,
+          category: p.category.trim(),
+          attributes: attributes as any,
+          priceTiers: [] as any,
+          unit: p.unit,
+          vendorId: p.vendorId || null,
+          defaultCostPerUnit: p.defaultCostPerUnit ?? null,
+          hsnCode: p.hsnCode?.trim() || null,
+          comments: p.comments?.trim() || null,
+        } as any,
+      });
+    })
   );
 
   for (const m of created) {
@@ -86,11 +151,34 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
 export async function updateAccessoryMaster(id: string, data: any) {
   const session = await requirePermission("inventory:accessories:edit");
   const previous = await db.accessoryMaster.findUnique({ where: { id } });
-  const master = await db.accessoryMaster.update({ where: { id }, data });
+  if (!previous) throw new Error("Accessory not found");
+
+  // If attributes or category changed, recompute displayName.
+  const nextCategory = data.category ?? previous.category;
+  const nextAttributes =
+    data.attributes !== undefined
+      ? normalizeAttributes(data.attributes)
+      : (previous.attributes as Record<string, unknown>);
+  const shouldRecompute =
+    data.attributes !== undefined || data.category !== undefined;
+  const nextDisplayName = shouldRecompute
+    ? composeDisplayName(nextCategory, nextAttributes)
+    : previous.displayName;
+
+  const master = await db.accessoryMaster.update({
+    where: { id },
+    data: {
+      ...data,
+      ...(data.attributes !== undefined ? { attributes: nextAttributes } : {}),
+      ...(shouldRecompute ? { displayName: nextDisplayName } : {}),
+    },
+  });
+
   const action = data.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
-  const changes = previous
-    ? computeDiff(previous as unknown as Record<string, unknown>, master as unknown as Record<string, unknown>)
-    : undefined;
+  const changes = computeDiff(
+    previous as unknown as Record<string, unknown>,
+    master as unknown as Record<string, unknown>,
+  );
   logAction(session.user!.id!, session.user!.name!, action, "AccessoryMaster", id, changes);
   revalidatePath("/accessory-masters");
   revalidatePath("/accessory-purchases");
@@ -137,23 +225,32 @@ export async function getAccessoryCategories(): Promise<string[]> {
 
 export async function getAccessoryColours(): Promise<string[]> {
   await requirePermission("inventory:accessories:view");
+  // Legacy API kept for components that still offer colour pickers. Reads
+  // from both the legacy colour column and the new attributes.colour field.
   const rows = await db.accessoryMaster.findMany({
-    where: { isStrikedThrough: false, colour: { not: null } },
-    select: { colour: true },
-    distinct: ["colour"],
-    orderBy: { colour: "asc" },
+    where: { isStrikedThrough: false },
+    select: { colour: true, attributes: true },
   });
-  return rows.map((r) => r.colour as string);
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (r.colour) set.add(r.colour);
+    const attr = r.attributes as Record<string, unknown> | null;
+    if (attr && typeof attr.colour === "string" && attr.colour) set.add(attr.colour);
+  }
+  return [...set].sort();
 }
 
 export async function getAccessorySizes(): Promise<string[]> {
   await requirePermission("inventory:accessories:view");
   const rows = await db.accessoryMaster.findMany({
-    where: { isStrikedThrough: false, size: { not: null } },
-    select: { size: true },
-    distinct: ["size"],
-    orderBy: { size: "asc" },
+    where: { isStrikedThrough: false },
+    select: { size: true, attributes: true },
   });
-  return rows.map((r) => r.size as string);
+  const set = new Set<string>();
+  for (const r of rows) {
+    if (r.size) set.add(r.size);
+    const attr = r.attributes as Record<string, unknown> | null;
+    if (attr && typeof attr.size === "string" && attr.size) set.add(attr.size);
+  }
+  return [...set].sort();
 }
-

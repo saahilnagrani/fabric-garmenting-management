@@ -34,10 +34,13 @@ export type AccessoryDispatchRow = {
 
 type AccessoryOption = {
   id: string;
-  baseName: string;
-  colour: string | null;
-  size: string | null;
+  displayName: string;
+  category: string;
   unit: string;
+  // Legacy fields, optional to keep older callers compiling.
+  baseName?: string | null;
+  colour?: string | null;
+  size?: string | null;
 };
 
 type ProductOption = {

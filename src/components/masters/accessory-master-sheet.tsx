@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,30 +14,37 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  createAccessoryMasters, updateAccessoryMaster, deleteAccessoryMaster,
+  createAccessoryMaster, updateAccessoryMaster, deleteAccessoryMaster,
 } from "@/actions/accessories";
+import { CATEGORIES, getCategoryConfig, type AttributeField } from "@/lib/accessory-categories";
 import { toast } from "sonner";
-import { Loader2, Archive, Trash2 } from "lucide-react";
+import { Loader2, Archive, Trash2, Plus, X } from "lucide-react";
 
 const UNIT_OPTIONS = ["PIECES", "METERS", "KG", "GRAMS", "ROLLS", "PACKS"] as const;
 
 export type AccessoryMasterRow = {
   id: string;
-  baseName: string;
-  colour: string | null;
-  size: string | null;
+  displayName: string;
   category: string;
+  attributes: Record<string, unknown>;
+  priceTiers: unknown[];
+  vendorPageRef: string | null;
   unit: string;
   vendorId: string | null;
   defaultCostPerUnit: number | null;
   hsnCode: string | null;
   comments: string | null;
   isStrikedThrough: boolean;
-  displayName: string;
+  // Legacy (nullable now)
+  baseName: string | null;
+  colour: string | null;
+  size: string | null;
   [key: string]: unknown;
 };
 
 type Vendor = { id: string; name: string };
+
+type PriceTierRow = { minQty: string; maxQty: string; rate: string };
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -45,53 +52,54 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-function parseCsv(s: string): string[] {
-  return s.split(",").map((p) => p.trim()).filter(Boolean);
-}
-
 type FormData = {
-  baseName: string;
   category: string;
   unit: string;
   vendorId: string;
+  vendorPageRef: string;
   defaultCostPerUnit: string;
   hsnCode: string;
   comments: string;
-  // Edit-mode single-row fields
-  colour: string;
-  size: string;
-  // Create-mode multi-axis comma-separated fields
-  coloursCsv: string;
-  sizesCsv: string;
+  attributes: Record<string, string>;
+  priceTiers: PriceTierRow[];
 };
 
 const emptyForm: FormData = {
-  baseName: "",
   category: "",
   unit: "PIECES",
   vendorId: "",
+  vendorPageRef: "",
   defaultCostPerUnit: "",
   hsnCode: "",
   comments: "",
-  colour: "",
-  size: "",
-  coloursCsv: "",
-  sizesCsv: "",
+  attributes: {},
+  priceTiers: [],
 };
 
 function rowToForm(row: AccessoryMasterRow): FormData {
+  const attrs: Record<string, string> = {};
+  for (const [k, v] of Object.entries(row.attributes ?? {})) {
+    if (v == null) continue;
+    attrs[k] = String(v);
+  }
+  const tiers: PriceTierRow[] = (row.priceTiers ?? []).map((t) => {
+    const tier = t as { minQty?: number; maxQty?: number; rate?: number };
+    return {
+      minQty: tier.minQty != null ? String(tier.minQty) : "",
+      maxQty: tier.maxQty != null ? String(tier.maxQty) : "",
+      rate: tier.rate != null ? String(tier.rate) : "",
+    };
+  });
   return {
-    baseName: row.baseName,
     category: row.category,
     unit: row.unit,
     vendorId: row.vendorId || "",
+    vendorPageRef: row.vendorPageRef || "",
     defaultCostPerUnit: row.defaultCostPerUnit != null ? String(row.defaultCostPerUnit) : "",
     hsnCode: row.hsnCode || "",
     comments: row.comments || "",
-    colour: row.colour || "",
-    size: row.size || "",
-    coloursCsv: "",
-    sizesCsv: "",
+    attributes: attrs,
+    priceTiers: tiers,
   };
 }
 
@@ -100,13 +108,12 @@ export function AccessoryMasterSheet({
   onOpenChange,
   editingRow,
   vendors,
-  categories,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingRow: AccessoryMasterRow | null;
   vendors: Vendor[];
-  categories: string[];
+  categories?: string[];  // legacy prop, kept for backwards compat
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm });
@@ -124,52 +131,127 @@ export function AccessoryMasterSheet({
     }
   }, [open, editingRow]);
 
-  function updateField(field: keyof FormData, value: string) {
+  const categoryConfig = useMemo(() => getCategoryConfig(form.category), [form.category]);
+
+  function updateField<K extends keyof FormData>(field: K, value: FormData[K]) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
+  function updateAttribute(key: string, value: string) {
+    setForm((prev) => ({
+      ...prev,
+      attributes: { ...prev.attributes, [key]: value },
+    }));
+  }
+
+  function addTier() {
+    setForm((prev) => ({
+      ...prev,
+      priceTiers: [...prev.priceTiers, { minQty: "", maxQty: "", rate: "" }],
+    }));
+  }
+
+  function updateTier(idx: number, patch: Partial<PriceTierRow>) {
+    setForm((prev) => ({
+      ...prev,
+      priceTiers: prev.priceTiers.map((t, i) => (i === idx ? { ...t, ...patch } : t)),
+    }));
+  }
+
+  function removeTier(idx: number) {
+    setForm((prev) => ({
+      ...prev,
+      priceTiers: prev.priceTiers.filter((_, i) => i !== idx),
+    }));
+  }
+
   async function handleSubmit() {
-    if (!form.baseName.trim()) {
-      toast.error("Base name is required");
-      return;
-    }
     if (!form.category.trim()) {
       toast.error("Category is required");
       return;
+    }
+    if (!categoryConfig) {
+      toast.error(`Unknown category: ${form.category}`);
+      return;
+    }
+
+    // Coerce attribute values based on field type. Number fields become actual
+    // numbers; strings stay as-is. Empty strings are dropped by the server.
+    const attributes: Record<string, unknown> = {};
+    for (const field of categoryConfig.fields) {
+      const raw = form.attributes[field.key];
+      if (raw == null || raw === "") continue;
+      if (field.type === "number") {
+        const n = toNum(raw);
+        if (n !== null) attributes[field.key] = n;
+      } else {
+        attributes[field.key] = raw.trim();
+      }
+    }
+    // Check at least one identifying attribute was provided
+    const hasAny = Object.keys(attributes).length > 0;
+    if (!hasAny) {
+      toast.error("Fill in at least one field to identify the variant");
+      return;
+    }
+
+    // Validate required fields
+    for (const field of categoryConfig.fields) {
+      if (field.required && (attributes[field.key] == null || attributes[field.key] === "")) {
+        toast.error(`${field.label} is required`);
+        return;
+      }
+    }
+
+    // Validate and clean price tiers
+    const tiers: Array<{ minQty: number; maxQty?: number; rate: number }> = [];
+    for (let i = 0; i < form.priceTiers.length; i++) {
+      const t = form.priceTiers[i];
+      const blank = !t.minQty && !t.maxQty && !t.rate;
+      if (blank) continue;
+      const minQty = toNum(t.minQty);
+      const rate = toNum(t.rate);
+      if (minQty === null || minQty < 0) {
+        toast.error(`Tier ${i + 1}: min qty is required and must be >= 0`);
+        return;
+      }
+      if (rate === null || rate < 0) {
+        toast.error(`Tier ${i + 1}: rate is required and must be >= 0`);
+        return;
+      }
+      const maxQty = toNum(t.maxQty);
+      tiers.push({ minQty, ...(maxQty != null ? { maxQty } : {}), rate });
     }
 
     setSubmitting(true);
     try {
       if (isEdit) {
-        const payload = {
-          baseName: form.baseName.trim(),
+        await updateAccessoryMaster(editingRow.id, {
           category: form.category.trim(),
+          attributes,
+          priceTiers: tiers,
+          vendorPageRef: form.vendorPageRef.trim() || null,
           unit: form.unit,
           vendorId: form.vendorId || null,
           defaultCostPerUnit: toNum(form.defaultCostPerUnit),
           hsnCode: form.hsnCode.trim() || null,
           comments: form.comments.trim() || null,
-          colour: form.colour.trim() || null,
-          size: form.size.trim() || null,
-        };
-        await updateAccessoryMaster(editingRow.id, payload);
+        });
         toast.success("Accessory updated");
       } else {
-        const colours = parseCsv(form.coloursCsv);
-        const sizes = parseCsv(form.sizesCsv);
-        const created = await createAccessoryMasters({
-          baseName: form.baseName.trim(),
+        await createAccessoryMaster({
           category: form.category.trim(),
+          attributes,
+          priceTiers: tiers,
+          vendorPageRef: form.vendorPageRef.trim() || null,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           unit: form.unit as any,
           vendorId: form.vendorId || null,
           defaultCostPerUnit: toNum(form.defaultCostPerUnit),
           hsnCode: form.hsnCode.trim() || null,
           comments: form.comments.trim() || null,
-          colours,
-          sizes,
         });
-        toast.success(`Created ${created.length} variant${created.length === 1 ? "" : "s"}`);
+        toast.success("Accessory created");
       }
       onOpenChange(false);
       router.refresh();
@@ -215,150 +297,179 @@ export function AccessoryMasterSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-amber-400">
+      <SheetContent side="right" className="max-w-[560px] w-full overflow-y-auto border-t-4 border-t-amber-400">
         <SheetHeader className="pr-12">
           <div className="flex items-center gap-2">
             <SheetTitle className="text-sm">{isEdit ? "Edit Accessory" : "New Accessory"}</SheetTitle>
-            <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
+            <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200 px-1.5 py-0.5 rounded">Master</span>
           </div>
           <SheetDescription className="text-[11px]">
-            {isEdit
-              ? "Single-row edit. Variant axes can be changed individually."
-              : "Pick base name + multi-select colours/sizes to bulk-create variants in one go."}
+            Pick a category to see its variant fields. The display name is
+            composed from whatever you fill in.
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-3 px-4 overflow-y-auto">
-          {/* Identity */}
-          <div className="space-y-2">
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Base Name *</Label>
-                <Input
-                  value={form.baseName}
-                  onChange={(e) => updateField("baseName", e.target.value)}
-                  autoFocus
-                  className="h-8 text-xs"
-                  placeholder="e.g. Zipper YKK #5"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Category *</Label>
-                <Input
-                  value={form.category}
-                  onChange={(e) => updateField("category", e.target.value)}
-                  placeholder="e.g. Zipper, Drawstring, Bra Pad"
-                  list="accessory-categories"
-                  className="h-8 text-xs"
-                />
-                <datalist id="accessory-categories">
-                  {categories.map((c) => <option key={c} value={c} />)}
-                </datalist>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Unit *</Label>
-                <Select value={form.unit} onValueChange={(v) => updateField("unit", v)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {UNIT_OPTIONS.map((u) => (
-                      <SelectItem key={u} value={u}>{u}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Vendor</Label>
-                <Combobox
-                  value={form.vendorId}
-                  onValueChange={(v) => updateField("vendorId", v)}
-                  options={vendors.map((v) => ({ label: v.name, value: v.id }))}
-                  placeholder="Select vendor..."
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Default Cost</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.defaultCostPerUnit}
-                  onChange={(e) => updateField("defaultCostPerUnit", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">HSN Code</Label>
-                <Input
-                  value={form.hsnCode}
-                  onChange={(e) => updateField("hsnCode", e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
+          {/* Category picker */}
+          <div className="space-y-0.5">
+            <Label className="text-[11px]">Category *</Label>
+            <Select value={form.category} onValueChange={(v) => updateField("category", v ?? "")}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select category..." />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>
+                    {c.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {categoryConfig?.description && (
+              <p className="text-[10px] text-muted-foreground">{categoryConfig.description}</p>
+            )}
           </div>
 
-          {/* Variant axes */}
-          {isEdit ? (
-            <div className="border border-border rounded p-2 space-y-1.5">
+          {/* Dynamic attribute fields based on category */}
+          {categoryConfig && (
+            <div className="border border-border rounded p-2 space-y-2">
               <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                Variant
+                Variant attributes
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-0.5">
-                  <Label className="text-[11px]">Colour</Label>
-                  <Input
-                    value={form.colour}
-                    onChange={(e) => updateField("colour", e.target.value)}
-                    placeholder="(none)"
-                    className="h-8 text-xs"
+                {categoryConfig.fields.map((field) => (
+                  <AttributeInput
+                    key={field.key}
+                    field={field}
+                    value={form.attributes[field.key] ?? ""}
+                    onChange={(v) => updateAttribute(field.key, v)}
                   />
-                </div>
-                <div className="space-y-0.5">
-                  <Label className="text-[11px]">Size</Label>
-                  <Input
-                    value={form.size}
-                    onChange={(e) => updateField("size", e.target.value)}
-                    placeholder="(none)"
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="border border-border rounded p-2 space-y-1.5">
-              <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                Variants (comma-separated, leave blank if not applicable)
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Colours</Label>
-                <Input
-                  value={form.coloursCsv}
-                  onChange={(e) => updateField("coloursCsv", e.target.value)}
-                  placeholder="e.g. Red, Black, White"
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Sizes</Label>
-                <Input
-                  value={form.sizesCsv}
-                  onChange={(e) => updateField("sizesCsv", e.target.value)}
-                  placeholder="e.g. 15cm, 20cm, 25cm"
-                  className="h-8 text-xs"
-                />
-              </div>
-              <div className="text-[10px] text-muted-foreground italic">
-                Will create {Math.max(parseCsv(form.coloursCsv).length, 1)} × {Math.max(parseCsv(form.sizesCsv).length, 1)} = {Math.max(parseCsv(form.coloursCsv).length, 1) * Math.max(parseCsv(form.sizesCsv).length, 1)} row{Math.max(parseCsv(form.coloursCsv).length, 1) * Math.max(parseCsv(form.sizesCsv).length, 1) === 1 ? "" : "s"}.
+                ))}
               </div>
             </div>
           )}
 
-          {/* Comments */}
+          {/* Purchase details */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Unit *</Label>
+              <Select value={form.unit} onValueChange={(v) => updateField("unit", v ?? "PIECES")}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {UNIT_OPTIONS.map((u) => (
+                    <SelectItem key={u} value={u}>{u}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Vendor</Label>
+              <Combobox
+                value={form.vendorId}
+                onValueChange={(v) => updateField("vendorId", v)}
+                options={vendors.map((v) => ({ label: v.name, value: v.id }))}
+                placeholder="Select vendor..."
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Catalog ref</Label>
+              <Input
+                value={form.vendorPageRef}
+                onChange={(e) => updateField("vendorPageRef", e.target.value)}
+                placeholder="Page 2, Item 4"
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Default Cost (Rs)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.defaultCostPerUnit}
+                onChange={(e) => updateField("defaultCostPerUnit", e.target.value)}
+                className="h-8 text-xs"
+                placeholder="Fallback when no tier matches"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">HSN Code</Label>
+              <Input
+                value={form.hsnCode}
+                onChange={(e) => updateField("hsnCode", e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          {/* Price tiers */}
+          <div className="border border-border rounded p-2 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+                Price Tiers (Rs / unit at quantity)
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] px-1.5"
+                onClick={addTier}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add tier
+              </Button>
+            </div>
+            {form.priceTiers.length === 0 ? (
+              <p className="text-[10px] text-muted-foreground italic">
+                No tiers. Purchases will use the default cost above.
+              </p>
+            ) : (
+              form.priceTiers.map((tier, idx) => (
+                <div
+                  key={idx}
+                  className="grid gap-1.5 items-center"
+                  style={{ gridTemplateColumns: "1fr 1fr 1fr 24px" }}
+                >
+                  <Input
+                    type="number"
+                    placeholder="Min qty"
+                    value={tier.minQty}
+                    onChange={(e) => updateTier(idx, { minQty: e.target.value })}
+                    className="h-7 text-xs"
+                  />
+                  <Input
+                    type="number"
+                    placeholder="Max qty (opt)"
+                    value={tier.maxQty}
+                    onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
+                    className="h-7 text-xs"
+                  />
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="Rate"
+                    value={tier.rate}
+                    onChange={(e) => updateTier(idx, { rate: e.target.value })}
+                    className="h-7 text-xs"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-6 p-0"
+                    onClick={() => removeTier(idx)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
           <div className="space-y-0.5">
             <Label className="text-[11px]">Comments</Label>
             <Textarea
@@ -401,8 +512,8 @@ export function AccessoryMasterSheet({
             )}
           </div>
           {isEdit && showDeleteConfirm && (
-            <div className="w-full rounded border border-red-200 bg-red-50 p-2 space-y-1.5">
-              <p className="text-xs font-medium text-red-800">
+            <div className="w-full rounded border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 p-2 space-y-1.5">
+              <p className="text-xs font-medium text-red-800 dark:text-red-200">
                 Delete this accessory permanently? This cannot be undone.
               </p>
               <div className="flex gap-2">
@@ -418,5 +529,50 @@ export function AccessoryMasterSheet({
         </SheetFooter>
       </SheetContent>
     </Sheet>
+  );
+}
+
+function AttributeInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: AttributeField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="space-y-0.5">
+      <Label className="text-[11px]">
+        {field.label}
+        {field.unit && <span className="text-muted-foreground"> ({field.unit})</span>}
+        {field.required && <span className="text-red-500"> *</span>}
+      </Label>
+      {field.type === "select" ? (
+        <Select
+          value={value || "__none__"}
+          onValueChange={(v) => onChange(!v || v === "__none__" ? "" : v)}
+        >
+          <SelectTrigger className="h-8 text-xs">
+            <SelectValue placeholder="(none)" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">(none)</SelectItem>
+            {field.options?.map((opt) => (
+              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          type={field.type === "number" ? "number" : "text"}
+          step={field.type === "number" ? "0.01" : undefined}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-8 text-xs"
+        />
+      )}
+      {field.helper && <p className="text-[10px] text-muted-foreground italic">{field.helper}</p>}
+    </div>
   );
 }

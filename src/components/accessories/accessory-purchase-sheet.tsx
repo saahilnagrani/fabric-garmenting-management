@@ -34,12 +34,15 @@ export type AccessoryPurchaseRow = {
 
 type AccessoryOption = {
   id: string;
-  baseName: string;
-  colour: string | null;
-  size: string | null;
+  displayName: string;
+  category: string;
   unit: string;
   defaultCostPerUnit: number | null;
   vendorId: string | null;
+  // Legacy fields, optional to keep older callers compiling.
+  baseName?: string | null;
+  colour?: string | null;
+  size?: string | null;
 };
 
 type Vendor = { id: string; name: string };

@@ -268,6 +268,7 @@ model FabricOrder {
   @@index([phaseId])
   @@index([fabricVendorId])
   @@index([invoiceNumber])
+  @@index([poNumber])
 }
 
 model ProductFabricOrder {
@@ -554,10 +555,17 @@ enum AccessoryUnit {
 
 model AccessoryMaster {
   id                 String        @id @default(cuid())
-  baseName           String
-  colour             String?
-  size               String?
+  // displayName is the canonical human-facing string stored once and reused
+  // everywhere (grid, BOM, dispatch note, purchase line). Always populated.
+  displayName        String
   category           String
+  // Per-category structured variant fields. The shape is defined by
+  // src/lib/accessory-categories.ts and validated client-side.
+  attributes         Json          @default("{}")
+  // Tiered pricing as a JSON array of {minQty, rate}. Empty array means
+  // defaultCostPerUnit is used instead.
+  priceTiers         Json          @default("[]")
+  vendorPageRef      String?
   unit               AccessoryUnit
   vendorId           String?
   vendor             Vendor?       @relation("AccessoryMasterVendor", fields: [vendorId], references: [id])
@@ -568,13 +576,20 @@ model AccessoryMaster {
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
 
+  // ── Legacy columns, kept nullable for back-compat with existing consumers.
+  // Old consumers still read these; new writes only go through displayName
+  // and attributes. Can be dropped after the UI migration settles.
+  baseName String?
+  colour   String?
+  size     String?
+
   purchases    AccessoryPurchase[]
   dispatches   AccessoryDispatch[]
   productLinks ProductMasterAccessory[]
 
-  @@unique([baseName, colour, size])
   @@index([category])
   @@index([vendorId])
+  @@index([displayName])
 }
 
 model AccessoryPurchase {

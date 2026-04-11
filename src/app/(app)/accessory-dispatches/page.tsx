@@ -25,9 +25,8 @@ export default async function AccessoryDispatchesPage() {
 
   const accessoryOptions = accessories.map((a) => ({
     id: a.id,
-    baseName: a.baseName,
-    colour: a.colour,
-    size: a.size,
+    displayName: a.displayName,
+    category: a.category,
     unit: a.unit,
   }));
 

@@ -36,24 +36,34 @@ export function AccessoryMasterGrid({
 
   const rowData: AccessoryMasterRow[] = useMemo(
     () =>
-      (masters as Record<string, unknown>[]).map((m) => ({
-        id: m.id as string,
-        baseName: String(m.baseName ?? ""),
-        colour: (m.colour as string | null) ?? null,
-        size: (m.size as string | null) ?? null,
-        category: String(m.category ?? ""),
-        unit: String(m.unit ?? "PIECES"),
-        vendorId: (m.vendorId as string | null) ?? null,
-        defaultCostPerUnit: toNum(m.defaultCostPerUnit),
-        hsnCode: (m.hsnCode as string | null) ?? null,
-        comments: (m.comments as string | null) ?? null,
-        isStrikedThrough: Boolean(m.isStrikedThrough),
-        displayName: accessoryDisplayName({
-          baseName: String(m.baseName ?? ""),
+      (masters as Record<string, unknown>[]).map((m) => {
+        const attrs = (m.attributes as Record<string, unknown> | null) ?? {};
+        const displayName = accessoryDisplayName({
+          displayName: m.displayName as string | null,
+          category: m.category as string | null,
+          attributes: attrs,
+          baseName: (m.baseName as string | null) ?? null,
           colour: (m.colour as string | null) ?? null,
           size: (m.size as string | null) ?? null,
-        }),
-      })),
+        });
+        return {
+          id: m.id as string,
+          baseName: (m.baseName as string | null) ?? null,
+          colour: (m.colour as string | null) ?? null,
+          size: (m.size as string | null) ?? null,
+          category: String(m.category ?? ""),
+          attributes: attrs,
+          priceTiers: (m.priceTiers as unknown[] | null) ?? [],
+          vendorPageRef: (m.vendorPageRef as string | null) ?? null,
+          unit: String(m.unit ?? "PIECES"),
+          vendorId: (m.vendorId as string | null) ?? null,
+          defaultCostPerUnit: toNum(m.defaultCostPerUnit),
+          hsnCode: (m.hsnCode as string | null) ?? null,
+          comments: (m.comments as string | null) ?? null,
+          isStrikedThrough: Boolean(m.isStrikedThrough),
+          displayName,
+        };
+      }),
     [masters]
   );
 
@@ -66,10 +76,27 @@ export function AccessoryMasterGrid({
         field: "displayName",
         headerName: "Accessory",
         pinned: "left",
-        minWidth: 220,
+        minWidth: 260,
         editable: false,
       },
-      { field: "category", headerName: "Category", minWidth: 120, editable: false },
+      {
+        field: "category",
+        headerName: "Category",
+        minWidth: 120,
+        editable: false,
+        valueFormatter: (p) => {
+          const label = p.value as string;
+          // Humanize ALL_CAPS category codes like "REFLECTOR" -> "Reflector"
+          if (!label) return "";
+          return label.charAt(0) + label.slice(1).toLowerCase().replace(/_/g, " ");
+        },
+      },
+      {
+        field: "vendorPageRef",
+        headerName: "Catalog ref",
+        minWidth: 130,
+        editable: false,
+      },
       { field: "unit", headerName: "Unit", minWidth: 90, editable: false },
       {
         field: "vendorId",
@@ -84,6 +111,18 @@ export function AccessoryMasterGrid({
         minWidth: 110,
         editable: false,
         type: "numericColumn",
+      },
+      {
+        headerName: "Tiers",
+        minWidth: 80,
+        editable: false,
+        valueGetter: (p) => (p.data?.priceTiers as unknown[] | null)?.length ?? 0,
+        cellRenderer: (params: { value: number }) =>
+          params.value > 0 ? (
+            <span className="inline-flex items-center rounded-md bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-200 dark:border-emerald-800 px-1.5 text-[11px] font-medium whitespace-nowrap h-5">
+              {params.value} tier{params.value === 1 ? "" : "s"}
+            </span>
+          ) : null,
       },
       { field: "hsnCode", headerName: "HSN", minWidth: 90, editable: false },
       { field: "comments", headerName: "Comments", minWidth: 150, editable: false },

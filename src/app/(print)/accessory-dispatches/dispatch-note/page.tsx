@@ -170,11 +170,7 @@ export default async function DispatchNotePage({
                   </thead>
                   <tbody>
                     {rows.map((r, idx) => {
-                      const display = accessoryDisplayName({
-                        baseName: r.accessory.baseName,
-                        colour: r.accessory.colour,
-                        size: r.accessory.size,
-                      });
+                      const display = accessoryDisplayName(r.accessory);
                       return (
                         <tr key={r.id} className="align-top">
                           <td className="border border-black px-1.5 py-1">{idx + 1}</td>

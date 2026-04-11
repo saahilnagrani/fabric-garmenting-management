@@ -11,10 +11,12 @@ import { accessoryDisplayName } from "@/lib/accessory-display";
 
 type AccessoryOption = {
   id: string;
-  baseName: string;
-  colour: string | null;
-  size: string | null;
+  displayName: string;
+  category: string;
   unit: string;
+  baseName?: string | null;
+  colour?: string | null;
+  size?: string | null;
 };
 
 type ProductOption = { id: string; label: string };
@@ -47,13 +49,7 @@ export function AccessoryDispatchGrid({
           id: d.id as string,
           phaseId: d.phaseId as string,
           accessoryId: d.accessoryId as string,
-          accessoryDisplayName: acc
-            ? accessoryDisplayName({
-                baseName: String(acc.baseName ?? ""),
-                colour: (acc.colour as string | null) ?? null,
-                size: (acc.size as string | null) ?? null,
-              })
-            : "(unknown)",
+          accessoryDisplayName: acc ? accessoryDisplayName(acc) : "(unknown)",
           accessoryUnit: String((acc?.unit as string) || ""),
           quantity: Number(d.quantity ?? 0),
           destinationGarmenter: (d.destinationGarmenter as string | null) ?? null,

@@ -20,9 +20,8 @@ export default async function AccessoryPurchasesPage() {
 
   const accessoryOptions = accessories.map((a) => ({
     id: a.id,
-    baseName: a.baseName,
-    colour: a.colour,
-    size: a.size,
+    displayName: a.displayName,
+    category: a.category,
     unit: a.unit,
     defaultCostPerUnit: a.defaultCostPerUnit ? Number(a.defaultCostPerUnit) : null,
     vendorId: a.vendorId,

@@ -63,6 +63,11 @@ export function AppearanceProvider({ children }: { children: React.ReactNode }) 
       defaultTheme="system"
       enableSystem
       disableTransitionOnChange
+      // Explicit list so next-themes will set any of these as the class
+      // on <html>. Each non-light theme has a matching palette block in
+      // globals.css and is included in the `dark:` custom variant matcher
+      // so Tailwind `dark:*` utilities still resolve under all three.
+      themes={["light", "dark", "dim", "cool-dark"]}
     >
       <AppearanceContext.Provider value={{ font, setFont }}>
         <AppearanceScript />

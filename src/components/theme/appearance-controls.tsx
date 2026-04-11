@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "next-themes";
-import { Monitor, Moon, Sun, Check } from "lucide-react";
+import { Monitor, Moon, Sun, Check, Contrast, Droplet } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { FONT_CHOICES, getFontChoice } from "@/lib/fonts";
 import { useAppearance } from "./appearance-provider";
 import { cn } from "@/lib/utils";
 
-type Mode = "light" | "dark" | "system";
+type Mode = "light" | "dark" | "dim" | "cool-dark" | "system";
+
+const DARK_VARIANTS: ReadonlyArray<Mode> = ["dark", "dim", "cool-dark"];
 
 /**
  * Shared appearance controls: theme toggle (system/light/dark) plus a font
@@ -29,11 +31,42 @@ export function AppearanceControls({ variant = "inline" }: { variant?: "inline" 
   // Until mounted, render a placeholder so the initial HTML is consistent
   // with the client render (theme is only known after hydration).
   const currentTheme: Mode = mounted ? ((theme as Mode) || "system") : "system";
+  const isDarkFamily = DARK_VARIANTS.includes(currentTheme);
 
+  // Primary theme options — the top-level choice the user makes.
+  // Selecting "Dark" applies whichever dark variant is currently active
+  // (defaults to plain "dark").
   const themeOptions: Array<{ value: Mode; label: string; icon: typeof Sun }> = [
     { value: "light", label: "Light", icon: Sun },
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },
+  ];
+
+  // Dark-family variant options — only shown when a dark variant is active.
+  const darkVariantOptions: Array<{
+    value: Mode;
+    label: string;
+    description: string;
+    icon: typeof Moon;
+  }> = [
+    {
+      value: "dark",
+      label: "Classic",
+      description: "Neutral grey, highest contrast.",
+      icon: Moon,
+    },
+    {
+      value: "dim",
+      label: "Dim",
+      description: "Softer middle grey, reduced contrast — easier for long sessions.",
+      icon: Contrast,
+    },
+    {
+      value: "cool-dark",
+      label: "Cool",
+      description: "Blue-tinted charcoal, IDE-inspired.",
+      icon: Droplet,
+    },
   ];
 
   if (variant === "full") {
@@ -47,12 +80,23 @@ export function AppearanceControls({ variant = "inline" }: { variant?: "inline" 
           <div className="grid grid-cols-3 gap-2 max-w-md">
             {themeOptions.map((opt) => {
               const Icon = opt.icon;
-              const active = currentTheme === opt.value;
+              // "Dark" button lights up for any dark-family variant so the
+              // top-level selection stays stable when a user picks a subvariant.
+              const active =
+                opt.value === "dark"
+                  ? isDarkFamily
+                  : currentTheme === opt.value;
               return (
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={() => setTheme(opt.value)}
+                  onClick={() => {
+                    // When re-selecting "Dark", preserve the user's current
+                    // dark variant if they already had one; otherwise default
+                    // to plain "dark".
+                    if (opt.value === "dark" && isDarkFamily) return;
+                    setTheme(opt.value);
+                  }}
                   className={cn(
                     "flex flex-col items-center gap-2 rounded-lg border-2 p-3 text-xs transition-colors",
                     active
@@ -68,6 +112,43 @@ export function AppearanceControls({ variant = "inline" }: { variant?: "inline" 
             })}
           </div>
         </section>
+
+        {isDarkFamily && (
+          <section>
+            <h3 className="text-sm font-semibold mb-2">Dark variant</h3>
+            <p className="text-xs text-muted-foreground mb-3">
+              Pick a flavour of dark mode. All variants keep the terracotta accent.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 max-w-2xl">
+              {darkVariantOptions.map((opt) => {
+                const Icon = opt.icon;
+                const active = currentTheme === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setTheme(opt.value)}
+                    className={cn(
+                      "flex flex-col items-start gap-1.5 rounded-lg border-2 p-3 text-left transition-colors",
+                      active
+                        ? "border-primary bg-accent/10"
+                        : "border-border hover:border-muted-foreground/50"
+                    )}
+                  >
+                    <div className="flex items-center gap-1.5">
+                      <Icon className="h-4 w-4" />
+                      <span className="text-sm font-medium">{opt.label}</span>
+                      {active && <Check className="h-3 w-3 text-primary ml-auto" />}
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-snug">
+                      {opt.description}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         <section>
           <h3 className="text-sm font-semibold mb-2">Font</h3>
@@ -119,14 +200,20 @@ export function AppearanceControls({ variant = "inline" }: { variant?: "inline" 
         <div className="mt-1 grid grid-cols-3 gap-1">
           {themeOptions.map((opt) => {
             const Icon = opt.icon;
-            const active = currentTheme === opt.value;
+            const active =
+              opt.value === "dark"
+                ? isDarkFamily
+                : currentTheme === opt.value;
             return (
               <Button
                 key={opt.value}
                 variant={active ? "default" : "outline"}
                 size="sm"
                 className="h-8 text-[11px]"
-                onClick={() => setTheme(opt.value)}
+                onClick={() => {
+                  if (opt.value === "dark" && isDarkFamily) return;
+                  setTheme(opt.value);
+                }}
               >
                 <Icon className="h-3 w-3 mr-1" />
                 {opt.label}
@@ -135,6 +222,33 @@ export function AppearanceControls({ variant = "inline" }: { variant?: "inline" 
           })}
         </div>
       </div>
+
+      {isDarkFamily && (
+        <div>
+          <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+            Dark variant
+          </Label>
+          <div className="mt-1 grid grid-cols-3 gap-1">
+            {darkVariantOptions.map((opt) => {
+              const Icon = opt.icon;
+              const active = currentTheme === opt.value;
+              return (
+                <Button
+                  key={opt.value}
+                  variant={active ? "default" : "outline"}
+                  size="sm"
+                  className="h-8 text-[11px] px-1.5"
+                  onClick={() => setTheme(opt.value)}
+                  title={opt.description}
+                >
+                  <Icon className="h-3 w-3 mr-1" />
+                  {opt.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div>
         <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Font</Label>
