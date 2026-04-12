@@ -1,15 +1,3 @@
-<p align="center">
-  <h1 align="center">Hyperballik Inventory</h1>
-  <p align="center">
-    End-to-end fabric and garmenting management for D2C apparel brands.
-    <br />
-    Track article orders, fabric procurement, accessory inventory, and production
-    from a single dashboard.
-  </p>
-</p>
-
----
-
 ## Why Hyperballik Inventory?
 
 Most D2C apparel teams track fabric orders in spreadsheets, juggle WhatsApp threads for garmenter updates, and lose visibility into accessory stock across production phases. This project replaces all of that with one opinionated system built for the Indian garment supply chain.
