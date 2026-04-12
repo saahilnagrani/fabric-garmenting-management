@@ -11,6 +11,35 @@ Most D2C apparel teams track fabric orders in spreadsheets, juggle WhatsApp thre
 
 ---
 
+## Screenshots
+
+### Dashboard
+Phase overview with alert cards, garment progress, fabric shipment stats, and expense breakdown.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+### Article Orders
+Per-SKU production orders with status pipeline, linked fabric orders, and garmenting cost roll-up.
+
+![Article Orders](docs/screenshots/article-orders.png)
+
+### Fabric Orders
+Vendor-scoped fabric procurement with aggregated grid, purchase order generation, and status tracking.
+
+![Fabric Orders](docs/screenshots/fabric-orders.png)
+
+### Accessory Balance
+Opening / purchased / dispatched / closing balance per accessory, with automatic phase carry-forward.
+
+![Accessory Balance](docs/screenshots/accessory-balance.png)
+
+### Dark Mode (Cool variant)
+Blue-tinted charcoal theme with full AG-Grid integration.
+
+![Dark Mode](docs/screenshots/dark-mode.png)
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
