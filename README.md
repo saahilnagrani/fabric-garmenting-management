@@ -1,5 +1,3 @@
-## Why Hyperballik Inventory?
-
 Most D2C apparel teams track fabric orders in spreadsheets, juggle WhatsApp threads for garmenter updates, and lose visibility into accessory stock across production phases. This project replaces all of that with one opinionated system built for the Indian garment supply chain.
 
 - **Phase-based planning**: every order, expense, and fabric shipment is tagged to a production phase. Switch phases with one click; the entire app scopes to that window.
