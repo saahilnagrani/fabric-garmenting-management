@@ -6,6 +6,7 @@ import { TopBar } from "@/components/layout/top-bar";
 import { Providers } from "@/components/providers";
 import { Toaster } from "sonner";
 import { getPhases } from "@/actions/phases";
+import { getDashboardAlerts, type DashboardAlert } from "@/actions/dashboard";
 
 export default async function AppLayout({
   children,
@@ -16,8 +17,13 @@ export default async function AppLayout({
   if (!session) redirect("/login");
 
   let phases: Awaited<ReturnType<typeof getPhases>> = [];
+  let alerts: DashboardAlert[] = [];
   try {
     phases = await getPhases();
+    const currentPhase = phases.find((p) => p.isCurrent);
+    if (currentPhase) {
+      alerts = await getDashboardAlerts(currentPhase.id);
+    }
   } catch {
     // User may not have permission or session may be stale
   }
@@ -27,7 +33,7 @@ export default async function AppLayout({
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>
-          <TopBar phases={phases} userName={session?.user?.name} />
+          <TopBar phases={phases} userName={session?.user?.name} alerts={alerts} />
           <main className="flex-1 overflow-auto p-6">{children}</main>
         </SidebarInset>
         <Toaster closeButton richColors />

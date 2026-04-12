@@ -147,6 +147,49 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
   return created;
 }
 
+/**
+ * Bulk-create multiple accessories sharing the same category, unit, vendor,
+ * cost, and HSN. Each entry provides its own attribute map. Used by the
+ * "Bulk Add" CSV-paste flow in the master sheet.
+ */
+export async function bulkCreateAccessoryMasters(
+  shared: Omit<AccessoryMasterInput, "attributes">,
+  rows: Array<{ attributes: Record<string, unknown> }>
+) {
+  const session = await requirePermission("inventory:accessories:create");
+  if (!shared.category.trim()) throw new Error("Category is required");
+  if (rows.length === 0) throw new Error("No rows to create");
+
+  const created = await db.$transaction(
+    rows.map((row) => {
+      const attributes = normalizeAttributes(row.attributes);
+      const displayName = composeDisplayName(shared.category, attributes);
+      return db.accessoryMaster.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: {
+          displayName,
+          category: shared.category.trim(),
+          attributes: attributes as any,
+          priceTiers: (shared.priceTiers ?? []) as any,
+          vendorPageRef: shared.vendorPageRef?.trim() || null,
+          unit: shared.unit,
+          vendorId: shared.vendorId || null,
+          defaultCostPerUnit: shared.defaultCostPerUnit ?? null,
+          hsnCode: shared.hsnCode?.trim() || null,
+          comments: shared.comments?.trim() || null,
+        } as any,
+      });
+    })
+  );
+
+  for (const m of created) {
+    logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", m.id);
+  }
+
+  revalidatePath("/accessory-masters");
+  return created;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateAccessoryMaster(id: string, data: any) {
   const session = await requirePermission("inventory:accessories:edit");

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import {
   createAccessoryMaster, updateAccessoryMaster, deleteAccessoryMaster,
+  bulkCreateAccessoryMasters,
 } from "@/actions/accessories";
 import { CATEGORIES, getCategoryConfig, type AttributeField } from "@/lib/accessory-categories";
 import { toast } from "sonner";
@@ -121,6 +122,8 @@ export function AccessoryMasterSheet({
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const isEdit = editingRow !== null;
 
   useEffect(() => {
@@ -128,6 +131,8 @@ export function AccessoryMasterSheet({
       if (editingRow) setForm(rowToForm(editingRow));
       else setForm({ ...emptyForm });
       setShowDeleteConfirm(false);
+      setBulkMode(false);
+      setBulkText("");
     }
   }, [open, editingRow]);
 
@@ -262,6 +267,96 @@ export function AccessoryMasterSheet({
     }
   }
 
+  /**
+   * Parse the bulk-paste textarea and create all rows in one transaction.
+   * Each line is split by comma or tab. Columns map to the category's fields
+   * in order (matching categoryConfig.fields).
+   */
+  async function handleBulkSubmit() {
+    if (!form.category.trim()) {
+      toast.error("Pick a category first");
+      return;
+    }
+    if (!categoryConfig) {
+      toast.error(`Unknown category: ${form.category}`);
+      return;
+    }
+
+    const lines = bulkText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length === 0) {
+      toast.error("Paste at least one line");
+      return;
+    }
+
+    const fieldKeys = categoryConfig.fields.map((f) => f.key);
+
+    const rows: Array<{ attributes: Record<string, unknown> }> = [];
+    for (let i = 0; i < lines.length; i++) {
+      // Split by tab first, fall back to comma
+      const parts = lines[i].includes("\t")
+        ? lines[i].split("\t").map((p) => p.trim())
+        : lines[i].split(",").map((p) => p.trim());
+      const attributes: Record<string, unknown> = {};
+      for (let j = 0; j < fieldKeys.length && j < parts.length; j++) {
+        const val = parts[j];
+        if (val) {
+          const field = categoryConfig.fields[j];
+          if (field.type === "number") {
+            const n = Number(val);
+            if (!isNaN(n)) attributes[fieldKeys[j]] = n;
+          } else {
+            attributes[fieldKeys[j]] = val;
+          }
+        }
+      }
+      if (Object.keys(attributes).length === 0) {
+        toast.error(`Line ${i + 1} is empty after parsing`);
+        return;
+      }
+      rows.push({ attributes });
+    }
+
+    setSubmitting(true);
+    try {
+      const created = await bulkCreateAccessoryMasters(
+        {
+          category: form.category.trim(),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          unit: form.unit as any,
+          vendorId: form.vendorId || null,
+          vendorPageRef: form.vendorPageRef.trim() || null,
+          defaultCostPerUnit: toNum(form.defaultCostPerUnit),
+          hsnCode: form.hsnCode.trim() || null,
+          comments: form.comments.trim() || null,
+          priceTiers: form.priceTiers
+            .filter((t) => t.minQty && t.rate)
+            .map((t) => ({
+              minQty: Number(t.minQty),
+              ...(t.maxQty ? { maxQty: Number(t.maxQty) } : {}),
+              rate: Number(t.rate),
+            })),
+        },
+        rows
+      );
+      toast.success(`Created ${created.length} accessor${created.length === 1 ? "y" : "ies"}`);
+      onOpenChange(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Bulk create failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Count parsed lines for the bulk preview
+  const bulkLineCount = bulkText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0).length;
+
   const isArchived = editingRow?.isStrikedThrough === true;
 
   async function handleArchive() {
@@ -331,21 +426,100 @@ export function AccessoryMasterSheet({
           </div>
 
           {/* Dynamic attribute fields based on category */}
-          {categoryConfig && (
+          {categoryConfig && !bulkMode && (
             <div className="border border-border rounded p-2 space-y-2">
-              <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                Variant attributes
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+                  Variant attributes
+                </div>
+                {!isEdit && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => setBulkMode(true)}
+                  >
+                    Bulk Add
+                  </Button>
+                )}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                {categoryConfig.fields.map((field) => (
-                  <AttributeInput
-                    key={field.key}
-                    field={field}
-                    value={form.attributes[field.key] ?? ""}
-                    onChange={(v) => updateAttribute(field.key, v)}
-                  />
-                ))}
+              {(() => {
+                // Split fields into "text/descriptive" (first row, 2-col)
+                // and "measurement/select" (second row, equal-width columns).
+                // Text fields = type "text" without options. Everything else
+                // (number fields, select fields) goes in the compact row.
+                const textFields = categoryConfig.fields.filter(
+                  (f) => f.type === "text" && !f.options
+                );
+                const compactFields = categoryConfig.fields.filter(
+                  (f) => f.type !== "text" || !!f.options
+                );
+                return (
+                  <>
+                    {textFields.length > 0 && (
+                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${textFields.length}, 1fr)` }}>
+                        {textFields.map((field) => (
+                          <AttributeInput
+                            key={field.key}
+                            field={field}
+                            value={form.attributes[field.key] ?? ""}
+                            onChange={(v) => updateAttribute(field.key, v)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    {compactFields.length > 0 && (
+                      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${compactFields.length}, 1fr)` }}>
+                        {compactFields.map((field) => (
+                          <AttributeInput
+                            key={field.key}
+                            field={field}
+                            value={form.attributes[field.key] ?? ""}
+                            onChange={(v) => updateAttribute(field.key, v)}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Bulk paste mode */}
+          {categoryConfig && bulkMode && !isEdit && (
+            <div className="border border-border rounded p-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+                  Bulk add ({bulkLineCount} row{bulkLineCount === 1 ? "" : "s"})
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] px-2"
+                  onClick={() => setBulkMode(false)}
+                >
+                  Single mode
+                </Button>
               </div>
+              <p className="text-[10px] text-muted-foreground">
+                Paste one accessory per line, columns separated by comma or tab.
+                Column order: <strong>{categoryConfig.fields.map((f) => f.label).join(", ")}</strong>.
+                All rows share the category, unit, vendor, cost, and tiers set above.
+              </p>
+              <Textarea
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)}
+                placeholder={categoryConfig.fields.map((f) => f.label).join(", ") + "\ne.g. " + categoryConfig.fields.map((f) => {
+                  if (f.type === "number") return "10";
+                  if (f.options?.length) return f.options[0];
+                  return f.label;
+                }).join(", ")}
+                className="min-h-[120px] text-xs font-mono resize-y"
+                rows={8}
+              />
             </div>
           )}
 
@@ -482,11 +656,16 @@ export function AccessoryMasterSheet({
 
         <SheetFooter>
           <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
-            <Button size="lg" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1">
+            <Button
+              size="lg"
+              onClick={bulkMode ? handleBulkSubmit : handleSubmit}
+              disabled={submitting || archiving}
+              className="flex-1"
+            >
               {submitting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : "Creating..."}</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : bulkMode ? `Creating ${bulkLineCount}...` : "Creating..."}</>
               ) : (
-                isEdit ? "Update Accessory" : "Create Accessory"
+                isEdit ? "Update Accessory" : bulkMode ? `Create ${bulkLineCount} Accessor${bulkLineCount === 1 ? "y" : "ies"}` : "Create Accessory"
               )}
             </Button>
             {isEdit && (
