@@ -66,48 +66,7 @@ Most D2C apparel teams track fabric orders in spreadsheets, juggle WhatsApp thre
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL 15+
-
-### Setup
-
-```bash
-# 1. Clone the repo
-git clone https://github.com/saahilnagrani/hyperballik-inventory.git
-cd hyperballik-inventory
-
-# 2. Install dependencies
-npm install
-
-# 3. Set up environment
-cp .env.example .env.local
-# Edit .env.local with your DATABASE_URL
-
-# 4. Run migrations
-npx prisma migrate deploy
-npx prisma generate
-
-# 5. Start the dev server
-npm run dev -- --port 3002
-```
-
-Open [http://localhost:3002](http://localhost:3002) and sign in with the admin credentials you set up.
-
-### Environment Variables
-
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | Yes | PostgreSQL connection string |
-| `NEXTAUTH_SECRET` | Yes | Random secret for session encryption |
-| `NEXT_PUBLIC_FEATURE_ACCESSORIES` | No | Set to `true` to enable the accessories module |
-
----
-
-## Project Structure
+## Architecture
 
 ```
 src/
