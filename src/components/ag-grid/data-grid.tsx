@@ -84,9 +84,10 @@ export function DataGrid<T extends Record<string, unknown>>({
     if (!gridApiRef.current || isInitializing.current) return;
     const state = gridApiRef.current.getColumnState();
     localStorage.setItem(colStateKey, JSON.stringify(state));
-    // Keep fingerprint in sync
+    // Fingerprint tracks the SET of column IDs (sorted) so reordering columns
+    // doesn't look like a schema change on the next load.
     const allColFields = gridApiRef.current.getColumns()?.map((c) => c.getColId()) || [];
-    localStorage.setItem(colStateKey + "-fingerprint", allColFields.join("|"));
+    localStorage.setItem(colStateKey + "-fingerprint", [...allColFields].sort().join("|"));
   }, [colStateKey]);
 
   const saveColumnStateDebounced = useCallback(() => {
@@ -128,9 +129,11 @@ export function DataGrid<T extends Record<string, unknown>>({
       try {
         const parsed: ColumnState[] = JSON.parse(saved);
 
-        // Build a fingerprint of the current column defs to detect changes
+        // Build a fingerprint of the current column defs to detect schema changes.
+        // Sort IDs so the fingerprint only changes when columns are added/removed,
+        // not when the user reorders them.
         const allColFields = params.api.getColumns()?.map((c) => c.getColId()) || [];
-        const currentFingerprint = allColFields.join("|");
+        const currentFingerprint = [...allColFields].sort().join("|");
         const savedFingerprint = localStorage.getItem(colStateKey + "-fingerprint");
 
         // Preserve pinned settings from column defs
@@ -179,9 +182,9 @@ export function DataGrid<T extends Record<string, unknown>>({
         // Ignore invalid saved state
       }
     } else {
-      // No saved state — store initial fingerprint
+      // No saved state — store initial fingerprint (sorted).
       const allColFields = params.api.getColumns()?.map((c) => c.getColId()) || [];
-      localStorage.setItem(colStateKey + "-fingerprint", allColFields.join("|"));
+      localStorage.setItem(colStateKey + "-fingerprint", [...allColFields].sort().join("|"));
     }
 
     // Always apply default sort if no sort is currently set
@@ -382,6 +385,7 @@ export function DataGrid<T extends Record<string, unknown>>({
           onGridReady={onGridReady}
           onCellValueChanged={onCellValueChanged}
           onColumnMoved={saveColumnState}
+          onColumnPinned={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
           onSortChanged={saveColumnState}
           getRowId={(params) => getRowIdFn(params.data)}
