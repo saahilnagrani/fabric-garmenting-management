@@ -18,7 +18,7 @@ interface Module {
 const modules: Module[] = [
   { label: "Fabric & Garmenting", icon: Package, href: "/dashboard", pathPrefix: "/" },
   { label: "Sourcing Agent", icon: Search, href: "/sourcing/dashboard", pathPrefix: "/sourcing" },
-  { label: "Admin", icon: Shield, href: "/admin/users", pathPrefix: "/admin" },
+  { label: "Admin", icon: Shield, href: "/admin/alert-rules", pathPrefix: "/admin" },
 ];
 
 export function ModuleSwitcher() {

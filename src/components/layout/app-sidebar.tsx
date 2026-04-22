@@ -51,14 +51,10 @@ const navItems: NavItem[] = [
   { title: "Fabric Balance", href: "/fabric-balance", icon: Scale, permission: "inventory:fabric_orders:view" },
   ...(FEATURES.accessories
     ? [
-        { title: "Accessory Purchases", href: "/accessory-purchases", icon: ShoppingBag, permission: "inventory:accessories:view" as const },
-        { title: "Accessory Dispatches", href: "/accessory-dispatches", icon: Send, permission: "inventory:accessories:view" as const },
-        { title: "Accessory Balance", href: "/accessory-balance", icon: Scale, permission: "inventory:accessories:view" as const },
+        { title: "Accessories", href: "/accessories", icon: ShoppingBag, permission: "inventory:accessories:view" as const },
       ]
     : []),
   { title: "Expenses", href: "/expenses", icon: Receipt, permission: "inventory:expenses:view" },
-  { title: "Vendors", href: "/vendors", icon: Users, permission: "inventory:vendors:view" },
-  { title: "Phases", href: "/phases", icon: Layers, permission: "inventory:phases:view" },
 ];
 
 const masterItems: NavItem[] = [
@@ -72,6 +68,8 @@ const masterItems: NavItem[] = [
 ];
 
 const listItems: NavItem[] = [
+  { title: "Vendors", href: "/vendors", icon: Users, permission: "inventory:vendors:view" },
+  { title: "Phases", href: "/phases", icon: Layers, permission: "inventory:phases:view" },
   { title: "Product Types", href: "/lists/types", icon: List, permission: "inventory:lists:view" },
   { title: "Colours", href: "/lists/colours", icon: List, permission: "inventory:lists:view" },
   { title: "Garmenting Locations", href: "/lists/garmenting-locations", icon: List, permission: "inventory:lists:view" },
