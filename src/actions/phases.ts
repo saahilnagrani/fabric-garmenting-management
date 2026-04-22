@@ -39,6 +39,9 @@ export async function setCurrentPhase(id: string) {
   await db.phase.updateMany({ data: { isCurrent: false } });
   await db.phase.update({ where: { id }, data: { isCurrent: true } });
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "Phase", id);
+  // Revalidate the root layout so the phase selector in the top bar
+  // picks up the new isCurrent flag, plus all phase-scoped pages.
+  revalidatePath("/", "layout");
   revalidatePath("/products");
   revalidatePath("/fabric-orders");
   revalidatePath("/expenses");

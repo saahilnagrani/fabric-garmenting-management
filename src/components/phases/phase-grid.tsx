@@ -5,6 +5,7 @@ import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { DateCellEditor } from "@/components/ag-grid/date-cell-editor";
 import { createPhase, updatePhase, setCurrentPhase } from "@/actions/phases";
+import { dispatchPhaseChanged } from "@/components/layout/phase-selector";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
@@ -73,6 +74,7 @@ export function PhaseGrid({ phases }: { phases: unknown[] }) {
               className="h-6 text-xs"
               onClick={async () => {
                 await setCurrentPhase(params.data.id);
+                dispatchPhaseChanged(params.data.id);
                 router.refresh();
               }}
             >

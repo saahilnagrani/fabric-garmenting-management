@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createPhase, updatePhase, setCurrentPhase } from "@/actions/phases";
+import { dispatchPhaseChanged } from "@/components/layout/phase-selector";
 import { toast } from "sonner";
 import { Pencil, Plus, Check, X } from "lucide-react";
 
@@ -89,6 +90,7 @@ export function PhaseList({ phases }: { phases: Phase[] }) {
   async function handleSetCurrent(id: string) {
     try {
       await setCurrentPhase(id);
+      dispatchPhaseChanged(id);
       toast.success("Current phase updated");
       router.refresh();
     } catch {
