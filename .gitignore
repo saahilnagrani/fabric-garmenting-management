@@ -48,3 +48,7 @@ next-env.d.ts
 
 # editor/tooling local state
 /.claude/launch.json
+
+# test artifacts and demo seeds
+/test-results/
+/.demo-seed-ids.json
