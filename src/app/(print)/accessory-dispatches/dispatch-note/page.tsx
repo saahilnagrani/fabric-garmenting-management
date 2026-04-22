@@ -26,14 +26,15 @@ function formatQty(n: number, unit: string) {
 export default async function DispatchNotePage({
   searchParams,
 }: {
-  searchParams: Promise<{ ids?: string }>;
+  searchParams: Promise<{ ids?: string; dnNumber?: string }>;
 }) {
   await requirePermission("inventory:accessories:view");
 
   const params = await searchParams;
+  const dnNumber = params.dnNumber?.trim();
   const ids = (params.ids || "").split(",").map((s) => s.trim()).filter(Boolean);
 
-  if (ids.length === 0) {
+  if (!dnNumber && ids.length === 0) {
     return (
       <div className="p-8">
         <p className="text-muted-foreground">
@@ -45,7 +46,7 @@ export default async function DispatchNotePage({
   }
 
   const dispatches = await db.accessoryDispatch.findMany({
-    where: { id: { in: ids } },
+    where: dnNumber ? { dnNumber } : { id: { in: ids } },
     include: {
       accessory: true,
       product: {
@@ -77,6 +78,14 @@ export default async function DispatchNotePage({
     byGarmenter.get(key)!.push(d);
   }
 
+  // Look up addresses for garmenting vendors by name
+  const garmenterNames = [...byGarmenter.keys()].filter((k) => k !== "Unassigned");
+  const garmenterVendors = await db.vendor.findMany({
+    where: { name: { in: garmenterNames }, type: "GARMENTING" },
+    select: { name: true, address: true, contactInfo: true },
+  });
+  const vendorAddressMap = new Map(garmenterVendors.map((v) => [v.name, { address: v.address, contactInfo: v.contactInfo }]));
+
   const today = new Date();
   const todayStr = formatDate(today);
 
@@ -107,8 +116,27 @@ export default async function DispatchNotePage({
             ...new Set(rows.map((r) => `Phase ${r.phase.number} — ${r.phase.name}`)),
           ];
 
+          const vendorInfo = vendorAddressMap.get(garmenter);
+          const dnNumberOnRows = rows.find((r) => r.dnNumber)?.dnNumber ?? "—";
+          const isCancelled = rows.every((r) => r.status === "CANCELLED");
+
           return (
-            <section key={garmenter} className="dn-page mb-10 print:mb-0">
+            <section key={garmenter} className={`dn-page mb-10 print:mb-0 relative ${isCancelled ? "opacity-75" : ""}`}>
+              {isCancelled && (
+                <>
+                  <div className="mb-2 rounded border-2 border-red-600 bg-red-50 px-3 py-2 text-center text-sm font-bold uppercase tracking-widest text-red-700 [-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]">
+                    Cancelled
+                  </div>
+                  <div
+                    aria-hidden
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center z-10 select-none"
+                  >
+                    <span className="rotate-[-18deg] text-[9rem] font-black tracking-widest text-red-500/15 print:text-red-500/25 [-webkit-print-color-adjust:exact] print:[print-color-adjust:exact]">
+                      CANCELLED
+                    </span>
+                  </div>
+                </>
+              )}
               {/* Header */}
               <div className="border-2 border-black p-3">
                 <div className="text-left">
@@ -132,21 +160,29 @@ export default async function DispatchNotePage({
                 </div>
                 <table className="w-full text-[11px]">
                   <tbody>
-                    <tr className="border-b border-black">
-                      <td className="border-r border-black px-2 py-1 font-semibold w-1/4">
+                    <tr>
+                      <td className="border-r border-b border-black px-2 py-1 font-semibold w-[15%]">DN NUMBER</td>
+                      <td className="border-r border-b border-black px-2 py-1 w-[35%] font-mono">{dnNumberOnRows}</td>
+                      <td rowSpan={3} className="border-r border-black px-2 py-1 font-semibold w-[15%] align-top">
                         DESTINATION
                       </td>
-                      <td className="border-r border-black px-2 py-1 w-1/4">{garmenter}</td>
-                      <td className="border-r border-black px-2 py-1 font-semibold w-1/4">
-                        DATE
+                      <td rowSpan={3} className="px-2 py-1 w-[35%] align-top">
+                        <div className="font-semibold">{garmenter}</div>
+                        {vendorInfo?.address && (
+                          <div className="text-[10px] text-gray-600 mt-0.5 whitespace-pre-line">{vendorInfo.address}</div>
+                        )}
+                        {vendorInfo?.contactInfo && (
+                          <div className="text-[10px] text-gray-600 mt-0.5">{vendorInfo.contactInfo}</div>
+                        )}
                       </td>
-                      <td className="px-2 py-1 w-1/4">{todayStr}</td>
+                    </tr>
+                    <tr>
+                      <td className="border-r border-b border-black px-2 py-1 font-semibold">DATE</td>
+                      <td className="border-r border-b border-black px-2 py-1">{todayStr}</td>
                     </tr>
                     <tr>
                       <td className="border-r border-black px-2 py-1 font-semibold">PHASE(S)</td>
-                      <td colSpan={3} className="px-2 py-1">
-                        {phaseLabels.join(", ")}
-                      </td>
+                      <td className="border-r border-black px-2 py-1">{phaseLabels.join(", ")}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -161,6 +197,7 @@ export default async function DispatchNotePage({
                   <thead>
                     <tr className="border border-black bg-gray-50">
                       <th className="border border-black px-1.5 py-1 text-left w-8">S.No</th>
+                      <th className="border border-black px-1.5 py-1 text-left w-20">Image</th>
                       <th className="border border-black px-1.5 py-1 text-left">Accessory</th>
                       <th className="border border-black px-1.5 py-1 text-left w-16">Category</th>
                       <th className="border border-black px-1.5 py-1 text-right w-24">Quantity</th>
@@ -171,9 +208,25 @@ export default async function DispatchNotePage({
                   <tbody>
                     {rows.map((r, idx) => {
                       const display = accessoryDisplayName(r.accessory);
+                      const imageUrl = (r.accessory as Record<string, unknown>).imageUrl as string | null;
                       return (
                         <tr key={r.id} className="align-top">
                           <td className="border border-black px-1.5 py-1">{idx + 1}</td>
+                          <td className="border border-black px-1 py-1">
+                            {imageUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={imageUrl}
+                                alt={display}
+                                className="w-20 h-20 object-contain"
+                                style={{ printColorAdjust: "exact", WebkitPrintColorAdjust: "exact" }}
+                              />
+                            ) : (
+                              <div className="w-20 h-20 border border-dashed border-gray-300 flex items-center justify-center text-[8px] text-gray-400">
+                                No img
+                              </div>
+                            )}
+                          </td>
                           <td className="border border-black px-1.5 py-1">{display}</td>
                           <td className="border border-black px-1.5 py-1">{r.accessory.category}</td>
                           <td className="border border-black px-1.5 py-1 text-right">

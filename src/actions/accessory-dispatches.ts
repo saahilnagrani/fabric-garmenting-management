@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
+import { ensureDnNumberForDispatchGroup, fiscalYearFromNumber } from "@/lib/po-numbering";
+import type { AccessoryDispatchStatus } from "@/generated/prisma/client";
 
 export async function getAccessoryDispatches(phaseId: string) {
   await requirePermission("inventory:accessories:view");
@@ -345,4 +347,206 @@ export async function autoCreateDispatchesForProduct(
     skipped,
     warning: null,
   };
+}
+
+/**
+ * Stamp dnNumber onto selected dispatch rows (grouped by destinationGarmenter).
+ * Does NOT change status — user drives that manually. Rows without a
+ * destination are rejected because a DN has to have a recipient.
+ */
+export async function generateAccessoryDispatchNotes(
+  ids: string[],
+): Promise<Record<string, string>> {
+  await requirePermission("inventory:accessories:edit");
+  if (!ids.length) return {};
+
+  const dispatches = await db.accessoryDispatch.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, destinationGarmenter: true, dnNumber: true },
+  });
+
+  const missingDest = dispatches.filter((d) => !d.destinationGarmenter);
+  if (missingDest.length > 0) {
+    throw new Error(
+      `${missingDest.length} dispatch row(s) have no destination garmenter. Set a destination before generating a DN.`
+    );
+  }
+
+  const byGarmenter = new Map<string, string[]>();
+  for (const d of dispatches) {
+    const key = d.destinationGarmenter!;
+    const list = byGarmenter.get(key) ?? [];
+    list.push(d.id);
+    byGarmenter.set(key, list);
+  }
+
+  const dnNumbersByGarmenter: Record<string, string> = {};
+  for (const [garmenter, groupIds] of byGarmenter.entries()) {
+    const dnNumber = await ensureDnNumberForDispatchGroup(groupIds);
+    dnNumbersByGarmenter[garmenter] = dnNumber;
+  }
+
+  revalidatePath("/accessories");
+  return dnNumbersByGarmenter;
+}
+
+/** Fetch all rows sharing a given DN number (for the group-update prompt). */
+export async function getDispatchesByDnNumber(dnNumber: string) {
+  await requirePermission("inventory:accessories:view");
+  return db.accessoryDispatch.findMany({
+    where: { dnNumber },
+    select: { id: true, status: true },
+  });
+}
+
+export async function bulkUpdateAccessoryDispatchStatus(
+  ids: string[],
+  status: AccessoryDispatchStatus,
+) {
+  const session = await requirePermission("inventory:accessories:edit");
+  await db.accessoryDispatch.updateMany({
+    where: { id: { in: ids } },
+    data: { status, statusChangedAt: new Date() },
+  });
+  logAction(session.user!.id!, session.user!.name!, "UPDATE", "AccessoryDispatch", ids.join(","), {
+    status: { old: "various", new: status },
+  });
+  revalidatePath("/accessories");
+}
+
+/**
+ * Cancel a DN: mark every row in the group as CANCELLED. The DN number stays
+ * on the rows so the cancelled note still shows in the DN list. Only allowed
+ * while every row is still DRAFT; once the DN has been issued (DISPATCHED or
+ * beyond) the garmenter has been notified and it can't be unilaterally voided.
+ */
+export async function cancelAccessoryDispatchNote(dnNumber: string) {
+  const session = await requirePermission("inventory:accessories:edit");
+  const rows = await db.accessoryDispatch.findMany({
+    where: { dnNumber },
+    select: { id: true, status: true },
+  });
+  if (rows.length === 0) throw new Error(`No rows found for DN ${dnNumber}`);
+  const advanced = rows.filter((r) => r.status !== "DRAFT");
+  if (advanced.length > 0) {
+    throw new Error(
+      `Cannot cancel DN ${dnNumber}: ${advanced.length} row(s) are past Draft status. Revert their status first.`
+    );
+  }
+  await db.accessoryDispatch.updateMany({
+    where: { dnNumber },
+    data: { status: "CANCELLED", statusChangedAt: new Date() },
+  });
+  logAction(session.user!.id!, session.user!.name!, "UPDATE", "AccessoryDispatch", rows.map((r) => r.id).join(","), {
+    status: { old: "DRAFT", new: "CANCELLED" },
+  });
+  revalidatePath("/accessories");
+  return rows.length;
+}
+
+/**
+ * Aggregated list of every generated DN. One row per dnNumber. Status is
+ * read off the first row in the group; the group-sync prompt in the sheet
+ * keeps them aligned in practice.
+ */
+export async function getAccessoryDispatchNotes(fiscalYear?: string) {
+  await requirePermission("inventory:accessories:view");
+  const rows = await db.accessoryDispatch.findMany({
+    where: {
+      dnNumber: fiscalYear
+        ? { contains: `/${fiscalYear}/` }
+        : { not: null },
+    },
+    include: { accessory: true },
+    orderBy: [{ createdAt: "desc" }],
+  });
+
+  type Agg = {
+    dnNumber: string;
+    destinationGarmenter: string | null;
+    lineCount: number;
+    totalQuantity: number;
+    status: string;
+    generatedAt: Date;
+  };
+
+  const byDn = new Map<string, Agg>();
+  for (const r of rows) {
+    const dn = r.dnNumber!;
+    const qty = Number(r.quantity ?? 0);
+    const existing = byDn.get(dn);
+    if (existing) {
+      existing.lineCount += 1;
+      existing.totalQuantity += qty;
+      if (r.createdAt < existing.generatedAt) existing.generatedAt = r.createdAt;
+    } else {
+      byDn.set(dn, {
+        dnNumber: dn,
+        destinationGarmenter: r.destinationGarmenter,
+        lineCount: 1,
+        totalQuantity: qty,
+        status: r.status,
+        generatedAt: r.createdAt,
+      });
+    }
+  }
+
+  return Array.from(byDn.values()).sort(
+    (a, b) => b.generatedAt.getTime() - a.generatedAt.getTime(),
+  );
+}
+
+/** Distinct fiscal years present in the dispatch-note data, newest first. */
+export async function getAccessoryDispatchNoteFiscalYears(): Promise<string[]> {
+  await requirePermission("inventory:accessories:view");
+  const rows = await db.accessoryDispatch.findMany({
+    where: { dnNumber: { not: null } },
+    select: { dnNumber: true },
+    distinct: ["dnNumber"],
+  });
+  const fys = new Set<string>();
+  for (const r of rows) {
+    const fy = r.dnNumber ? fiscalYearFromNumber(r.dnNumber) : null;
+    if (fy) fys.add(fy);
+  }
+  return [...fys].sort((a, b) => b.localeCompare(a));
+}
+
+/** Data for the DN print page. Accepts either ids or a dnNumber. */
+export async function getAccessoryDispatchNoteData(
+  param: { ids: string[] } | { dnNumber: string },
+) {
+  await requirePermission("inventory:accessories:edit");
+
+  const where =
+    "dnNumber" in param
+      ? { dnNumber: param.dnNumber }
+      : { id: { in: param.ids } };
+
+  const dispatches = await db.accessoryDispatch.findMany({
+    where,
+    include: {
+      accessory: true,
+      product: {
+        select: {
+          id: true,
+          articleNumber: true,
+          styleNumber: true,
+          colourOrdered: true,
+          productName: true,
+        },
+      },
+      phase: true,
+    },
+    orderBy: [{ destinationGarmenter: "asc" }, { createdAt: "asc" }],
+  });
+
+  const dnNumbersByGarmenter: Record<string, string> = {};
+  for (const d of dispatches) {
+    if (d.destinationGarmenter && d.dnNumber) {
+      dnNumbersByGarmenter[d.destinationGarmenter] = d.dnNumber;
+    }
+  }
+
+  return { dispatches, dnNumbersByGarmenter };
 }
