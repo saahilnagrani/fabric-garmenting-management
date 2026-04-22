@@ -9,6 +9,8 @@ import { logAction, computeDiff } from "@/lib/audit";
 import { autoAdvanceProduct } from "@/lib/auto-transitions";
 import { validateStatusTransition } from "@/lib/state-machine";
 import { autoCreateDispatchesForProduct, type AutoDispatchResult } from "./accessory-dispatches";
+import type { ProductAlertFilter } from "@/lib/alert-filters";
+import { getAlertRulesMerged } from "./alert-rules";
 
 /**
  * Rebuilds ProductFabricOrder join rows for a single product.
@@ -66,7 +68,16 @@ export type ProductFilters = {
   status?: ProductStatus;
   fabricVendorId?: string;
   search?: string;
+  /**
+   * Alert-driven filter. When set, the page was reached by clicking a
+   * dashboard alert and only rows matching that alert's predicate are
+   * returned. Thresholds are re-read from AlertRule so behaviour stays
+   * consistent with the admin-edited values.
+   */
+  alertFilter?: ProductAlertFilter;
 };
+
+const TERMINAL_PRODUCT_STATUSES: ProductStatus[] = ["SHIPPED", "DELIVERED"];
 
 export async function getProducts(phaseId: string, filters?: ProductFilters) {
   await requirePermission("inventory:products:view");
@@ -86,11 +97,39 @@ export async function getProducts(phaseId: string, filters?: ProductFilters) {
     ];
   }
 
+  // Alert-driven predicates. Applied as additional WHERE clauses so they
+  // stack with existing user filters (e.g. alert + search).
+  if (filters?.alertFilter === "unshipped") {
+    // Phase-deadline alert: non-terminal articles in the current phase.
+    where.status = { notIn: TERMINAL_PRODUCT_STATUSES };
+  } else if (filters?.alertFilter === "stale") {
+    // Stale-state alert: non-terminal articles untouched for > N days.
+    const rules = await getAlertRulesMerged();
+    const staleRule = rules.find((r) => r.id === "stale-state");
+    const thresholdDays = staleRule?.thresholdDays ?? 7;
+    const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
+    where.status = { notIn: TERMINAL_PRODUCT_STATUSES };
+    where.statusChangedAt = { lt: cutoff };
+  } else if (filters?.alertFilter === "unlinked-planned") {
+    // Unlinked-products alert: status=PLANNED with zero fabricOrderLinks.
+    where.status = "PLANNED";
+    where.fabricOrderLinks = { none: {} };
+  }
+
   return db.product.findMany({
     where,
     include: { fabricVendor: true, fabric2Vendor: true },
     orderBy: [{ styleNumber: "asc" }, { colourOrdered: "asc" }],
   });
+}
+
+/**
+ * Returns the total product count for the current phase, ignoring any
+ * alert-driven filter. Used by the filter banner to show "N of M rows".
+ */
+export async function getProductsCountForPhase(phaseId: string): Promise<number> {
+  await requirePermission("inventory:products:view");
+  return db.product.count({ where: { phaseId } });
 }
 
 export async function getProduct(id: string) {

@@ -7,6 +7,11 @@ import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import { autoAdvanceProductsForFabricOrder } from "@/lib/auto-transitions";
 import { ensurePoNumberForGroup } from "@/lib/po-numbering";
+import type { FabricOrderStatus } from "@/generated/prisma/client";
+import type { FabricOrderAlertFilter } from "@/lib/alert-filters";
+import { getAlertRulesMerged } from "./alert-rules";
+
+const TERMINAL_FABRIC_ORDER_STATUSES: FabricOrderStatus[] = ["FULLY_SETTLED"];
 
 /**
  * Rebuilds ProductFabricOrder join rows for a single fabric order.
@@ -43,18 +48,42 @@ async function syncFabricOrderProductLinks(fabricOrderId: string) {
   }
 }
 
-export async function getFabricOrders(phaseId: string, filters?: { fabricVendorId?: string; isRepeat?: boolean }) {
+export async function getFabricOrders(
+  phaseId: string,
+  filters?: {
+    fabricVendorId?: string;
+    isRepeat?: boolean;
+    /** Alert-driven filter; see src/lib/alert-filters.ts */
+    alertFilter?: FabricOrderAlertFilter;
+  }
+) {
   await requirePermission("inventory:fabric_orders:view");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { phaseId };
   if (filters?.fabricVendorId) where.fabricVendorId = filters.fabricVendorId;
   if (filters?.isRepeat !== undefined) where.isRepeat = filters.isRepeat;
 
+  if (filters?.alertFilter === "stale") {
+    const rules = await getAlertRulesMerged();
+    const staleRule = rules.find((r) => r.id === "stale-state");
+    const thresholdDays = staleRule?.thresholdDays ?? 7;
+    const cutoff = new Date(Date.now() - thresholdDays * 24 * 60 * 60 * 1000);
+    where.orderStatus = { notIn: TERMINAL_FABRIC_ORDER_STATUSES };
+    where.statusChangedAt = { lt: cutoff };
+  } else if (filters?.alertFilter === "unlinked") {
+    where.productLinks = { none: {} };
+  }
+
   return db.fabricOrder.findMany({
     where,
     include: { fabricVendor: true },
     orderBy: [{ createdAt: "desc" }],
   });
+}
+
+export async function getFabricOrdersCountForPhase(phaseId: string): Promise<number> {
+  await requirePermission("inventory:fabric_orders:view");
+  return db.fabricOrder.count({ where: { phaseId } });
 }
 
 export async function getFabricOrder(id: string) {

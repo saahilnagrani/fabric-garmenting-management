@@ -5,6 +5,7 @@ import { requirePermission } from "@/lib/require-permission";
 import { getAlertRulesMerged } from "./alert-rules";
 import type { ProductStatus, FabricOrderStatus } from "@/generated/prisma/client";
 import { PRODUCT_STATUS_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
+import { buildProductAlertUrl, buildFabricOrderAlertUrl } from "@/lib/alert-filters";
 
 export type DashboardAlert = {
   id: string;
@@ -69,7 +70,7 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
         title: `Phase ends in ${daysUntil} day${daysUntil === 1 ? "" : "s"}`,
         message: `${unshipped.length} article order${unshipped.length === 1 ? "" : "s"} not yet shipped to customer`,
         count: unshipped.length,
-        actionUrl: "/products",
+        actionUrl: buildProductAlertUrl("unshipped"),
         actionLabel: "View articles",
       });
     }
@@ -105,7 +106,7 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
         title: "Stale article orders",
         message: `${staleArticles.length} article${staleArticles.length === 1 ? "" : "s"} unchanged for more than ${n} days (${breakdown})`,
         count: staleArticles.length,
-        actionUrl: "/products",
+        actionUrl: buildProductAlertUrl("stale"),
         actionLabel: "Review",
       });
     }
@@ -122,7 +123,7 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
         title: "Stale fabric orders",
         message: `${staleFabricOrders.length} fabric order${staleFabricOrders.length === 1 ? "" : "s"} unchanged for more than ${n} days (${breakdown})`,
         count: staleFabricOrders.length,
-        actionUrl: "/fabric-orders",
+        actionUrl: buildFabricOrderAlertUrl("stale"),
         actionLabel: "Review",
       });
     }
@@ -136,9 +137,9 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
         id: "unlinked-fabric",
         severity: "info",
         title: "Unlinked fabric orders",
-        message: `${unlinkedFabricOrders.length} fabric order${unlinkedFabricOrders.length === 1 ? "" : "s"} not linked to any article order — check article numbers, colour, and fabric name match`,
+        message: `${unlinkedFabricOrders.length} fabric order${unlinkedFabricOrders.length === 1 ? "" : "s"} not linked to any article order, check article numbers, colour, and fabric name match`,
         count: unlinkedFabricOrders.length,
-        actionUrl: "/fabric-orders",
+        actionUrl: buildFabricOrderAlertUrl("unlinked"),
         actionLabel: "Reconcile",
       });
     }
@@ -156,7 +157,7 @@ export async function getDashboardAlerts(phaseId: string): Promise<DashboardAler
         title: "Articles awaiting fabric orders",
         message: `${unlinkedProducts.length} planned article${unlinkedProducts.length === 1 ? "" : "s"} have no fabric orders linked yet`,
         count: unlinkedProducts.length,
-        actionUrl: "/products?status=PLANNED",
+        actionUrl: buildProductAlertUrl("unlinked-planned"),
         actionLabel: "Review",
       });
     }
