@@ -11,11 +11,11 @@ import {
 } from "@/components/ui/sheet";
 import { Combobox } from "@/components/ui/combobox";
 import { MultiCombobox } from "@/components/ui/multi-combobox";
-import { createFabricMaster, updateFabricMaster, deleteFabricMaster, getStyleNumbersByGenders } from "@/actions/fabric-masters";
+import { createFabricMaster, updateFabricMaster, deleteFabricMaster, getStyleNumbersByGenders, setFabricMasterCleaned } from "@/actions/fabric-masters";
 import { getPhaseCosts, upsertPhaseCost } from "@/actions/phase-costs";
 import { GENDER_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
-import { Loader2, ChevronDown, ChevronRight, ChevronsUpDown, Archive, Trash2 } from "lucide-react";
+import { Loader2, ChevronDown, ChevronRight, ChevronsUpDown, Archive, Trash2, Lock, Unlock } from "lucide-react";
 
 export type FabricMasterRow = {
   id: string;
@@ -137,6 +137,8 @@ export function FabricMasterSheet({
   const [form, setForm] = useState<FormData>({ ...emptyForm });
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [markingClean, setMarkingClean] = useState(false);
+  const [cleanedAt, setCleanedAt] = useState<Date | string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [styleNumberOptions, setStyleNumberOptions] = useState<string[]>([]);
@@ -162,8 +164,10 @@ export function FabricMasterSheet({
     if (open) {
       if (editingRow) {
         setForm(rowToForm(editingRow));
+        setCleanedAt((editingRow.manuallyCleanedAt as Date | string | null) ?? null);
       } else {
         setForm({ ...emptyForm, vendorId: vendors[0]?.id || "" });
+        setCleanedAt(null);
       }
       setAllSections(true);
     }
@@ -271,6 +275,23 @@ export function FabricMasterSheet({
 
   const isArchived = editingRow?.isStrikedThrough === true;
 
+  async function handleToggleCleaned() {
+    if (!editingRow) return;
+    const nextState = !cleanedAt;
+    setMarkingClean(true);
+    try {
+      const res = await setFabricMasterCleaned(editingRow.id, nextState);
+      setCleanedAt(res.manuallyCleanedAt);
+      toast.success(nextState ? "Marked as manually cleaned" : "Unmarked as cleaned");
+      router.refresh();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error(`Failed to update clean flag: ${msg}`);
+    } finally {
+      setMarkingClean(false);
+    }
+  }
+
   async function handleArchive() {
     if (!editingRow) return;
     setArchiving(true);
@@ -314,6 +335,15 @@ export function FabricMasterSheet({
               <div className="flex items-center gap-2">
                 <SheetTitle className="text-sm">{isEdit ? "Edit Fabric Master" : "New Fabric Master"}</SheetTitle>
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
+                {cleanedAt && (
+                  <span
+                    className="text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                    title={`Cleaned on ${new Date(cleanedAt).toLocaleString()}`}
+                  >
+                    <Lock className="h-2.5 w-2.5" />
+                    Cleaned
+                  </span>
+                )}
               </div>
               <SheetDescription className="text-[11px]">
                 {isEdit ? "Update fabric details" : "Add a new fabric to the master database"}
@@ -482,6 +512,33 @@ export function FabricMasterSheet({
                   <>
                     <Archive className="mr-2 h-4 w-4" />
                     {isArchived ? "Unarchive Fabric" : "Archive Fabric"}
+                  </>
+                )}
+              </Button>
+            )}
+            {isEdit && (
+              <Button
+                variant={cleanedAt ? "default" : "outline"}
+                size="lg"
+                onClick={handleToggleCleaned}
+                disabled={submitting || archiving || markingClean}
+                className={`flex-1 ${cleanedAt ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+                title={cleanedAt ? `Cleaned on ${new Date(cleanedAt).toLocaleString()}. Excel imports will skip this fabric.` : "Mark this fabric as manually cleaned so Excel imports won't overwrite it."}
+              >
+                {markingClean ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : cleanedAt ? (
+                  <>
+                    <Unlock className="mr-2 h-4 w-4" />
+                    Unmark Cleaned
+                  </>
+                ) : (
+                  <>
+                    <Lock className="mr-2 h-4 w-4" />
+                    Mark Cleaned
                   </>
                 )}
               </Button>

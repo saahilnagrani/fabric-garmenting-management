@@ -68,6 +68,17 @@ export function FabricMasterGrid({
         comparator: (a, b) => (a || "").toLowerCase().localeCompare((b || "").toLowerCase()),
       },
       {
+        field: "manuallyCleanedAt",
+        headerName: "Cleaned",
+        minWidth: 70,
+        maxWidth: 100,
+        editable: false,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" } as Record<string, string>,
+        valueFormatter: (p) => (p.value ? "✓" : ""),
+        cellClass: (p) => (p.value ? "text-emerald-600 font-bold" : ""),
+        tooltipValueGetter: (p) => (p.value ? `Manually cleaned on ${new Date(p.value as string).toLocaleString()}` : ""),
+      },
+      {
         field: "vendorId",
         headerName: "Vendor",
         minWidth: 130,

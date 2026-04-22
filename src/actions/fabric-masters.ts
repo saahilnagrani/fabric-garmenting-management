@@ -37,6 +37,21 @@ export async function updateFabricMaster(id: string, data: any) {
   return master;
 }
 
+/**
+ * Toggle the manual-clean flag on a fabric. Null = not cleaned (eligible for Excel overwrite),
+ * a timestamp = user has manually cleaned it and imports must skip it.
+ */
+export async function setFabricMasterCleaned(id: string, cleaned: boolean) {
+  const session = await requirePermission("inventory:masters:edit");
+  const master = await db.fabricMaster.update({
+    where: { id },
+    data: { manuallyCleanedAt: cleaned ? new Date() : null },
+  });
+  logAction(session.user!.id!, session.user!.name!, "UPDATE", "FabricMaster", id, { manuallyCleanedAt: { old: null, new: master.manuallyCleanedAt } });
+  revalidatePath("/fabric-masters");
+  return JSON.parse(JSON.stringify(master));
+}
+
 export async function getFabricNames(): Promise<string[]> {
   await requirePermission("inventory:masters:view");
   const fabrics = await db.fabricMaster.findMany({
