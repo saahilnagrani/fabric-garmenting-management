@@ -376,7 +376,7 @@ export function ProductOrderSheet({
       if (editingRow) {
         setForm(rowToForm(editingRow));
       } else {
-        setForm({ ...emptyForm, isRepeat: isRepeatTab, fabricVendorId: vendors[0]?.id || "" });
+        setForm({ ...emptyForm, isRepeat: isRepeatTab, fabricVendorId: vendors.find((v) => v.type === "FABRIC_SUPPLIER")?.id || "" });
       }
       setShowDeleteConfirm(false);
       // All sections expanded by default, EXCEPT Fabric 2 which starts collapsed
@@ -649,7 +649,7 @@ export function ProductOrderSheet({
               {
                 action: {
                   label: "Review",
-                  onClick: () => router.push("/accessory-dispatches"),
+                  onClick: () => router.push("/accessories?tab=dispatches"),
                 },
                 duration: 8000,
               }
@@ -924,9 +924,11 @@ export function ProductOrderSheet({
                     <span className="truncate">{vendorLabels[form.fabricVendorId] || "Select vendor"}</span>
                   </SelectTrigger>
                   <SelectContent>
-                    {vendors.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                    ))}
+                    {vendors
+                      .filter((v) => v.type === "FABRIC_SUPPLIER")
+                      .map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -973,9 +975,11 @@ export function ProductOrderSheet({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="">None</SelectItem>
-                    {vendors.map((v) => (
-                      <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                    ))}
+                    {vendors
+                      .filter((v) => v.type === "FABRIC_SUPPLIER")
+                      .map((v) => (
+                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
