@@ -37,15 +37,21 @@ export function computeFabricCostPerPiece(product: {
   assumedFabricGarmentsPerKg?: NumberLike;
   fabric2CostPerKg?: NumberLike;
   assumedFabric2GarmentsPerKg?: NumberLike;
+  fabric3CostPerKg?: NumberLike;
+  assumedFabric3GarmentsPerKg?: NumberLike;
+  fabric4CostPerKg?: NumberLike;
+  assumedFabric4GarmentsPerKg?: NumberLike;
 }): number {
-  const gPerKg = toNum(product.assumedFabricGarmentsPerKg);
-  const fabricCost = gPerKg > 0 ? toNum(product.fabricCostPerKg) / gPerKg : 0;
-
-  const g2PerKg = toNum(product.assumedFabric2GarmentsPerKg);
-  const fabric2Cost =
-    g2PerKg > 0 ? toNum(product.fabric2CostPerKg) / g2PerKg : 0;
-
-  return fabricCost + fabric2Cost;
+  const perFabric = (cost?: NumberLike, gPerKg?: NumberLike) => {
+    const g = toNum(gPerKg);
+    return g > 0 ? toNum(cost) / g : 0;
+  };
+  return (
+    perFabric(product.fabricCostPerKg, product.assumedFabricGarmentsPerKg) +
+    perFabric(product.fabric2CostPerKg, product.assumedFabric2GarmentsPerKg) +
+    perFabric(product.fabric3CostPerKg, product.assumedFabric3GarmentsPerKg) +
+    perFabric(product.fabric4CostPerKg, product.assumedFabric4GarmentsPerKg)
+  );
 }
 
 export function computeTotalCost(product: Parameters<typeof computeTotalGarmenting>[0] & Parameters<typeof computeFabricCostPerPiece>[0]): number {

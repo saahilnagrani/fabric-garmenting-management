@@ -57,6 +57,17 @@ export function ProductMasterGrid({
   const columnDefs = useMemo<ColDef<GroupedStyleRow>[]>(
     () => [
       { field: "articleNumber", headerName: "Article #", pinned: "left", minWidth: 100, editable: false },
+      {
+        field: "manuallyCleanedAt",
+        headerName: "Cleaned",
+        minWidth: 70,
+        maxWidth: 100,
+        editable: false,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" } as Record<string, string>,
+        valueFormatter: (p) => (p.value ? "✓" : ""),
+        cellClass: (p) => (p.value ? "text-emerald-600 font-bold" : ""),
+        tooltipValueGetter: (p) => (p.value ? `Manually cleaned on ${new Date(p.value as string).toLocaleString()}` : ""),
+      },
       { field: "styleNumber", headerName: "Style # (legacy)", minWidth: 80, editable: false },
       { field: "fabricName", headerName: "Fabric", minWidth: 100, editable: false },
       { field: "type", headerName: "Product Type", minWidth: 70, editable: false },
@@ -74,6 +85,7 @@ export function ProductMasterGrid({
         minWidth: 150,
         editable: false,
         cellRenderer: MultiTagRenderer,
+        cellStyle: { display: "flex", alignItems: "center" },
       },
       {
         field: "skuCount",
