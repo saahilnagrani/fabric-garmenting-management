@@ -29,8 +29,6 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
     [vendors]
   );
 
-  const typeValues = Object.keys(VENDOR_TYPE_LABELS);
-
   const columnDefs = useMemo<ColDef<VendorRow>[]>(
     () => [
       { field: "name", headerName: "Name", minWidth: 180, flex: 1, pinned: "left" },
@@ -40,7 +38,11 @@ export function VendorGrid({ vendors }: { vendors: unknown[] }) {
         minWidth: 150,
         flex: 1,
         cellEditor: "agSelectCellEditor",
-        cellEditorParams: { values: typeValues },
+        cellEditorParams: {
+          values: Object.keys(VENDOR_TYPE_LABELS).sort((a, b) =>
+            VENDOR_TYPE_LABELS[a].localeCompare(VENDOR_TYPE_LABELS[b])
+          ),
+        },
         valueFormatter: (p) => VENDOR_TYPE_LABELS[p.value] || p.value || "",
       },
       { field: "contactInfo", headerName: "Contact", minWidth: 200, flex: 1 },
