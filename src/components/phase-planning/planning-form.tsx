@@ -13,21 +13,31 @@ type ProductMaster = Record<string, unknown>;
 type FabricMaster = Record<string, unknown>;
 type Vendor = { id: string; name: string };
 
-type ColourQty = { colour: string; qty: number };
+type ColourQty = { colour: string; colour2?: string; colour3?: string; colour4?: string; qty: number };
 
 type SelectedArticle = {
   articleNumber: string;
   styleName: string;
   fabricName: string;
   fabric2Name: string | null;
+  fabric3Name: string | null;
+  fabric4Name: string | null;
   garmentsPerKg: number | null;
   garmentsPerKg2: number | null;
+  garmentsPerKg3: number | null;
+  garmentsPerKg4: number | null;
   fabricCostPerKg: number | null;
   fabric2CostPerKg: number | null;
+  fabric3CostPerKg: number | null;
+  fabric4CostPerKg: number | null;
   fabricVendorId: string;
   fabricVendorName: string;
   fabric2VendorId: string | null;
   fabric2VendorName: string | null;
+  fabric3VendorId: string | null;
+  fabric3VendorName: string | null;
+  fabric4VendorId: string | null;
+  fabric4VendorName: string | null;
   type: string;
   gender: string;
   productName: string;
@@ -151,36 +161,60 @@ export function PlanningForm({
     const styleName = String(first.productName || first.styleNumber || articleNumber);
     const fabricName = String(first.fabricName || "");
     const fabric2Name = first.fabric2Name ? String(first.fabric2Name) : null;
+    const fabric3Name = first.fabric3Name ? String(first.fabric3Name) : null;
+    const fabric4Name = first.fabric4Name ? String(first.fabric4Name) : null;
 
-    // Get all unique colours across all SKUs for this article
-    const colourSet = new Set<string>();
+    // Build one colour entry per SKU, preserving colour2/3/4 for combo variants
+    type ColourEntry = { colour: string; colour2?: string; colour3?: string; colour4?: string };
+    const colourEntries: ColourEntry[] = [];
+    const colourKeys = new Set<string>();
     for (const m of masters) {
-      const colours = m.coloursAvailable as string[] | undefined;
-      if (colours) colours.forEach((c) => colourSet.add(c));
+      const c1 = (m.coloursAvailable as string[] | undefined)?.[0];
+      const c2 = (m.colours2Available as string[] | undefined)?.[0] || undefined;
+      const c3 = (m.colours3Available as string[] | undefined)?.[0] || undefined;
+      const c4 = (m.colours4Available as string[] | undefined)?.[0] || undefined;
+      if (!c1) continue;
+      const key = [c1, c2 || "", c3 || "", c4 || ""].join("|");
+      if (!colourKeys.has(key)) {
+        colourKeys.add(key);
+        colourEntries.push({ colour: c1, colour2: c2, colour3: c3, colour4: c4 });
+      }
     }
 
     // Look up vendor info from FabricMaster
     const fabricInfo = fabricVendorMap.get(fabricName);
     const fabric2Info = fabric2Name ? fabricVendorMap.get(fabric2Name) : null;
+    const fabric3Info = fabric3Name ? fabricVendorMap.get(fabric3Name) : null;
+    const fabric4Info = fabric4Name ? fabricVendorMap.get(fabric4Name) : null;
 
     const article: SelectedArticle = {
       articleNumber,
       styleName,
       fabricName,
       fabric2Name,
+      fabric3Name,
+      fabric4Name,
       garmentsPerKg: toNum(first.garmentsPerKg),
       garmentsPerKg2: toNum(first.garmentsPerKg2),
+      garmentsPerKg3: toNum(first.garmentsPerKg3),
+      garmentsPerKg4: toNum(first.garmentsPerKg4),
       fabricCostPerKg: toNum(first.fabricCostPerKg) ?? fabricInfo?.mrp ?? null,
       fabric2CostPerKg: toNum(first.fabric2CostPerKg) ?? fabric2Info?.mrp ?? null,
+      fabric3CostPerKg: toNum(first.fabric3CostPerKg) ?? fabric3Info?.mrp ?? null,
+      fabric4CostPerKg: toNum(first.fabric4CostPerKg) ?? fabric4Info?.mrp ?? null,
       fabricVendorId: fabricInfo?.vendorId || "",
       fabricVendorName: fabricInfo?.vendorName || "",
       fabric2VendorId: fabric2Info?.vendorId || null,
       fabric2VendorName: fabric2Info?.vendorName || null,
+      fabric3VendorId: fabric3Info?.vendorId || null,
+      fabric3VendorName: fabric3Info?.vendorName || null,
+      fabric4VendorId: fabric4Info?.vendorId || null,
+      fabric4VendorName: fabric4Info?.vendorName || null,
       type: String(first.type || ""),
       gender: String(first.gender || "MENS"),
       productName: String(first.productName || ""),
-      availableColours: Array.from(colourSet),
-      colourQtys: Array.from(colourSet).map((c) => ({ colour: c, qty: 0 })),
+      availableColours: colourEntries.map((e) => [e.colour, e.colour2, e.colour3, e.colour4].filter(Boolean).join("/")),
+      colourQtys: colourEntries.map((e) => ({ colour: e.colour, colour2: e.colour2, colour3: e.colour3, colour4: e.colour4, qty: 0 })),
       isRepeat: isRepeatArticle(articleNumber),
       stitchingCost: toNum(first.stitchingCost),
       brandLogoCost: toNum(first.brandLogoCost),
@@ -219,12 +253,20 @@ export function PlanningForm({
     );
   }
 
-  // Find SKU code from ProductMaster for a given article + colour
-  function findSkuCode(articleNumber: string, colour: string): string {
+  // Find SKU code from ProductMaster for a given article + colour tuple (up to 4 fabrics)
+  function findSkuCode(articleNumber: string, colour: string, colour2?: string, colour3?: string, colour4?: string): string {
     const masters = articleGroups.get(articleNumber) || [];
+    const matchAt = (arr: string[] | undefined, val: string | undefined) => {
+      if (val) return arr?.includes(val) === true;
+      return !arr || arr.length === 0;
+    };
     for (const m of masters) {
-      const colours = m.coloursAvailable as string[] | undefined;
-      if (colours?.includes(colour) && m.skuCode) {
+      const c1s = m.coloursAvailable as string[] | undefined;
+      const c2s = m.colours2Available as string[] | undefined;
+      const c3s = m.colours3Available as string[] | undefined;
+      const c4s = m.colours4Available as string[] | undefined;
+      if (!c1s?.includes(colour)) continue;
+      if (matchAt(c2s, colour2) && matchAt(c3s, colour3) && matchAt(c4s, colour4) && m.skuCode) {
         return String(m.skuCode);
       }
     }
@@ -241,11 +283,12 @@ export function PlanningForm({
         if (cq.qty <= 0) continue;
 
         // SKU Order
+        const colourLabel = [cq.colour, cq.colour2, cq.colour3, cq.colour4].filter(Boolean).join("/");
         skus.push({
           styleNumber: article.styleName,
           articleNumber: article.articleNumber,
-          skuCode: findSkuCode(article.articleNumber, cq.colour),
-          colourOrdered: cq.colour,
+          skuCode: findSkuCode(article.articleNumber, cq.colour, cq.colour2, cq.colour3, cq.colour4),
+          colourOrdered: colourLabel,
           garmentNumber: cq.qty,
           isRepeat: article.isRepeat,
           type: article.type,
@@ -290,16 +333,50 @@ export function PlanningForm({
           });
         }
 
-        // Fabric 2 Order
-        if (article.fabric2Name && article.fabric2VendorId) {
+        // Fabric 2 Order — only for combo variants that actually use the inside fabric
+        if (article.fabric2Name && article.fabric2VendorId && cq.colour2) {
           const fabric2Qty = article.garmentsPerKg2 ? cq.qty / article.garmentsPerKg2 : 0;
           fabrics.push({
             fabricName: article.fabric2Name,
             fabricVendorId: article.fabric2VendorId,
             articleNumbers: article.articleNumber,
-            colour: cq.colour,
+            colour: cq.colour2,
             fabricOrderedQuantityKg: Math.round(fabric2Qty * 100) / 100,
             costPerUnit: article.fabric2CostPerKg,
+            isRepeat: article.isRepeat,
+            gender: article.gender,
+            orderStatus: "DRAFT_ORDER",
+            garmentingAt: null,
+          });
+        }
+
+        // Fabric 3 Order
+        if (article.fabric3Name && article.fabric3VendorId && cq.colour3) {
+          const qty3 = article.garmentsPerKg3 ? cq.qty / article.garmentsPerKg3 : 0;
+          fabrics.push({
+            fabricName: article.fabric3Name,
+            fabricVendorId: article.fabric3VendorId,
+            articleNumbers: article.articleNumber,
+            colour: cq.colour3,
+            fabricOrderedQuantityKg: Math.round(qty3 * 100) / 100,
+            costPerUnit: article.fabric3CostPerKg,
+            isRepeat: article.isRepeat,
+            gender: article.gender,
+            orderStatus: "DRAFT_ORDER",
+            garmentingAt: null,
+          });
+        }
+
+        // Fabric 4 Order
+        if (article.fabric4Name && article.fabric4VendorId && cq.colour4) {
+          const qty4 = article.garmentsPerKg4 ? cq.qty / article.garmentsPerKg4 : 0;
+          fabrics.push({
+            fabricName: article.fabric4Name,
+            fabricVendorId: article.fabric4VendorId,
+            articleNumbers: article.articleNumber,
+            colour: cq.colour4,
+            fabricOrderedQuantityKg: Math.round(qty4 * 100) / 100,
+            costPerUnit: article.fabric4CostPerKg,
             isRepeat: article.isRepeat,
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
@@ -458,10 +535,18 @@ export function PlanningForm({
                 {article.fabric2Name && (
                   <span>| 2nd: {article.fabric2Name} ({article.fabric2VendorName || "No vendor"})</span>
                 )}
+                {article.fabric3Name && (
+                  <span>| 3rd: {article.fabric3Name} ({article.fabric3VendorName || "No vendor"})</span>
+                )}
+                {article.fabric4Name && (
+                  <span>| 4th: {article.fabric4Name} ({article.fabric4VendorName || "No vendor"})</span>
+                )}
               </div>
               <div className="text-sm text-muted-foreground space-x-4">
                 <span>Garments/kg: {article.garmentsPerKg ?? "—"}</span>
                 {article.garmentsPerKg2 && <span>| 2nd: {article.garmentsPerKg2}</span>}
+                {article.garmentsPerKg3 && <span>| 3rd: {article.garmentsPerKg3}</span>}
+                {article.garmentsPerKg4 && <span>| 4th: {article.garmentsPerKg4}</span>}
                 <span>| Type: {article.type}</span>
                 <span>| Gender: {article.gender}</span>
               </div>
@@ -472,44 +557,73 @@ export function PlanningForm({
           </div>
 
           {/* Colour qty inputs */}
-          <div className="grid gap-2">
-            <div className="grid grid-cols-[1fr_80px_repeat(6,_48px)_80px] gap-1.5 text-[10px] font-medium text-muted-foreground px-1">
-              <span>Colour</span>
-              <span className="text-right">Target Qty</span>
-              {sizes.map((s) => (
-                <span key={s} className="text-center">{s}</span>
-              ))}
-              <span className="text-right">Fabric (kg)</span>
-            </div>
-            {article.colourQtys.map((cq, colourIdx) => {
-              const fabricKg = cq.qty > 0 && article.garmentsPerKg
-                ? (cq.qty / article.garmentsPerKg).toFixed(1)
-                : "—";
-              return (
-                <div key={cq.colour} className="grid grid-cols-[1fr_80px_repeat(6,_48px)_80px] gap-1.5 items-center">
-                  <span className="text-sm px-1">{cq.colour}</span>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={cq.qty || ""}
-                    onChange={(e) => updateColourQty(articleIdx, colourIdx, Number(e.target.value) || 0)}
-                    className="h-8 text-right"
-                    placeholder="0"
-                  />
-                  {sizes.map((size) => {
-                    const pct = sizeDistMap.get(size) || 0;
-                    const sizeQty = cq.qty > 0 ? Math.round((cq.qty * pct) / 100) : 0;
-                    return (
-                      <span key={size} className="text-xs text-center text-blue-600 bg-blue-50 rounded py-1">
-                        {sizeQty || "-"}
-                      </span>
-                    );
-                  })}
-                  <span className="text-sm text-muted-foreground text-right px-1">{fabricKg}</span>
+          {(() => {
+            const fabricFlags = [true, !!article.fabric2Name, !!article.fabric3Name, !!article.fabric4Name];
+            const fabricCount = fabricFlags.filter(Boolean).length;
+            // Static classes so Tailwind JIT picks them up
+            const colTemplates: Record<number, string> = {
+              1: "grid-cols-[1fr_80px_repeat(6,_48px)_80px]",
+              2: "grid-cols-[1fr_80px_repeat(6,_48px)_64px_64px]",
+              3: "grid-cols-[1fr_80px_repeat(6,_48px)_56px_56px_56px]",
+              4: "grid-cols-[1fr_80px_repeat(6,_48px)_48px_48px_48px_48px]",
+            };
+            const colTemplate = colTemplates[fabricCount] || colTemplates[1];
+            return (
+              <div className="grid gap-2">
+                <div className={`grid ${colTemplate} gap-1.5 text-[10px] font-medium text-muted-foreground px-1`}>
+                  <span>Colour</span>
+                  <span className="text-right">Target Qty</span>
+                  {sizes.map((s) => (
+                    <span key={s} className="text-center">{s}</span>
+                  ))}
+                  {fabricFlags[0] && <span className="text-right">F1 (kg)</span>}
+                  {fabricFlags[1] && <span className="text-right">F2 (kg)</span>}
+                  {fabricFlags[2] && <span className="text-right">F3 (kg)</span>}
+                  {fabricFlags[3] && <span className="text-right">F4 (kg)</span>}
                 </div>
-              );
-            })}
-          </div>
+                {article.colourQtys.map((cq, colourIdx) => {
+                  const kgOf = (qty: number, gpk: number | null, hasColour: boolean) =>
+                    hasColour && qty > 0 && gpk ? (qty / gpk).toFixed(1) : "—";
+                  const f1Kg = kgOf(cq.qty, article.garmentsPerKg, true);
+                  const f2Kg = kgOf(cq.qty, article.garmentsPerKg2, !!cq.colour2);
+                  const f3Kg = kgOf(cq.qty, article.garmentsPerKg3, !!cq.colour3);
+                  const f4Kg = kgOf(cq.qty, article.garmentsPerKg4, !!cq.colour4);
+                  const colourKey = [cq.colour, cq.colour2 || "", cq.colour3 || "", cq.colour4 || ""].join("|");
+                  return (
+                    <div key={colourKey} className={`grid ${colTemplate} gap-1.5 items-center`}>
+                      <span className="text-sm px-1">
+                        {cq.colour}
+                        {cq.colour2 && <span className="text-muted-foreground"> / {cq.colour2}</span>}
+                        {cq.colour3 && <span className="text-muted-foreground"> / {cq.colour3}</span>}
+                        {cq.colour4 && <span className="text-muted-foreground"> / {cq.colour4}</span>}
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={cq.qty || ""}
+                        onChange={(e) => updateColourQty(articleIdx, colourIdx, Number(e.target.value) || 0)}
+                        className="h-8 text-right"
+                        placeholder="0"
+                      />
+                      {sizes.map((size) => {
+                        const pct = sizeDistMap.get(size) || 0;
+                        const sizeQty = cq.qty > 0 ? Math.round((cq.qty * pct) / 100) : 0;
+                        return (
+                          <span key={size} className="text-xs text-center text-blue-600 bg-blue-50 rounded py-1">
+                            {sizeQty || "-"}
+                          </span>
+                        );
+                      })}
+                      {fabricFlags[0] && <span className="text-sm text-muted-foreground text-right px-1">{f1Kg}</span>}
+                      {fabricFlags[1] && <span className="text-sm text-muted-foreground text-right px-1">{f2Kg}</span>}
+                      {fabricFlags[2] && <span className="text-sm text-muted-foreground text-right px-1">{f3Kg}</span>}
+                      {fabricFlags[3] && <span className="text-sm text-muted-foreground text-right px-1">{f4Kg}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
         </div>
       ))}
 
