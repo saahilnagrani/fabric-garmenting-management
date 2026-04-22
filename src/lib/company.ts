@@ -14,11 +14,29 @@ export const ECOZEN_HEADER = {
   contactNumber: "9702390879",
 } as const;
 
-// PO defaults — hardcoded for v1.
+// Ship-to address used on accessory POs. Accessories are bulk-purchased and
+// stocked at Ecozen's warehouse before being dispatched to garment factories
+// when a cutting report comes in. For now the warehouse mirrors the HQ address;
+// update this constant when the physical warehouse location differs.
+// TODO: replace with real warehouse address.
+export const ECOZEN_WAREHOUSE = {
+  legalName: "ECOZEN COMFORTS PRIVATE LIMITED",
+  addressLines: [
+    "A101, TOWER J,",
+    "PLOT A, LODHA EATON SQUARE,",
+    "Kolshet Road, Sandoz Baug, Thane - 400607",
+  ],
+  state: "MAHARASHTRA",
+  gstin: "27AAHCE9300P1Z7",
+  contactNumber: "9702390879",
+} as const;
+
+// PO defaults, hardcoded for v1.
 export const PO_DEFAULTS = {
   cgstRate: 0.025,
   sgstRate: 0.025,
   poNumberPrefix: "HYP/PO",
+  accessoryPoNumberPrefix: "HYP/APO",
 } as const;
 
 export const PO_SIGNATORY = {

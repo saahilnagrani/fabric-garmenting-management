@@ -57,6 +57,10 @@ export const VENDOR_TYPE_LABELS: Record<string, string> = {
   ACCESSORIES: "Accessories",
   BRAND_TAG: "Brand Tag",
   OTHER: "Other",
+  PACKAGING: "Packaging",
+  INLAY_PRINTING: "Inlay Printing",
+  REFLECTORS: "Reflectors",
+  OFFICE: "Office",
 };
 
 export const EXPENSE_TYPE_LABELS: Record<string, string> = {
