@@ -76,6 +76,7 @@ model Vendor {
   fabricMasters           FabricMaster[]      @relation("FabricMasterVendor")
   accessoryMasters        AccessoryMaster[]   @relation("AccessoryMasterVendor")
   accessoryPurchases      AccessoryPurchase[] @relation("AccessoryPurchaseVendor")
+  accessoryPurchasesShipTo AccessoryPurchase[] @relation("AccessoryPurchaseShipTo")
   fabricBalances          FabricBalance[]     @relation("FabricBalanceVendor")
 }
 
@@ -85,6 +86,10 @@ enum VendorType {
   ACCESSORIES
   BRAND_TAG
   OTHER
+  PACKAGING
+  INLAY_PRINTING
+  REFLECTORS
+  OFFICE
 }
 
 model Product {
@@ -409,6 +414,7 @@ model FabricMaster {
   hsnCode               String?
   comments              String?
   isStrikedThrough      Boolean  @default(false)
+  manuallyCleanedAt     DateTime?
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
@@ -433,10 +439,12 @@ model FabricBalance {
   targetPhaseId String?
   targetPhase   Phase?  @relation("FabricBalanceTargetPhase", fields: [targetPhaseId], references: [id])
 
-  notes            String?
-  isStrikedThrough Boolean  @default(false)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  notes              String?
+  updateDate         DateTime?
+  garmentingLocation String?
+  isStrikedThrough   Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   @@index([fabricMasterId])
   @@index([vendorId])
@@ -509,15 +517,23 @@ model ProductMaster {
   articleNumber               String?
   fabricName                  String
   fabric2Name                 String?
+  fabric3Name                 String?
+  fabric4Name                 String?
   type                        String
   gender                      Gender
   productName                 String?
   coloursAvailable            String[]
   colours2Available           String[]
+  colours3Available           String[]
+  colours4Available           String[]
   garmentsPerKg               Decimal? @db.Decimal(10, 2)
   garmentsPerKg2              Decimal? @db.Decimal(10, 2)
+  garmentsPerKg3              Decimal? @db.Decimal(10, 2)
+  garmentsPerKg4              Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg  Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg2 Decimal? @db.Decimal(10, 2)
+  cuttingReportGarmentsPerKg3 Decimal? @db.Decimal(10, 2)
+  cuttingReportGarmentsPerKg4 Decimal? @db.Decimal(10, 2)
   stitchingCost               Decimal? @db.Decimal(10, 2)
   brandLogoCost               Decimal? @db.Decimal(10, 2)
   neckTwillCost               Decimal? @db.Decimal(10, 2)
@@ -529,10 +545,13 @@ model ProductMaster {
   packagingCost               Decimal? @db.Decimal(10, 2)
   fabricCostPerKg             Decimal? @db.Decimal(10, 2)
   fabric2CostPerKg            Decimal? @db.Decimal(10, 2)
+  fabric3CostPerKg            Decimal? @db.Decimal(10, 2)
+  fabric4CostPerKg            Decimal? @db.Decimal(10, 2)
   inwardShipping              Decimal? @db.Decimal(10, 2)
   proposedMrp                 Decimal? @db.Decimal(10, 2)
   onlineMrp                   Decimal? @db.Decimal(10, 2)
   isStrikedThrough            Boolean  @default(false)
+  manuallyCleanedAt           DateTime?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
@@ -565,13 +584,13 @@ model AccessoryMaster {
   // Tiered pricing as a JSON array of {minQty, rate}. Empty array means
   // defaultCostPerUnit is used instead.
   priceTiers         Json          @default("[]")
-  vendorPageRef      String?
   unit               AccessoryUnit
   vendorId           String?
   vendor             Vendor?       @relation("AccessoryMasterVendor", fields: [vendorId], references: [id])
   defaultCostPerUnit Decimal?      @db.Decimal(10, 2)
   hsnCode            String?
   comments           String?
+  imageUrl           String?
   isStrikedThrough   Boolean       @default(false)
   createdAt          DateTime      @default(now())
   updatedAt          DateTime      @updatedAt
@@ -606,6 +625,13 @@ model AccessoryPurchase {
   invoiceNumber String?
   purchaseDate  DateTime?
   comments      String?
+  poNumber      String?
+
+  status          AccessoryPurchaseStatus @default(DRAFT_ORDER)
+  statusChangedAt DateTime                @default(now())
+
+  shipToVendorId String?
+  shipToVendor   Vendor? @relation("AccessoryPurchaseShipTo", fields: [shipToVendorId], references: [id])
 
   isStrikedThrough Boolean  @default(false)
   createdAt        DateTime @default(now())
@@ -614,6 +640,20 @@ model AccessoryPurchase {
   @@index([phaseId])
   @@index([accessoryId])
   @@index([vendorId])
+  @@index([poNumber])
+  @@index([shipToVendorId])
+}
+
+enum AccessoryPurchaseStatus {
+  DRAFT_ORDER
+  PO_SENT
+  PI_RECEIVED
+  ADVANCE_PAID
+  PARTIALLY_SHIPPED
+  DISPATCHED
+  RECEIVED
+  FULLY_SETTLED
+  CANCELLED
 }
 
 model AccessoryDispatch {
@@ -633,6 +673,10 @@ model AccessoryDispatch {
   dispatchDate DateTime?
   comments     String?
 
+  status          AccessoryDispatchStatus @default(DRAFT)
+  statusChangedAt DateTime                @default(now())
+  dnNumber        String?
+
   isStrikedThrough Boolean  @default(false)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
@@ -640,6 +684,14 @@ model AccessoryDispatch {
   @@index([phaseId])
   @@index([accessoryId])
   @@index([productId])
+  @@index([dnNumber])
+}
+
+enum AccessoryDispatchStatus {
+  DRAFT
+  DISPATCHED
+  RECEIVED
+  CANCELLED
 }
 
 model ProductMasterAccessory {
