@@ -12,21 +12,33 @@ export const getAccessoryMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:accessories:view");
   return db.accessoryMaster.findMany({
     where: includeArchived ? {} : { isStrikedThrough: false },
-    include: { vendor: true },
+    include: {
+      vendor: true,
+      productLinks: {
+        include: {
+          productMaster: { select: { id: true, skuCode: true } },
+        },
+      },
+    },
     orderBy: [{ category: "asc" }, { displayName: "asc" }],
   });
 });
 
+export type ArticleCodeUnit = { code: string; units: number };
+
 export type AccessoryMasterInput = {
   category: string;
-  attributes: Record<string, unknown>;
+  // When provided, used directly as the displayName (new simplified flow).
+  name?: string;
+  attributes?: Record<string, unknown>;
   unit: AccessoryUnit;
   vendorId?: string | null;
-  vendorPageRef?: string | null;
   defaultCostPerUnit?: number | null;
   priceTiers?: PriceTier[];
   hsnCode?: string | null;
   comments?: string | null;
+  imageUrl?: string | null;
+  articleCodeUnits?: ArticleCodeUnit[];
 };
 
 function normalizeAttributes(attrs: Record<string, unknown>): Record<string, unknown> {
@@ -39,6 +51,42 @@ function normalizeAttributes(attrs: Record<string, unknown>): Record<string, unk
 }
 
 /**
+ * Sync article-code BOM entries for an accessory into ProductMasterAccessory.
+ * Replaces all existing BOM links for this accessory with the new set.
+ */
+async function syncArticleCodes(accessoryId: string, entries: ArticleCodeUnit[]) {
+  await db.productMasterAccessory.deleteMany({ where: { accessoryId } });
+  if (entries.length === 0) return;
+
+  const skuCodes = [...new Set(entries.map((e) => e.code).filter(Boolean))];
+  const productMasters = await db.productMaster.findMany({
+    where: { skuCode: { in: skuCodes } },
+    select: { id: true, skuCode: true },
+  });
+  const skuToId = new Map(productMasters.map((pm) => [pm.skuCode, pm.id]));
+
+  const rows = entries
+    .filter((e) => e.code && skuToId.has(e.code) && e.units > 0)
+    .map((e) => ({
+      productMasterId: skuToId.get(e.code)!,
+      accessoryId,
+      quantityPerPiece: e.units,
+    }));
+
+  if (rows.length === 0) return;
+  await db.productMasterAccessory.createMany({ data: rows, skipDuplicates: true });
+}
+
+function revalidateAccessoryPaths() {
+  revalidatePath("/accessory-masters");
+  revalidatePath("/accessory-purchases");
+  revalidatePath("/accessory-dispatches");
+  revalidatePath("/accessory-balance");
+  revalidatePath("/accessories");
+  revalidatePath("/product-masters");
+}
+
+/**
  * Create a single AccessoryMaster from structured input. The display name is
  * composed from the category config so every row has a consistent label.
  */
@@ -47,9 +95,18 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
 
   if (!input.category.trim()) throw new Error("Category is required");
 
-  const attributes = normalizeAttributes(input.attributes);
-  const displayName = composeDisplayName(input.category, attributes);
-  if (!displayName.trim()) throw new Error("Accessory has no identifying attributes");
+  let displayName: string;
+  let attributes: Record<string, unknown>;
+
+  if (input.name?.trim()) {
+    // Simplified flow: user-entered name is the display name.
+    displayName = input.name.trim();
+    attributes = { name: displayName };
+  } else {
+    attributes = normalizeAttributes(input.attributes ?? {});
+    displayName = composeDisplayName(input.category, attributes);
+    if (!displayName.trim()) throw new Error("Accessory has no identifying attributes");
+  }
 
   const master = await db.accessoryMaster.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -58,17 +115,21 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
       category: input.category.trim(),
       attributes: attributes as any,
       priceTiers: (input.priceTiers ?? []) as any,
-      vendorPageRef: input.vendorPageRef?.trim() || null,
       unit: input.unit,
       vendorId: input.vendorId || null,
       defaultCostPerUnit: input.defaultCostPerUnit ?? null,
       hsnCode: input.hsnCode?.trim() || null,
       comments: input.comments?.trim() || null,
+      imageUrl: input.imageUrl?.trim() || null,
     } as any,
   });
 
+  if (input.articleCodeUnits?.length) {
+    await syncArticleCodes(master.id, input.articleCodeUnits);
+  }
+
   logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", master.id);
-  revalidatePath("/accessory-masters");
+  revalidateAccessoryPaths();
   return master;
 }
 
@@ -120,7 +181,7 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
 
   const created = await db.$transaction(
     payloads.map((p) => {
-      const attributes = normalizeAttributes(p.attributes);
+      const attributes = normalizeAttributes(p.attributes ?? {});
       const displayName = composeDisplayName(p.category, attributes);
       return db.accessoryMaster.create({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -196,37 +257,53 @@ export async function updateAccessoryMaster(id: string, data: any) {
   const previous = await db.accessoryMaster.findUnique({ where: { id } });
   if (!previous) throw new Error("Accessory not found");
 
-  // If attributes or category changed, recompute displayName.
-  const nextCategory = data.category ?? previous.category;
+  // Extract articleCodeUnits before passing to Prisma (no longer a DB column).
+  const articleCodeUnits: ArticleCodeUnit[] | undefined = data.articleCodeUnits;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { articleCodeUnits: _acu, ...updateData } = data;
+
+  // If a direct name is provided, use it; otherwise recompute from attributes/category.
+  const nextCategory = updateData.category ?? previous.category;
   const nextAttributes =
-    data.attributes !== undefined
-      ? normalizeAttributes(data.attributes)
+    updateData.attributes !== undefined
+      ? normalizeAttributes(updateData.attributes)
       : (previous.attributes as Record<string, unknown>);
-  const shouldRecompute =
-    data.attributes !== undefined || data.category !== undefined;
-  const nextDisplayName = shouldRecompute
-    ? composeDisplayName(nextCategory, nextAttributes)
-    : previous.displayName;
+  let nextDisplayName: string;
+  let attrsToWrite: Record<string, unknown> | undefined;
+
+  if (updateData.name?.trim()) {
+    nextDisplayName = updateData.name.trim();
+    attrsToWrite = { name: nextDisplayName };
+    delete updateData.name;
+  } else {
+    const shouldRecompute = updateData.attributes !== undefined || updateData.category !== undefined;
+    nextDisplayName = shouldRecompute
+      ? composeDisplayName(nextCategory, nextAttributes)
+      : previous.displayName;
+    attrsToWrite = updateData.attributes !== undefined ? nextAttributes : undefined;
+  }
 
   const master = await db.accessoryMaster.update({
     where: { id },
     data: {
-      ...data,
-      ...(data.attributes !== undefined ? { attributes: nextAttributes } : {}),
-      ...(shouldRecompute ? { displayName: nextDisplayName } : {}),
+      ...updateData,
+      ...(attrsToWrite !== undefined ? { attributes: attrsToWrite } : {}),
+      displayName: nextDisplayName,
     },
   });
 
-  const action = data.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
+  // Sync article codes into ProductMasterAccessory when provided.
+  if (articleCodeUnits !== undefined) {
+    await syncArticleCodes(id, articleCodeUnits);
+  }
+
+  const action = updateData.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
   const changes = computeDiff(
     previous as unknown as Record<string, unknown>,
     master as unknown as Record<string, unknown>,
   );
   logAction(session.user!.id!, session.user!.name!, action, "AccessoryMaster", id, changes);
-  revalidatePath("/accessory-masters");
-  revalidatePath("/accessory-purchases");
-  revalidatePath("/accessory-dispatches");
-  revalidatePath("/accessory-balance");
+  revalidateAccessoryPaths();
   return master;
 }
 
@@ -253,6 +330,84 @@ export async function deleteAccessoryMaster(id: string) {
   await db.accessoryMaster.delete({ where: { id } });
   logAction(session.user!.id!, session.user!.name!, "DELETE", "AccessoryMaster", id);
   revalidatePath("/accessory-masters");
+}
+
+/**
+ * Bulk-create one AccessoryMaster per type entry from the simplified form.
+ * Shared fields (category, unit, vendorId, hsnCode) apply to every row.
+ * Each entry provides its own name, cost, imageUrl, and articleCodeUnits.
+ * Article codes are written into ProductMasterAccessory (the BOM join table).
+ */
+export async function createAccessoryMastersTyped(
+  shared: {
+    category: string;
+    unit: AccessoryUnit;
+    vendorId: string | null;
+    hsnCode: string | null;
+    comments: string | null;
+  },
+  entries: Array<{
+    name: string;
+    defaultCostPerUnit: number | null;
+    imageUrl: string | null;
+    articleCodeUnits: ArticleCodeUnit[];
+  }>
+) {
+  const session = await requirePermission("inventory:accessories:create");
+  if (!shared.category.trim()) throw new Error("Category is required");
+  if (entries.length === 0) throw new Error("Add at least one type");
+
+  const created = await db.$transaction(
+    entries.map((entry) => {
+      const name = entry.name.trim();
+      return db.accessoryMaster.create({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        data: {
+          displayName: name,
+          category: shared.category.trim(),
+          attributes: { name } as any,
+          priceTiers: [] as any,
+          unit: shared.unit,
+          vendorId: shared.vendorId || null,
+          defaultCostPerUnit: entry.defaultCostPerUnit ?? null,
+          hsnCode: shared.hsnCode?.trim() || null,
+          comments: shared.comments?.trim() || null,
+          imageUrl: entry.imageUrl || null,
+        } as any,
+      });
+    })
+  );
+
+  // Sync article codes for each created accessory (outside transaction — needs product lookup).
+  for (let i = 0; i < created.length; i++) {
+    const articleCodeUnits = entries[i].articleCodeUnits;
+    if (articleCodeUnits.length > 0) {
+      await syncArticleCodes(created[i].id, articleCodeUnits);
+    }
+  }
+
+  for (const m of created) {
+    logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", m.id);
+  }
+
+  revalidateAccessoryPaths();
+  return created;
+}
+
+/** Lightweight list of article codes for the accessory master form comboboxes. */
+export async function getArticleCodes(): Promise<{ value: string; label: string }[]> {
+  await requirePermission("inventory:accessories:view");
+  const rows = await db.productMaster.findMany({
+    where: { isStrikedThrough: false },
+    select: { skuCode: true, articleNumber: true, productName: true, styleNumber: true },
+    orderBy: { skuCode: "asc" },
+  });
+  return rows.map((r) => {
+    const parts = [r.skuCode];
+    if (r.articleNumber) parts.push(r.articleNumber);
+    if (r.productName) parts.push(r.productName);
+    return { value: r.skuCode, label: parts.join(" — ") };
+  });
 }
 
 export async function getAccessoryCategories(): Promise<string[]> {

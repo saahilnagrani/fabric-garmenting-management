@@ -18,15 +18,19 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+type ArticleCodeOption = { value: string; label: string };
+
 export function AccessoryMasterGrid({
   masters,
   vendors,
   categories,
+  articleCodes,
   showArchived = false,
 }: {
   masters: unknown[];
   vendors: Vendor[];
   categories: string[];
+  articleCodes: ArticleCodeOption[];
   showArchived?: boolean;
 }) {
   const router = useRouter();
@@ -54,12 +58,15 @@ export function AccessoryMasterGrid({
           category: String(m.category ?? ""),
           attributes: attrs,
           priceTiers: (m.priceTiers as unknown[] | null) ?? [],
-          vendorPageRef: (m.vendorPageRef as string | null) ?? null,
           unit: String(m.unit ?? "PIECES"),
           vendorId: (m.vendorId as string | null) ?? null,
           defaultCostPerUnit: toNum(m.defaultCostPerUnit),
           hsnCode: (m.hsnCode as string | null) ?? null,
           comments: (m.comments as string | null) ?? null,
+          imageUrl: (m.imageUrl as string | null) ?? null,
+          articleCodeUnits: (
+            (m.productLinks as Array<{ productMaster: { skuCode: string }; quantityPerPiece: unknown }> | null) ?? []
+          ).map((l) => ({ code: l.productMaster.skuCode, units: Number(l.quantityPerPiece) })),
           isStrikedThrough: Boolean(m.isStrikedThrough),
           displayName,
         };
@@ -91,12 +98,6 @@ export function AccessoryMasterGrid({
           return label.charAt(0) + label.slice(1).toLowerCase().replace(/_/g, " ");
         },
       },
-      {
-        field: "vendorPageRef",
-        headerName: "Catalog ref",
-        minWidth: 130,
-        editable: false,
-      },
       { field: "unit", headerName: "Unit", minWidth: 90, editable: false },
       {
         field: "vendorId",
@@ -123,6 +124,48 @@ export function AccessoryMasterGrid({
               {params.value} tier{params.value === 1 ? "" : "s"}
             </span>
           ) : null,
+      },
+      {
+        headerName: "Articles",
+        minWidth: 90,
+        editable: false,
+        valueGetter: (p) => (p.data?.articleCodeUnits as unknown[] | null)?.length ?? 0,
+        cellRenderer: (params: { value: number }) =>
+          params.value > 0 ? (
+            <span className="inline-flex items-center rounded-md bg-blue-100 text-blue-800 border border-blue-200 dark:bg-blue-900/40 dark:text-blue-200 dark:border-blue-800 px-1.5 text-[11px] font-medium whitespace-nowrap h-5">
+              {params.value} article{params.value === 1 ? "" : "s"}
+            </span>
+          ) : null,
+      },
+      {
+        headerName: "Image",
+        minWidth: 70,
+        editable: false,
+        valueGetter: (p) => (p.data?.imageUrl as string | null) ?? null,
+        cellRenderer: (params: { value: string | null }) => {
+          if (!params.value) return null;
+          function openImage() {
+            const dataUrl = params.value as string;
+            // Browsers block navigating to data: URLs in new tabs.
+            // Convert to a blob URL instead so the image opens correctly.
+            if (dataUrl.startsWith("data:")) {
+              const [header, b64] = dataUrl.split(",");
+              const mime = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+              const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+              const blob = new Blob([bytes], { type: mime });
+              const url = URL.createObjectURL(blob);
+              window.open(url, "_blank");
+              setTimeout(() => URL.revokeObjectURL(url), 15_000);
+            } else {
+              window.open(dataUrl, "_blank");
+            }
+          }
+          return (
+            <button onClick={openImage} className="text-[11px] text-blue-600 underline cursor-pointer">
+              View
+            </button>
+          );
+        },
       },
       { field: "hsnCode", headerName: "HSN", minWidth: 90, editable: false },
       { field: "comments", headerName: "Comments", minWidth: 150, editable: false },
@@ -191,6 +234,7 @@ export function AccessoryMasterGrid({
         editingRow={editingRow}
         vendors={vendors}
         categories={categories}
+        articleCodes={articleCodes}
       />
     </>
   );

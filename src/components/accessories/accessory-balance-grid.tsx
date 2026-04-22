@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import type { ColDef } from "ag-grid-community";
 import { DataGrid } from "@/components/ag-grid/data-grid";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
@@ -38,10 +38,15 @@ export function AccessoryBalanceGrid({
   selectedPhaseId: string;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const gridApiRef = useRef<import("ag-grid-community").GridApi | null>(null);
 
   function changePhase(id: string) {
-    router.push(`/accessory-balance?phaseId=${id}`);
+    if (pathname.startsWith("/accessories")) {
+      router.push(`/accessories?tab=balance&phaseId=${id}`);
+    } else {
+      router.push(`/accessory-balance?phaseId=${id}`);
+    }
   }
 
   const selectedPhase = phases.find((p) => p.id === selectedPhaseId);

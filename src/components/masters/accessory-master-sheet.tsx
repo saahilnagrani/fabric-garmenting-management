@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,12 +14,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  createAccessoryMaster, updateAccessoryMaster, deleteAccessoryMaster,
-  bulkCreateAccessoryMasters,
+  createAccessoryMastersTyped, updateAccessoryMaster, deleteAccessoryMaster,
 } from "@/actions/accessories";
-import { CATEGORIES, getCategoryConfig, type AttributeField } from "@/lib/accessory-categories";
+import { CATEGORIES } from "@/lib/accessory-categories";
 import { toast } from "sonner";
-import { Loader2, Archive, Trash2, Plus, X } from "lucide-react";
+import { Loader2, Archive, Trash2, Plus, X, ImageIcon } from "lucide-react";
 
 const UNIT_OPTIONS = ["PIECES", "METERS", "KG", "GRAMS", "ROLLS", "PACKS"] as const;
 
@@ -29,14 +28,14 @@ export type AccessoryMasterRow = {
   category: string;
   attributes: Record<string, unknown>;
   priceTiers: unknown[];
-  vendorPageRef: string | null;
   unit: string;
   vendorId: string | null;
   defaultCostPerUnit: number | null;
   hsnCode: string | null;
   comments: string | null;
+  imageUrl: string | null;
+  articleCodeUnits: Array<{ code: string; units: number }>;
   isStrikedThrough: boolean;
-  // Legacy (nullable now)
   baseName: string | null;
   colour: string | null;
   size: string | null;
@@ -45,7 +44,15 @@ export type AccessoryMasterRow = {
 
 type Vendor = { id: string; name: string };
 
-type PriceTierRow = { minQty: string; maxQty: string; rate: string };
+type ArticleCodeRow = { code: string; units: string };
+
+type TypeRow = {
+  name: string;
+  defaultCostPerUnit: string;
+  imageUrl: string | null;    // base64 data URL
+  imageName: string | null;   // original filename for display
+  articleCodeUnits: ArticleCodeRow[];
+};
 
 function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -53,211 +60,273 @@ function toNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
-type FormData = {
+function emptyTypeRow(): TypeRow {
+  return { name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, articleCodeUnits: [] };
+}
+
+// Shared form state (category, vendor, unit, etc.)
+type SharedForm = {
   category: string;
   unit: string;
   vendorId: string;
-  vendorPageRef: string;
-  defaultCostPerUnit: string;
   hsnCode: string;
   comments: string;
-  attributes: Record<string, string>;
-  priceTiers: PriceTierRow[];
 };
 
-const emptyForm: FormData = {
+const emptyShared: SharedForm = {
   category: "",
   unit: "PIECES",
   vendorId: "",
-  vendorPageRef: "",
-  defaultCostPerUnit: "",
   hsnCode: "",
   comments: "",
-  attributes: {},
-  priceTiers: [],
 };
 
-function rowToForm(row: AccessoryMasterRow): FormData {
-  const attrs: Record<string, string> = {};
-  for (const [k, v] of Object.entries(row.attributes ?? {})) {
-    if (v == null) continue;
-    attrs[k] = String(v);
-  }
-  const tiers: PriceTierRow[] = (row.priceTiers ?? []).map((t) => {
-    const tier = t as { minQty?: number; maxQty?: number; rate?: number };
-    return {
-      minQty: tier.minQty != null ? String(tier.minQty) : "",
-      maxQty: tier.maxQty != null ? String(tier.maxQty) : "",
-      rate: tier.rate != null ? String(tier.rate) : "",
-    };
-  });
+// Edit form (single row)
+type EditForm = SharedForm & {
+  name: string;
+  defaultCostPerUnit: string;
+  imageUrl: string | null;
+  imageName: string | null;
+  articleCodeUnits: ArticleCodeRow[];
+};
+
+function rowToEditForm(row: AccessoryMasterRow): EditForm {
+  const attrName = typeof row.attributes?.name === "string" ? row.attributes.name : null;
   return {
     category: row.category,
+    name: attrName || row.displayName,
     unit: row.unit,
     vendorId: row.vendorId || "",
-    vendorPageRef: row.vendorPageRef || "",
-    defaultCostPerUnit: row.defaultCostPerUnit != null ? String(row.defaultCostPerUnit) : "",
     hsnCode: row.hsnCode || "",
     comments: row.comments || "",
-    attributes: attrs,
-    priceTiers: tiers,
+    defaultCostPerUnit: row.defaultCostPerUnit != null ? String(row.defaultCostPerUnit) : "",
+    imageUrl: row.imageUrl || null,
+    imageName: row.imageUrl ? "Existing image" : null,
+    articleCodeUnits: (row.articleCodeUnits ?? []).map((a) => ({
+      code: a.code,
+      units: String(a.units),
+    })),
   };
 }
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+type ArticleCodeOption = { value: string; label: string };
 
 export function AccessoryMasterSheet({
   open,
   onOpenChange,
   editingRow,
   vendors,
+  articleCodes = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingRow: AccessoryMasterRow | null;
   vendors: Vendor[];
-  categories?: string[];  // legacy prop, kept for backwards compat
+  categories?: string[];
+  articleCodes?: ArticleCodeOption[];
 }) {
   const router = useRouter();
-  const [form, setForm] = useState<FormData>({ ...emptyForm });
+  const isEdit = editingRow !== null;
+
+  // Create mode state
+  const [shared, setShared] = useState<SharedForm>({ ...emptyShared });
+  const [typeRows, setTypeRows] = useState<TypeRow[]>([emptyTypeRow()]);
+
+  // Edit mode state
+  const [editForm, setEditForm] = useState<EditForm>({
+    ...emptyShared, name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, articleCodeUnits: [],
+  });
+
   const [submitting, setSubmitting] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [bulkMode, setBulkMode] = useState(false);
-  const [bulkText, setBulkText] = useState("");
-  const isEdit = editingRow !== null;
 
   useEffect(() => {
     if (open) {
-      if (editingRow) setForm(rowToForm(editingRow));
-      else setForm({ ...emptyForm });
+      if (editingRow) {
+        setEditForm(rowToEditForm(editingRow));
+      } else {
+        setShared({ ...emptyShared });
+        setTypeRows([emptyTypeRow()]);
+      }
       setShowDeleteConfirm(false);
-      setBulkMode(false);
-      setBulkText("");
     }
   }, [open, editingRow]);
 
-  const categoryConfig = useMemo(() => getCategoryConfig(form.category), [form.category]);
-
-  function updateField<K extends keyof FormData>(field: K, value: FormData[K]) {
-    setForm((prev) => ({ ...prev, [field]: value }));
+  // ── Shared field helpers ──────────────────────────────────────────
+  function updateShared<K extends keyof SharedForm>(field: K, value: SharedForm[K]) {
+    setShared((prev) => ({ ...prev, [field]: value }));
   }
 
-  function updateAttribute(key: string, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      attributes: { ...prev.attributes, [key]: value },
-    }));
+  // ── Type-row helpers (create mode) ───────────────────────────────
+  function addTypeRow() {
+    setTypeRows((prev) => [...prev, emptyTypeRow()]);
   }
 
-  function addTier() {
-    setForm((prev) => ({
-      ...prev,
-      priceTiers: [...prev.priceTiers, { minQty: "", maxQty: "", rate: "" }],
-    }));
+  function removeTypeRow(idx: number) {
+    setTypeRows((prev) => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
   }
 
-  function updateTier(idx: number, patch: Partial<PriceTierRow>) {
-    setForm((prev) => ({
-      ...prev,
-      priceTiers: prev.priceTiers.map((t, i) => (i === idx ? { ...t, ...patch } : t)),
-    }));
+  function updateTypeRow(idx: number, patch: Partial<TypeRow>) {
+    setTypeRows((prev) => prev.map((r, i) => i === idx ? { ...r, ...patch } : r));
   }
 
-  function removeTier(idx: number) {
-    setForm((prev) => ({
-      ...prev,
-      priceTiers: prev.priceTiers.filter((_, i) => i !== idx),
-    }));
-  }
-
-  async function handleSubmit() {
-    if (!form.category.trim()) {
-      toast.error("Category is required");
+  async function handleImageUpload(idx: number, file: File) {
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image must be smaller than 2 MB");
       return;
     }
-    if (!categoryConfig) {
-      toast.error(`Unknown category: ${form.category}`);
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      updateTypeRow(idx, { imageUrl: dataUrl, imageName: file.name });
+    } catch {
+      toast.error("Failed to load image");
+    }
+  }
+
+  async function handleEditImageUpload(file: File) {
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Image must be smaller than 2 MB");
       return;
     }
-
-    // Coerce attribute values based on field type. Number fields become actual
-    // numbers; strings stay as-is. Empty strings are dropped by the server.
-    const attributes: Record<string, unknown> = {};
-    for (const field of categoryConfig.fields) {
-      const raw = form.attributes[field.key];
-      if (raw == null || raw === "") continue;
-      if (field.type === "number") {
-        const n = toNum(raw);
-        if (n !== null) attributes[field.key] = n;
-      } else {
-        attributes[field.key] = raw.trim();
-      }
+    try {
+      const dataUrl = await fileToDataUrl(file);
+      setEditForm((prev) => ({ ...prev, imageUrl: dataUrl, imageName: file.name }));
+    } catch {
+      toast.error("Failed to load image");
     }
-    // Check at least one identifying attribute was provided
-    const hasAny = Object.keys(attributes).length > 0;
-    if (!hasAny) {
-      toast.error("Fill in at least one field to identify the variant");
-      return;
-    }
+  }
 
-    // Validate required fields
-    for (const field of categoryConfig.fields) {
-      if (field.required && (attributes[field.key] == null || attributes[field.key] === "")) {
-        toast.error(`${field.label} is required`);
-        return;
-      }
-    }
+  function addArticleRow(typeIdx: number) {
+    updateTypeRow(typeIdx, {
+      articleCodeUnits: [...typeRows[typeIdx].articleCodeUnits, { code: "", units: "" }],
+    });
+  }
 
-    // Validate and clean price tiers
-    const tiers: Array<{ minQty: number; maxQty?: number; rate: number }> = [];
-    for (let i = 0; i < form.priceTiers.length; i++) {
-      const t = form.priceTiers[i];
-      const blank = !t.minQty && !t.maxQty && !t.rate;
-      if (blank) continue;
-      const minQty = toNum(t.minQty);
-      const rate = toNum(t.rate);
-      if (minQty === null || minQty < 0) {
-        toast.error(`Tier ${i + 1}: min qty is required and must be >= 0`);
-        return;
-      }
-      if (rate === null || rate < 0) {
-        toast.error(`Tier ${i + 1}: rate is required and must be >= 0`);
-        return;
-      }
-      const maxQty = toNum(t.maxQty);
-      tiers.push({ minQty, ...(maxQty != null ? { maxQty } : {}), rate });
+  function updateArticleRow(typeIdx: number, artIdx: number, patch: Partial<ArticleCodeRow>) {
+    const updated = typeRows[typeIdx].articleCodeUnits.map((r, i) =>
+      i === artIdx ? { ...r, ...patch } : r
+    );
+    updateTypeRow(typeIdx, { articleCodeUnits: updated });
+  }
+
+  function removeArticleRow(typeIdx: number, artIdx: number) {
+    const updated = typeRows[typeIdx].articleCodeUnits.filter((_, i) => i !== artIdx);
+    updateTypeRow(typeIdx, { articleCodeUnits: updated });
+  }
+
+  // ── Edit-mode article helpers ─────────────────────────────────────
+  function addEditArticleRow() {
+    setEditForm((prev) => ({
+      ...prev,
+      articleCodeUnits: [...prev.articleCodeUnits, { code: "", units: "" }],
+    }));
+  }
+
+  function updateEditArticleRow(idx: number, patch: Partial<ArticleCodeRow>) {
+    setEditForm((prev) => ({
+      ...prev,
+      articleCodeUnits: prev.articleCodeUnits.map((r, i) => i === idx ? { ...r, ...patch } : r),
+    }));
+  }
+
+  function removeEditArticleRow(idx: number) {
+    setEditForm((prev) => ({
+      ...prev,
+      articleCodeUnits: prev.articleCodeUnits.filter((_, i) => i !== idx),
+    }));
+  }
+
+  // ── Validate & clean article codes ───────────────────────────────
+  function cleanArticleCodes(rows: ArticleCodeRow[]): Array<{ code: string; units: number }> | null {
+    const out: Array<{ code: string; units: number }> = [];
+    for (let i = 0; i < rows.length; i++) {
+      const code = rows[i].code.trim();
+      const units = toNum(rows[i].units);
+      if (!code && units === null) continue;
+      if (!code) { toast.error(`Article code row ${i + 1}: code is required`); return null; }
+      if (units === null || units <= 0) { toast.error(`Article code row ${i + 1}: units must be > 0`); return null; }
+      out.push({ code, units });
+    }
+    return out;
+  }
+
+  // ── Submit (create) ───────────────────────────────────────────────
+  async function handleCreate() {
+    if (!shared.category.trim()) { toast.error("Category is required"); return; }
+
+    const entries: Array<{
+      name: string;
+      defaultCostPerUnit: number | null;
+      imageUrl: string | null;
+      articleCodeUnits: Array<{ code: string; units: number }>;
+    }> = [];
+
+    for (let i = 0; i < typeRows.length; i++) {
+      const row = typeRows[i];
+      const name = row.name.trim();
+      if (!name) { toast.error(`Type ${i + 1}: name is required`); return; }
+      const cost = toNum(row.defaultCostPerUnit);
+      const articleCodeUnits = cleanArticleCodes(row.articleCodeUnits);
+      if (articleCodeUnits === null) return;
+      entries.push({ name, defaultCostPerUnit: cost, imageUrl: row.imageUrl, articleCodeUnits });
     }
 
     setSubmitting(true);
     try {
-      if (isEdit) {
-        await updateAccessoryMaster(editingRow.id, {
-          category: form.category.trim(),
-          attributes,
-          priceTiers: tiers,
-          vendorPageRef: form.vendorPageRef.trim() || null,
-          unit: form.unit,
-          vendorId: form.vendorId || null,
-          defaultCostPerUnit: toNum(form.defaultCostPerUnit),
-          hsnCode: form.hsnCode.trim() || null,
-          comments: form.comments.trim() || null,
-        });
-        toast.success("Accessory updated");
-      } else {
-        await createAccessoryMaster({
-          category: form.category.trim(),
-          attributes,
-          priceTiers: tiers,
-          vendorPageRef: form.vendorPageRef.trim() || null,
+      const created = await createAccessoryMastersTyped(
+        {
+          category: shared.category.trim(),
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          unit: form.unit as any,
-          vendorId: form.vendorId || null,
-          defaultCostPerUnit: toNum(form.defaultCostPerUnit),
-          hsnCode: form.hsnCode.trim() || null,
-          comments: form.comments.trim() || null,
-        });
-        toast.success("Accessory created");
-      }
+          unit: shared.unit as any,
+          vendorId: shared.vendorId || null,
+          hsnCode: shared.hsnCode.trim() || null,
+          comments: shared.comments.trim() || null,
+        },
+        entries
+      );
+      toast.success(`Created ${created.length} accessor${created.length === 1 ? "y" : "ies"}`);
+      onOpenChange(false);
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Create failed");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Submit (edit) ─────────────────────────────────────────────────
+  async function handleUpdate() {
+    if (!editForm.category.trim()) { toast.error("Category is required"); return; }
+    if (!editForm.name.trim()) { toast.error("Name is required"); return; }
+    const articleCodeUnits = cleanArticleCodes(editForm.articleCodeUnits);
+    if (articleCodeUnits === null) return;
+
+    setSubmitting(true);
+    try {
+      await updateAccessoryMaster(editingRow!.id, {
+        category: editForm.category.trim(),
+        name: editForm.name.trim(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        unit: editForm.unit as any,
+        vendorId: editForm.vendorId || null,
+        imageUrl: editForm.imageUrl || null,
+        defaultCostPerUnit: toNum(editForm.defaultCostPerUnit),
+        hsnCode: editForm.hsnCode.trim() || null,
+        comments: editForm.comments.trim() || null,
+        articleCodeUnits,
+      });
+      toast.success("Accessory updated");
       onOpenChange(false);
       router.refresh();
     } catch (err) {
@@ -266,96 +335,6 @@ export function AccessoryMasterSheet({
       setSubmitting(false);
     }
   }
-
-  /**
-   * Parse the bulk-paste textarea and create all rows in one transaction.
-   * Each line is split by comma or tab. Columns map to the category's fields
-   * in order (matching categoryConfig.fields).
-   */
-  async function handleBulkSubmit() {
-    if (!form.category.trim()) {
-      toast.error("Pick a category first");
-      return;
-    }
-    if (!categoryConfig) {
-      toast.error(`Unknown category: ${form.category}`);
-      return;
-    }
-
-    const lines = bulkText
-      .split("\n")
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-    if (lines.length === 0) {
-      toast.error("Paste at least one line");
-      return;
-    }
-
-    const fieldKeys = categoryConfig.fields.map((f) => f.key);
-
-    const rows: Array<{ attributes: Record<string, unknown> }> = [];
-    for (let i = 0; i < lines.length; i++) {
-      // Split by tab first, fall back to comma
-      const parts = lines[i].includes("\t")
-        ? lines[i].split("\t").map((p) => p.trim())
-        : lines[i].split(",").map((p) => p.trim());
-      const attributes: Record<string, unknown> = {};
-      for (let j = 0; j < fieldKeys.length && j < parts.length; j++) {
-        const val = parts[j];
-        if (val) {
-          const field = categoryConfig.fields[j];
-          if (field.type === "number") {
-            const n = Number(val);
-            if (!isNaN(n)) attributes[fieldKeys[j]] = n;
-          } else {
-            attributes[fieldKeys[j]] = val;
-          }
-        }
-      }
-      if (Object.keys(attributes).length === 0) {
-        toast.error(`Line ${i + 1} is empty after parsing`);
-        return;
-      }
-      rows.push({ attributes });
-    }
-
-    setSubmitting(true);
-    try {
-      const created = await bulkCreateAccessoryMasters(
-        {
-          category: form.category.trim(),
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          unit: form.unit as any,
-          vendorId: form.vendorId || null,
-          vendorPageRef: form.vendorPageRef.trim() || null,
-          defaultCostPerUnit: toNum(form.defaultCostPerUnit),
-          hsnCode: form.hsnCode.trim() || null,
-          comments: form.comments.trim() || null,
-          priceTiers: form.priceTiers
-            .filter((t) => t.minQty && t.rate)
-            .map((t) => ({
-              minQty: Number(t.minQty),
-              ...(t.maxQty ? { maxQty: Number(t.maxQty) } : {}),
-              rate: Number(t.rate),
-            })),
-        },
-        rows
-      );
-      toast.success(`Created ${created.length} accessor${created.length === 1 ? "y" : "ies"}`);
-      onOpenChange(false);
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Bulk create failed");
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  // Count parsed lines for the bulk preview
-  const bulkLineCount = bulkText
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0).length;
 
   const isArchived = editingRow?.isStrikedThrough === true;
 
@@ -392,280 +371,63 @@ export function AccessoryMasterSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="max-w-[560px] w-full overflow-y-auto border-t-4 border-t-amber-400">
+      <SheetContent side="right" className="max-w-[600px] w-full overflow-y-auto border-t-4 border-t-amber-400">
         <SheetHeader className="pr-12">
           <div className="flex items-center gap-2">
-            <SheetTitle className="text-sm">{isEdit ? "Edit Accessory" : "New Accessory"}</SheetTitle>
+            <SheetTitle className="text-sm">{isEdit ? "Edit Accessory" : "New Accessories"}</SheetTitle>
             <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200 px-1.5 py-0.5 rounded">Master</span>
           </div>
           <SheetDescription className="text-[11px]">
-            Pick a category to see its variant fields. The display name is
-            composed from whatever you fill in.
+            {isEdit
+              ? "Edit this accessory type."
+              : "Select a category and add one or more types. Each type becomes its own DB row."}
           </SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 space-y-3 px-4 overflow-y-auto">
-          {/* Category picker */}
-          <div className="space-y-0.5">
-            <Label className="text-[11px]">Category *</Label>
-            <Select value={form.category} onValueChange={(v) => updateField("category", v ?? "")}>
-              <SelectTrigger className="h-8 text-xs">
-                <SelectValue placeholder="Select category..." />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map((c) => (
-                  <SelectItem key={c.value} value={c.value}>
-                    {c.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {categoryConfig?.description && (
-              <p className="text-[10px] text-muted-foreground">{categoryConfig.description}</p>
-            )}
-          </div>
-
-          {/* Dynamic attribute fields based on category */}
-          {categoryConfig && !bulkMode && (
-            <div className="border border-border rounded p-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                  Variant attributes
-                </div>
-                {!isEdit && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-6 text-[10px] px-2"
-                    onClick={() => setBulkMode(true)}
-                  >
-                    Bulk Add
-                  </Button>
-                )}
-              </div>
-              {(() => {
-                // Split fields into "text/descriptive" (first row, 2-col)
-                // and "measurement/select" (second row, equal-width columns).
-                // Text fields = type "text" without options. Everything else
-                // (number fields, select fields) goes in the compact row.
-                const textFields = categoryConfig.fields.filter(
-                  (f) => f.type === "text" && !f.options
-                );
-                const compactFields = categoryConfig.fields.filter(
-                  (f) => f.type !== "text" || !!f.options
-                );
-                return (
-                  <>
-                    {textFields.length > 0 && (
-                      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${textFields.length}, 1fr)` }}>
-                        {textFields.map((field) => (
-                          <AttributeInput
-                            key={field.key}
-                            field={field}
-                            value={form.attributes[field.key] ?? ""}
-                            onChange={(v) => updateAttribute(field.key, v)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {compactFields.length > 0 && (
-                      <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${compactFields.length}, 1fr)` }}>
-                        {compactFields.map((field) => (
-                          <AttributeInput
-                            key={field.key}
-                            field={field}
-                            value={form.attributes[field.key] ?? ""}
-                            onChange={(v) => updateAttribute(field.key, v)}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          )}
-
-          {/* Bulk paste mode */}
-          {categoryConfig && bulkMode && !isEdit && (
-            <div className="border border-border rounded p-2 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                  Bulk add ({bulkLineCount} row{bulkLineCount === 1 ? "" : "s"})
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-6 text-[10px] px-2"
-                  onClick={() => setBulkMode(false)}
-                >
-                  Single mode
-                </Button>
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                Paste one accessory per line, columns separated by comma or tab.
-                Column order: <strong>{categoryConfig.fields.map((f) => f.label).join(", ")}</strong>.
-                All rows share the category, unit, vendor, cost, and tiers set above.
-              </p>
-              <Textarea
-                value={bulkText}
-                onChange={(e) => setBulkText(e.target.value)}
-                placeholder={categoryConfig.fields.map((f) => f.label).join(", ") + "\ne.g. " + categoryConfig.fields.map((f) => {
-                  if (f.type === "number") return "10";
-                  if (f.options?.length) return f.options[0];
-                  return f.label;
-                }).join(", ")}
-                className="min-h-[120px] text-xs font-mono resize-y"
-                rows={8}
-              />
-            </div>
-          )}
-
-          {/* Purchase details */}
-          <div className="grid grid-cols-3 gap-2">
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Unit *</Label>
-              <Select value={form.unit} onValueChange={(v) => updateField("unit", v ?? "PIECES")}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {UNIT_OPTIONS.map((u) => (
-                    <SelectItem key={u} value={u}>{u}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Vendor</Label>
-              <Combobox
-                value={form.vendorId}
-                onValueChange={(v) => updateField("vendorId", v)}
-                options={vendors.map((v) => ({ label: v.name, value: v.id }))}
-                placeholder="Select vendor..."
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Catalog ref</Label>
-              <Input
-                value={form.vendorPageRef}
-                onChange={(e) => updateField("vendorPageRef", e.target.value)}
-                placeholder="Page 2, Item 4"
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">Default Cost (Rs)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.defaultCostPerUnit}
-                onChange={(e) => updateField("defaultCostPerUnit", e.target.value)}
-                className="h-8 text-xs"
-                placeholder="Fallback when no tier matches"
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[11px]">HSN Code</Label>
-              <Input
-                value={form.hsnCode}
-                onChange={(e) => updateField("hsnCode", e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-
-          {/* Price tiers */}
-          <div className="border border-border rounded p-2 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-                Price Tiers (Rs / unit at quantity)
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-6 text-[10px] px-1.5"
-                onClick={addTier}
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Add tier
-              </Button>
-            </div>
-            {form.priceTiers.length === 0 ? (
-              <p className="text-[10px] text-muted-foreground italic">
-                No tiers. Purchases will use the default cost above.
-              </p>
-            ) : (
-              form.priceTiers.map((tier, idx) => (
-                <div
-                  key={idx}
-                  className="grid gap-1.5 items-center"
-                  style={{ gridTemplateColumns: "1fr 1fr 1fr 24px" }}
-                >
-                  <Input
-                    type="number"
-                    placeholder="Min qty"
-                    value={tier.minQty}
-                    onChange={(e) => updateTier(idx, { minQty: e.target.value })}
-                    className="h-7 text-xs"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Max qty (opt)"
-                    value={tier.maxQty}
-                    onChange={(e) => updateTier(idx, { maxQty: e.target.value })}
-                    className="h-7 text-xs"
-                  />
-                  <Input
-                    type="number"
-                    step="0.01"
-                    placeholder="Rate"
-                    value={tier.rate}
-                    onChange={(e) => updateTier(idx, { rate: e.target.value })}
-                    className="h-7 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-6 p-0"
-                    onClick={() => removeTier(idx)}
-                  >
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-0.5">
-            <Label className="text-[11px]">Comments</Label>
-            <Textarea
-              value={form.comments}
-              onChange={(e) => updateField("comments", e.target.value)}
-              className="min-h-[60px] resize-none text-xs"
+          {isEdit ? (
+            <EditModeForm
+              form={editForm}
+              vendors={vendors}
+              articleCodes={articleCodes}
+              onChange={(patch) => setEditForm((prev) => ({ ...prev, ...patch }))}
+              onImageUpload={handleEditImageUpload}
+              onAddArticle={addEditArticleRow}
+              onUpdateArticle={updateEditArticleRow}
+              onRemoveArticle={removeEditArticleRow}
             />
-          </div>
+          ) : (
+            <CreateModeForm
+              shared={shared}
+              typeRows={typeRows}
+              vendors={vendors}
+              articleCodes={articleCodes}
+              onSharedChange={updateShared}
+              onAddType={addTypeRow}
+              onRemoveType={removeTypeRow}
+              onUpdateType={updateTypeRow}
+              onImageUpload={handleImageUpload}
+              onAddArticle={addArticleRow}
+              onUpdateArticle={updateArticleRow}
+              onRemoveArticle={removeArticleRow}
+            />
+          )}
         </div>
 
         <SheetFooter>
           <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
             <Button
               size="lg"
-              onClick={bulkMode ? handleBulkSubmit : handleSubmit}
+              onClick={isEdit ? handleUpdate : handleCreate}
               disabled={submitting || archiving}
               className="flex-1"
             >
               {submitting ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : bulkMode ? `Creating ${bulkLineCount}...` : "Creating..."}</>
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{isEdit ? "Updating..." : "Creating..."}</>
               ) : (
-                isEdit ? "Update Accessory" : bulkMode ? `Create ${bulkLineCount} Accessor${bulkLineCount === 1 ? "y" : "ies"}` : "Create Accessory"
+                isEdit
+                  ? "Update Accessory"
+                  : `Create ${typeRows.length} Accessor${typeRows.length === 1 ? "y" : "ies"}`
               )}
             </Button>
             {isEdit && (
@@ -711,47 +473,385 @@ export function AccessoryMasterSheet({
   );
 }
 
-function AttributeInput({
-  field,
-  value,
+// ─── Shared section (category, vendor, unit, HSN) ────────────────────────────
+
+function SharedFields({
+  shared,
+  vendors,
   onChange,
 }: {
-  field: AttributeField;
-  value: string;
-  onChange: (v: string) => void;
+  shared: { category: string; unit: string; vendorId: string; hsnCode: string; comments: string };
+  vendors: { id: string; name: string }[];
+  onChange: (patch: Partial<typeof shared>) => void;
 }) {
   return (
-    <div className="space-y-0.5">
-      <Label className="text-[11px]">
-        {field.label}
-        {field.unit && <span className="text-muted-foreground"> ({field.unit})</span>}
-        {field.required && <span className="text-red-500"> *</span>}
-      </Label>
-      {field.type === "select" ? (
-        <Select
-          value={value || "__none__"}
-          onValueChange={(v) => onChange(!v || v === "__none__" ? "" : v)}
-        >
-          <SelectTrigger className="h-8 text-xs">
-            <SelectValue placeholder="(none)" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">(none)</SelectItem>
-            {field.options?.map((opt) => (
-              <SelectItem key={opt} value={opt}>{opt}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">Category *</Label>
+          <Select value={shared.category} onValueChange={(v) => onChange({ category: v ?? "" })}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue placeholder="Select category..." />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map((c) => (
+                <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">Unit *</Label>
+          <Select value={shared.unit} onValueChange={(v) => onChange({ unit: v ?? "PIECES" })}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {UNIT_OPTIONS.map((u) => (
+                <SelectItem key={u} value={u}>{u}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">Vendor</Label>
+          <Combobox
+            value={shared.vendorId}
+            onValueChange={(v) => onChange({ vendorId: v })}
+            options={vendors.map((v) => ({ label: v.name, value: v.id }))}
+            placeholder="Select vendor..."
+          />
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">HSN Code</Label>
+          <Input
+            value={shared.hsnCode}
+            onChange={(e) => onChange({ hsnCode: e.target.value })}
+            className="h-8 text-xs"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Article codes sub-table ─────────────────────────────────────────────────
+
+function ArticleCodesSection({
+  rows,
+  articleCodes,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: {
+  rows: ArticleCodeRow[];
+  articleCodes: ArticleCodeOption[];
+  onAdd: () => void;
+  onUpdate: (idx: number, patch: Partial<ArticleCodeRow>) => void;
+  onRemove: (idx: number) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+          Article Codes
+        </span>
+        <Button type="button" variant="outline" size="sm" className="h-5 text-[10px] px-1" onClick={onAdd}>
+          <Plus className="h-2.5 w-2.5 mr-0.5" />Add
+        </Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-[10px] text-muted-foreground italic">No article codes yet.</p>
       ) : (
-        <Input
-          type={field.type === "number" ? "number" : "text"}
-          step={field.type === "number" ? "0.01" : undefined}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-8 text-xs"
-        />
+        rows.map((row, idx) => (
+          <div key={idx} className="grid gap-1 items-center" style={{ gridTemplateColumns: "1fr 80px 20px" }}>
+            <Combobox
+              value={row.code}
+              onValueChange={(v) => onUpdate(idx, { code: v })}
+              options={articleCodes}
+              placeholder="Search article..."
+            />
+            <Input
+              type="number"
+              step="0.01"
+              value={row.units}
+              onChange={(e) => onUpdate(idx, { units: e.target.value })}
+              className="h-6 text-[11px]"
+              placeholder="qty"
+            />
+            <Button type="button" variant="ghost" size="sm" className="h-6 w-5 p-0" onClick={() => onRemove(idx)}>
+              <X className="h-2.5 w-2.5" />
+            </Button>
+          </div>
+        ))
       )}
-      {field.helper && <p className="text-[10px] text-muted-foreground italic">{field.helper}</p>}
+    </div>
+  );
+}
+
+// ─── Image upload button ──────────────────────────────────────────────────────
+
+function ImageUploadButton({
+  imageUrl,
+  imageName,
+  onUpload,
+  onClear,
+}: {
+  imageUrl: string | null;
+  imageName: string | null;
+  onUpload: (file: File) => void;
+  onClear: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <div className="space-y-0.5">
+      <Label className="text-[11px]">Image</Label>
+      <div className="flex flex-col gap-1.5">
+        {imageUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imageUrl} alt="preview" className="w-full max-h-56 rounded border border-border object-contain bg-muted" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-muted-foreground truncate max-w-[200px]">{imageName}</span>
+              <div className="flex gap-1">
+                <Button type="button" variant="outline" size="sm" className="h-6 text-[10px] px-2"
+                  onClick={() => inputRef.current?.click()}>
+                  Replace
+                </Button>
+                <Button type="button" variant="ghost" size="sm" className="h-6 text-[10px] px-2 text-red-500" onClick={onClear}>
+                  Remove
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-[11px] px-2"
+            onClick={() => inputRef.current?.click()}
+          >
+            <ImageIcon className="h-3 w-3 mr-1" />
+            Upload image
+          </Button>
+        )}
+        <input
+          ref={inputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) onUpload(file);
+            e.target.value = "";
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Create mode form ─────────────────────────────────────────────────────────
+
+function CreateModeForm({
+  shared,
+  typeRows,
+  vendors,
+  articleCodes,
+  onSharedChange,
+  onAddType,
+  onRemoveType,
+  onUpdateType,
+  onImageUpload,
+  onAddArticle,
+  onUpdateArticle,
+  onRemoveArticle,
+}: {
+  shared: SharedForm;
+  typeRows: TypeRow[];
+  vendors: { id: string; name: string }[];
+  articleCodes: ArticleCodeOption[];
+  onSharedChange: <K extends keyof SharedForm>(field: K, value: SharedForm[K]) => void;
+  onAddType: () => void;
+  onRemoveType: (idx: number) => void;
+  onUpdateType: (idx: number, patch: Partial<TypeRow>) => void;
+  onImageUpload: (idx: number, file: File) => void;
+  onAddArticle: (typeIdx: number) => void;
+  onUpdateArticle: (typeIdx: number, artIdx: number, patch: Partial<ArticleCodeRow>) => void;
+  onRemoveArticle: (typeIdx: number, artIdx: number) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <SharedFields
+        shared={shared}
+        vendors={vendors}
+        onChange={(patch) => {
+          for (const [k, v] of Object.entries(patch)) {
+            onSharedChange(k as keyof SharedForm, v as SharedForm[keyof SharedForm]);
+          }
+        }}
+      />
+
+      {/* Type rows */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
+            Types ({typeRows.length})
+          </div>
+          <Button type="button" variant="outline" size="sm" className="h-6 text-[10px] px-1.5" onClick={onAddType}>
+            <Plus className="h-3 w-3 mr-1" />
+            Add type
+          </Button>
+        </div>
+
+        {typeRows.map((row, idx) => (
+          <div key={idx} className="border border-border rounded p-2.5 space-y-2 relative">
+            {typeRows.length > 1 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="absolute top-1.5 right-1.5 h-5 w-5 p-0 text-muted-foreground"
+                onClick={() => onRemoveType(idx)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+            <p className="text-[10px] font-medium text-muted-foreground">Type {idx + 1}</p>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Name *</Label>
+                <Input
+                  value={row.name}
+                  onChange={(e) => onUpdateType(idx, { name: e.target.value })}
+                  className="h-8 text-xs"
+                  placeholder="e.g. Horn Button 4-hole Navy"
+                />
+              </div>
+              <div className="space-y-0.5">
+                <Label className="text-[11px]">Cost (Rs)</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={row.defaultCostPerUnit}
+                  onChange={(e) => onUpdateType(idx, { defaultCostPerUnit: e.target.value })}
+                  className="h-8 text-xs"
+                  placeholder="per unit"
+                />
+              </div>
+            </div>
+
+            <ImageUploadButton
+              imageUrl={row.imageUrl}
+              imageName={row.imageName}
+              onUpload={(file) => onImageUpload(idx, file)}
+              onClear={() => onUpdateType(idx, { imageUrl: null, imageName: null })}
+            />
+
+            <ArticleCodesSection
+              rows={row.articleCodeUnits}
+              articleCodes={articleCodes}
+              onAdd={() => onAddArticle(idx)}
+              onUpdate={(artIdx, patch) => onUpdateArticle(idx, artIdx, patch)}
+              onRemove={(artIdx) => onRemoveArticle(idx, artIdx)}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-0.5">
+        <Label className="text-[11px]">Comments</Label>
+        <Textarea
+          value={shared.comments}
+          onChange={(e) => onSharedChange("comments", e.target.value)}
+          className="min-h-[50px] resize-none text-xs"
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit mode form ───────────────────────────────────────────────────────────
+
+function EditModeForm({
+  form,
+  vendors,
+  articleCodes,
+  onChange,
+  onImageUpload,
+  onAddArticle,
+  onUpdateArticle,
+  onRemoveArticle,
+}: {
+  form: EditForm;
+  vendors: { id: string; name: string }[];
+  articleCodes: ArticleCodeOption[];
+  onChange: (patch: Partial<EditForm>) => void;
+  onImageUpload: (file: File) => void;
+  onAddArticle: () => void;
+  onUpdateArticle: (idx: number, patch: Partial<ArticleCodeRow>) => void;
+  onRemoveArticle: (idx: number) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <SharedFields
+        shared={form}
+        vendors={vendors}
+        onChange={(patch) => onChange(patch)}
+      />
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">Name *</Label>
+          <Input
+            value={form.name}
+            onChange={(e) => onChange({ name: e.target.value })}
+            className="h-8 text-xs"
+            placeholder="e.g. Horn Button 4-hole Navy"
+          />
+        </div>
+        <div className="space-y-0.5">
+          <Label className="text-[11px]">Cost (Rs)</Label>
+          <Input
+            type="number"
+            step="0.01"
+            value={form.defaultCostPerUnit}
+            onChange={(e) => onChange({ defaultCostPerUnit: e.target.value })}
+            className="h-8 text-xs"
+            placeholder="per unit"
+          />
+        </div>
+      </div>
+
+      <ImageUploadButton
+        imageUrl={form.imageUrl}
+        imageName={form.imageName}
+        onUpload={onImageUpload}
+        onClear={() => onChange({ imageUrl: null, imageName: null })}
+      />
+
+      <div className="border border-border rounded p-2 space-y-1.5">
+        <ArticleCodesSection
+          rows={form.articleCodeUnits}
+          articleCodes={articleCodes}
+          onAdd={onAddArticle}
+          onUpdate={onUpdateArticle}
+          onRemove={onRemoveArticle}
+        />
+      </div>
+
+      <div className="space-y-0.5">
+        <Label className="text-[11px]">Comments</Label>
+        <Textarea
+          value={form.comments}
+          onChange={(e) => onChange({ comments: e.target.value })}
+          className="min-h-[50px] resize-none text-xs"
+        />
+      </div>
     </div>
   );
 }
