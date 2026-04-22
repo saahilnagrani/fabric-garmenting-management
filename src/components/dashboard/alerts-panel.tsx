@@ -4,9 +4,9 @@ import { AlertTriangle, AlertCircle, Info, ArrowRight, CheckCircle2 } from "luci
 import type { DashboardAlert } from "@/actions/dashboard";
 
 const SEVERITY_STYLES: Record<DashboardAlert["severity"], { border: string; bg: string; iconColor: string }> = {
-  critical: { border: "border-red-300", bg: "bg-red-50", iconColor: "text-red-600" },
-  warning: { border: "border-amber-300", bg: "bg-amber-50", iconColor: "text-amber-600" },
-  info: { border: "border-blue-200", bg: "bg-blue-50", iconColor: "text-blue-600" },
+  critical: { border: "border-red-300 dark:border-red-800", bg: "bg-red-50 dark:bg-red-950/40", iconColor: "text-red-600 dark:text-red-400" },
+  warning: { border: "border-amber-300 dark:border-amber-800", bg: "bg-amber-50 dark:bg-amber-950/40", iconColor: "text-amber-600 dark:text-amber-400" },
+  info: { border: "border-blue-200 dark:border-blue-800", bg: "bg-blue-50 dark:bg-blue-950/40", iconColor: "text-blue-600 dark:text-blue-400" },
 };
 
 function SeverityIcon({ severity }: { severity: DashboardAlert["severity"] }) {
@@ -61,7 +61,7 @@ export function AlertsPanel({ alerts }: { alerts: DashboardAlert[] }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="text-xs font-semibold">{alert.title}</span>
-                    <span className="text-[10px] font-medium text-muted-foreground px-1.5 py-0.5 rounded bg-white/60">
+                    <span className="text-[10px] font-medium text-muted-foreground px-1.5 py-0.5 rounded bg-white/60 dark:bg-white/10">
                       {alert.count}
                     </span>
                   </div>
