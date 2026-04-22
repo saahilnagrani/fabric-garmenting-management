@@ -1,6 +1,7 @@
 "use client";
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
+import Script from "next/script";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { DEFAULT_FONT, FONT_CHOICES, getFontChoice } from "@/lib/fonts";
 
@@ -96,8 +97,7 @@ function AppearanceScript() {
   } catch (e) {}
 })();
 `;
-  // eslint-disable-next-line react/no-danger
-  return <script dangerouslySetInnerHTML={{ __html: script }} />;
+  return <Script id="appearance-font-init" strategy="beforeInteractive" dangerouslySetInnerHTML={{ __html: script }} />;
 }
 
 export function useAppearance() {
