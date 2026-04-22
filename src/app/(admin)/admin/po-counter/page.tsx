@@ -16,10 +16,10 @@ export default async function PoCounterPage() {
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
-        <h1 className="text-2xl font-bold">PO Counter</h1>
+        <h1 className="text-2xl font-bold">Document Counters</h1>
         <p className="text-muted-foreground">
-          Track and reset purchase order numbering per fiscal year. PO numbers follow the
-          format <code className="text-xs bg-muted px-1 rounded">HYP/PO/YYYY-YY/0101</code>.
+          Track and reset document numbering per fiscal year for fabric POs, accessory POs,
+          and accessory dispatch notes. Each document type uses its own sequence and prefix.
         </p>
       </div>
 
@@ -35,9 +35,9 @@ export default async function PoCounterPage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <p className="text-xs text-muted-foreground">
-            Numbers are allocated atomically at the moment a Purchase Order PDF is first
-            generated for a vendor batch. Drafts that are never printed do not consume a
-            number. Reprinting a previously-issued PO reuses its existing number.
+            Numbers are allocated atomically when a document is first generated for a
+            vendor/garmenter group. Drafts that are never issued do not consume a number.
+            Reprinting a previously-issued document reuses its existing number.
           </p>
 
           <PoCounterEditor counters={counters} currentFy={currentFy} />
@@ -46,16 +46,16 @@ export default async function PoCounterPage() {
             <h3 className="font-semibold mb-1 mt-4">Reset behaviour</h3>
             <ul className="list-disc list-inside text-muted-foreground space-y-0.5 ml-2 text-xs">
               <li>
-                Reset clears <strong>all</strong> PO numbers on fabric orders for that fiscal
-                year and deletes the counter row. The next allocation starts at 0101.
+                Reset clears <strong>all</strong> numbers of that type on source rows for the
+                fiscal year and deletes the counter row. The next allocation starts at 0101.
               </li>
               <li>
                 Intended for go-live cleanup after testing. <strong>Do not</strong> use it on a
-                live FY where real POs have already been sent to vendors.
+                live FY where real documents have already been sent out.
               </li>
               <li>
-                Underlying fabric orders are not deleted — only their PO number is unset, so
-                they fall back to draft state for re-issuance.
+                Underlying records (fabric orders, accessory purchases, dispatches) are not
+                deleted — only their PO/DN number is unset, so they revert to draft state.
               </li>
             </ul>
           </div>

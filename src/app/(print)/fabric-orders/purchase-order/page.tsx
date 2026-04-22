@@ -199,7 +199,7 @@ export default async function PurchaseOrderPage({
               {/* PO title + meta row */}
               <div className="mt-3 border border-black">
                 <div className="text-center text-base font-bold bg-blue-700 border-b border-black py-1 text-white print:[print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
-                  PURCHASE ORDER
+                  FABRIC PURCHASE ORDER
                 </div>
                 <table className="w-full text-[11px]">
                   <tbody>
