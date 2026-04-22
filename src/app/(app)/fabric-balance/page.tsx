@@ -14,6 +14,10 @@ export default async function FabricBalancePage() {
 
   const vendorById = new Map(vendors.map((v) => [v.id, v.name]));
 
+  const garmentingVendors = vendors
+    .filter((v) => v.type === "GARMENTING" && !v.isStrikedThrough)
+    .map((v) => ({ id: v.id, name: v.name }));
+
   const fabricMasterOptions = fabricMasters
     .filter((m) => !m.isStrikedThrough)
     .map((m) => ({
@@ -53,6 +57,7 @@ export default async function FabricBalancePage() {
         balances={JSON.parse(JSON.stringify(balances))}
         fabricMasters={fabricMasterOptions}
         phases={phaseOptions}
+        garmentingVendors={garmentingVendors}
       />
     </div>
   );

@@ -46,6 +46,8 @@ export async function createFabricBalancesBulk(input: {
   sourcePhaseId: string | null;
   targetPhaseId: string | null;
   notes: string | null;
+  updateDate: Date | null;
+  garmentingLocation: string | null;
   entries: Array<{ colour: string; remainingKg: number }>;
 }) {
   const session = await requirePermission("inventory:fabric_orders:create");
@@ -64,6 +66,8 @@ export async function createFabricBalancesBulk(input: {
           sourcePhaseId: input.sourcePhaseId,
           targetPhaseId: input.targetPhaseId,
           notes: input.notes,
+          updateDate: input.updateDate,
+          garmentingLocation: input.garmentingLocation,
         },
       })
     )

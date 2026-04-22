@@ -24,14 +24,18 @@ function formatCurrency(n: number | null | undefined): string {
   return `₹ ${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+type GarmentingVendor = { id: string; name: string };
+
 export function FabricBalanceGrid({
   balances,
   fabricMasters,
   phases,
+  garmentingVendors,
 }: {
   balances: unknown[];
   fabricMasters: FabricMasterOption[];
   phases: PhaseOption[];
+  garmentingVendors: GarmentingVendor[];
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<FabricBalanceRow | null>(null);
@@ -62,6 +66,10 @@ export function FabricBalanceGrid({
             ? `Phase ${targetPhase.number} — ${targetPhase.name}`
             : null,
           notes: (b.notes as string | null) ?? null,
+          updateDate: b.updateDate
+            ? new Date(b.updateDate as string).toISOString()
+            : null,
+          garmentingLocation: (b.garmentingLocation as string | null) ?? null,
         };
       }),
     [balances]
@@ -97,6 +105,19 @@ export function FabricBalanceGrid({
         valueGetter: (p) => (p.data ? p.data.remainingKg * p.data.costPerKg : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
+      {
+        field: "updateDate",
+        headerName: "Update Date",
+        minWidth: 120,
+        editable: false,
+        valueFormatter: (p) => {
+          if (!p.value) return "";
+          return new Date(p.value as string).toLocaleDateString("en-IN", {
+            day: "2-digit", month: "short", year: "numeric",
+          });
+        },
+      },
+      { field: "garmentingLocation", headerName: "Garmenting Location", minWidth: 170, editable: false },
       { field: "sourcePhaseLabel", headerName: "From Phase", minWidth: 160, editable: false },
       { field: "targetPhaseLabel", headerName: "For Phase", minWidth: 160, editable: false },
       { field: "notes", headerName: "Notes", minWidth: 180, editable: false },
@@ -135,6 +156,7 @@ export function FabricBalanceGrid({
         editingRow={editingRow}
         fabricMasters={fabricMasters}
         phases={phases}
+        garmentingVendors={garmentingVendors}
       />
     </>
   );

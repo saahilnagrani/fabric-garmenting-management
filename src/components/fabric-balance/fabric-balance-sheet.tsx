@@ -30,6 +30,8 @@ export type FabricBalanceRow = {
   targetPhaseId: string | null;
   targetPhaseLabel: string | null;
   notes: string | null;
+  updateDate: string | null;
+  garmentingLocation: string | null;
 };
 
 type FabricMasterOption = {
@@ -57,6 +59,8 @@ type FormData = {
   sourcePhaseId: string;
   targetPhaseId: string;
   notes: string;
+  updateDate: string;
+  garmentingLocation: string;
   entries: ColourEntry[];
 };
 
@@ -66,8 +70,12 @@ const emptyForm: FormData = {
   sourcePhaseId: "",
   targetPhaseId: "",
   notes: "",
+  updateDate: "",
+  garmentingLocation: "",
   entries: [{ colour: "", remainingKg: "" }],
 };
+
+type GarmentingVendor = { id: string; name: string };
 
 export function FabricBalanceSheet({
   open,
@@ -75,12 +83,14 @@ export function FabricBalanceSheet({
   editingRow,
   fabricMasters,
   phases,
+  garmentingVendors,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingRow: FabricBalanceRow | null;
   fabricMasters: FabricMasterOption[];
   phases: PhaseOption[];
+  garmentingVendors: GarmentingVendor[];
 }) {
   const router = useRouter();
   const [form, setForm] = useState<FormData>({ ...emptyForm });
@@ -98,6 +108,10 @@ export function FabricBalanceSheet({
           sourcePhaseId: editingRow.sourcePhaseId || "",
           targetPhaseId: editingRow.targetPhaseId || "",
           notes: editingRow.notes || "",
+          updateDate: editingRow.updateDate
+            ? editingRow.updateDate.slice(0, 10)
+            : "",
+          garmentingLocation: editingRow.garmentingLocation || "",
           entries: [{ colour: editingRow.colour, remainingKg: String(editingRow.remainingKg) }],
         });
       } else {
@@ -213,6 +227,9 @@ export function FabricBalanceSheet({
 
     setSubmitting(true);
     try {
+      const updateDate = form.updateDate ? new Date(form.updateDate) : null;
+      const garmentingLocation = form.garmentingLocation.trim() || null;
+
       if (isEdit) {
         // Edit mode: single row only.
         const e = cleaned[0];
@@ -225,6 +242,8 @@ export function FabricBalanceSheet({
           sourcePhaseId: form.sourcePhaseId || null,
           targetPhaseId: form.targetPhaseId || null,
           notes: form.notes.trim() || null,
+          updateDate,
+          garmentingLocation,
         });
         toast.success("Fabric balance updated");
       } else {
@@ -235,6 +254,8 @@ export function FabricBalanceSheet({
           sourcePhaseId: form.sourcePhaseId || null,
           targetPhaseId: form.targetPhaseId || null,
           notes: form.notes.trim() || null,
+          updateDate,
+          garmentingLocation,
           entries: cleaned,
         });
         toast.success(
@@ -384,6 +405,27 @@ export function FabricBalanceSheet({
                 attributed
               </p>
             )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Update Date</Label>
+              <Input
+                type="date"
+                value={form.updateDate}
+                onChange={(e) => updateField("updateDate", e.target.value)}
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Garmenting Location</Label>
+              <Combobox
+                value={form.garmentingLocation}
+                onValueChange={(v) => updateField("garmentingLocation", v)}
+                options={garmentingVendors.map((g) => ({ label: g.name, value: g.name }))}
+                placeholder="Select garmenter..."
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
