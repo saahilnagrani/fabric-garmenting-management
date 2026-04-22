@@ -8,7 +8,7 @@ export function MultiTagRenderer(props: CustomCellRendererProps) {
     return <span className="text-muted-foreground text-xs">-</span>;
 
   return (
-    <div className="flex items-center gap-1 overflow-hidden h-full">
+    <div className="flex flex-wrap items-center gap-1 py-1">
       {values.map((v, i) => (
         <span
           key={i}

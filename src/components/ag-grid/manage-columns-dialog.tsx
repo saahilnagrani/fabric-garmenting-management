@@ -132,8 +132,8 @@ export function ManageColumnsDialog({
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setEditingId(null); }} />
-          <div className="absolute top-full left-0 mt-1 z-50 w-80 bg-white border border-border rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <div className="absolute top-full left-0 mt-1 z-50 w-80 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Columns ({columns.length})
             </p>
 
@@ -162,22 +162,22 @@ export function ManageColumnsDialog({
                       onClick={() => startRename(col)}
                       title="Click to rename"
                     >
-                      <span className="text-xs text-gray-700 truncate block">{col.headerName}</span>
-                      <span className="text-[10px] text-gray-400 truncate block">{col.field}</span>
+                      <span className="text-xs text-foreground truncate block">{col.headerName}</span>
+                      <span className="text-[10px] text-muted-foreground truncate block">{col.field}</span>
                     </div>
                   )}
 
                   {/* Move + Pin buttons */}
                   <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
                     <button
-                      className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                      className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                       disabled={index === 0}
                       onClick={() => handleMove(index, "up")}
                     >
                       <ChevronUp className="h-3 w-3" />
                     </button>
                     <button
-                      className="p-0.5 text-gray-400 hover:text-gray-700 disabled:opacity-20"
+                      className="p-0.5 text-muted-foreground hover:text-foreground disabled:opacity-20"
                       disabled={index === columns.length - 1}
                       onClick={() => handleMove(index, "down")}
                     >
@@ -185,7 +185,7 @@ export function ManageColumnsDialog({
                     </button>
                   </div>
                   <button
-                    className={`p-1 rounded transition-colors ${col.pinned ? "text-blue-600 bg-blue-50" : "text-gray-400 hover:text-gray-700 opacity-0 group-hover:opacity-100"}`}
+                    className={`p-1 rounded transition-colors ${col.pinned ? "text-primary bg-primary/10" : "text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100"}`}
                     onClick={() => handlePin(col.colId, col.pinned ? null : "left")}
                     title={col.pinned ? "Unpin column" : "Pin to left"}
                   >
