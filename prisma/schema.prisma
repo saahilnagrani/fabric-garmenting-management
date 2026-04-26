@@ -60,6 +60,18 @@ model Phase {
   fabricBalancesTarget FabricBalance[]     @relation("FabricBalanceTargetPhase")
 }
 
+model PhasePlanDraft {
+  id        String   @id @default(cuid())
+  phaseId   String
+  userId    String
+  payload   Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([phaseId, userId])
+  @@index([phaseId])
+}
+
 model Vendor {
   id                      String              @id @default(cuid())
   name                    String              @unique
@@ -105,10 +117,18 @@ model Product {
   colourOrdered String
   isRepeat      Boolean @default(false)
 
+  // Bundle1 Phase A: nullable FKs introduced alongside string columns.
+  // Both are written by app code during dual-write phase. Strings drop in Phase C.
+  colourOrderedId  String?
+  colourOrderedRef Colour? @relation("ProductColourOrdered", fields: [colourOrderedId], references: [id])
+
   // Classification
   type        String
   gender      Gender
   productName String?
+
+  typeRefId String?
+  typeRef   ProductType? @relation("ProductType", fields: [typeRefId], references: [id])
 
   // Status
   status          ProductStatus @default(PLANNED)
@@ -174,7 +194,9 @@ model Product {
   onlineMrp           Decimal? @db.Decimal(10, 2)
 
   // Garment location
-  garmentingAt String?
+  garmentingAt    String?
+  garmentingAtId  String?
+  garmentingAtRef GarmentingLocation? @relation("ProductGarmentingAt", fields: [garmentingAtId], references: [id])
 
   // Invoice
   invoiceNumber String?
@@ -197,6 +219,9 @@ model Product {
   @@index([fabric2VendorId])
   @@index([isRepeat])
   @@index([invoiceNumber])
+  @@index([colourOrderedId])
+  @@index([typeRefId])
+  @@index([garmentingAtId])
 }
 
 enum Gender {
@@ -245,6 +270,11 @@ model FabricOrder {
   availableColour String?
   costPerUnit     Decimal? @db.Decimal(10, 2)
 
+  colourId           String?
+  colourRef          Colour? @relation("FabricOrderColour", fields: [colourId], references: [id])
+  availableColourId  String?
+  availableColourRef Colour? @relation("FabricOrderAvailableColour", fields: [availableColourId], references: [id])
+
   fabricOrderedQuantityKg Decimal? @db.Decimal(10, 2)
   fabricShippedQuantityKg Decimal? @db.Decimal(10, 2)
 
@@ -258,6 +288,8 @@ model FabricOrder {
   piReceivedAt    DateTime?
   advancePaidAt   DateTime?
   garmentingAt    String?
+  garmentingAtId  String?
+  garmentingAtRef GarmentingLocation? @relation("FabricOrderGarmentingAt", fields: [garmentingAtId], references: [id])
 
   // Link to auto-created expense
   expenseId String?
@@ -274,6 +306,9 @@ model FabricOrder {
   @@index([fabricVendorId])
   @@index([invoiceNumber])
   @@index([poNumber])
+  @@index([colourId])
+  @@index([availableColourId])
+  @@index([garmentingAtId])
 }
 
 model ProductFabricOrder {
@@ -381,6 +416,9 @@ model ProductType {
   code      String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  products       Product[]       @relation("ProductType")
+  productMasters ProductMaster[] @relation("ProductMasterType")
 }
 
 model GarmentingLocation {
@@ -388,6 +426,11 @@ model GarmentingLocation {
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  products            Product[]           @relation("ProductGarmentingAt")
+  fabricOrders        FabricOrder[]       @relation("FabricOrderGarmentingAt")
+  accessoryDispatches AccessoryDispatch[] @relation("AccessoryDispatchGarmenter")
+  fabricBalances      FabricBalance[]     @relation("FabricBalanceGarmentingLocation")
 }
 
 model SizeDistribution {
@@ -418,7 +461,8 @@ model FabricMaster {
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
-  fabricBalances FabricBalance[]
+  fabricBalances       FabricBalance[]
+  coloursAvailableLink FabricMasterColour[]
 
   @@index([vendorId])
 }
@@ -430,6 +474,8 @@ model FabricBalance {
   vendorId       String
   vendor         Vendor       @relation("FabricBalanceVendor", fields: [vendorId], references: [id])
   colour         String
+  colourId       String?
+  colourRef      Colour?      @relation("FabricBalanceColour", fields: [colourId], references: [id])
   remainingKg    Decimal      @db.Decimal(12, 2)
   costPerKg      Decimal      @db.Decimal(10, 2)
   // costAttributed = remainingKg * costPerKg, computed at read time
@@ -439,10 +485,12 @@ model FabricBalance {
   targetPhaseId String?
   targetPhase   Phase?  @relation("FabricBalanceTargetPhase", fields: [targetPhaseId], references: [id])
 
-  notes              String?
-  updateDate         DateTime?
-  garmentingLocation String?
-  isStrikedThrough   Boolean  @default(false)
+  notes                 String?
+  updateDate            DateTime?
+  garmentingLocation    String?
+  garmentingLocationId  String?
+  garmentingLocationRef GarmentingLocation? @relation("FabricBalanceGarmentingLocation", fields: [garmentingLocationId], references: [id])
+  isStrikedThrough      Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -450,6 +498,8 @@ model FabricBalance {
   @@index([vendorId])
   @@index([sourcePhaseId])
   @@index([targetPhaseId])
+  @@index([colourId])
+  @@index([garmentingLocationId])
 }
 
 model Colour {
@@ -458,6 +508,36 @@ model Colour {
   code      String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  fabricMasterAvailable  FabricMasterColour[]
+  productMasterAvailable ProductMasterColour[]
+  fabricOrderColour      FabricOrder[]        @relation("FabricOrderColour")
+  fabricOrderAvailable   FabricOrder[]        @relation("FabricOrderAvailableColour")
+  fabricBalances         FabricBalance[]      @relation("FabricBalanceColour")
+  products               Product[]            @relation("ProductColourOrdered")
+  accessoryMasters       AccessoryMaster[]    @relation("AccessoryMasterColour")
+}
+
+model FabricMasterColour {
+  fabricMasterId String
+  colourId       String
+  fabricMaster   FabricMaster @relation(fields: [fabricMasterId], references: [id], onDelete: Cascade)
+  colour         Colour       @relation(fields: [colourId], references: [id])
+
+  @@id([fabricMasterId, colourId])
+  @@index([colourId])
+}
+
+model ProductMasterColour {
+  productMasterId String
+  colourId        String
+  slot            Int           // 1, 2, 3, 4 = which coloursNAvailable list the entry came from
+  productMaster   ProductMaster @relation(fields: [productMasterId], references: [id], onDelete: Cascade)
+  colour          Colour        @relation(fields: [colourId], references: [id])
+
+  @@id([productMasterId, colourId, slot])
+  @@index([colourId])
+  @@index([productMasterId])
 }
 
 model PhaseCost {
@@ -520,6 +600,8 @@ model ProductMaster {
   fabric3Name                 String?
   fabric4Name                 String?
   type                        String
+  typeRefId                   String?
+  typeRef                     ProductType? @relation("ProductMasterType", fields: [typeRefId], references: [id])
   gender                      Gender
   productName                 String?
   coloursAvailable            String[]
@@ -555,10 +637,12 @@ model ProductMaster {
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
-  accessoryLinks ProductMasterAccessory[]
+  accessoryLinks       ProductMasterAccessory[]
+  coloursAvailableLink ProductMasterColour[]
 
   @@index([skuCode])
   @@index([styleNumber])
+  @@index([typeRefId])
 }
 
 // ─── ACCESSORIES ─────────────────────────────────────────────────
@@ -602,6 +686,9 @@ model AccessoryMaster {
   colour   String?
   size     String?
 
+  colourId  String?
+  colourRef Colour?  @relation("AccessoryMasterColour", fields: [colourId], references: [id])
+
   purchases    AccessoryPurchase[]
   dispatches   AccessoryDispatch[]
   productLinks ProductMasterAccessory[]
@@ -609,6 +696,7 @@ model AccessoryMaster {
   @@index([category])
   @@index([vendorId])
   @@index([displayName])
+  @@index([colourId])
 }
 
 model AccessoryPurchase {
@@ -665,7 +753,9 @@ model AccessoryDispatch {
 
   quantity Decimal @db.Decimal(12, 2)
 
-  destinationGarmenter String?
+  destinationGarmenter    String?
+  destinationGarmenterId  String?
+  destinationGarmenterRef GarmentingLocation? @relation("AccessoryDispatchGarmenter", fields: [destinationGarmenterId], references: [id])
 
   productId String?
   product   Product? @relation("ProductAccessoryDispatch", fields: [productId], references: [id])
@@ -685,6 +775,7 @@ model AccessoryDispatch {
   @@index([accessoryId])
   @@index([productId])
   @@index([dnNumber])
+  @@index([destinationGarmenterId])
 }
 
 enum AccessoryDispatchStatus {
