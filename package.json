@@ -14,7 +14,8 @@
     "db:seed-masters": "npx tsx prisma/seed-masters.ts",
     "db:push-neon": "npx drizzle-kit push",
     "db:generate-drizzle": "npx drizzle-kit generate",
-    "db:studio-neon": "npx drizzle-kit studio"
+    "db:studio-neon": "npx drizzle-kit studio",
+    "db:verify-lookups": "npx tsx scripts/verify-lookup-backfill.ts"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
