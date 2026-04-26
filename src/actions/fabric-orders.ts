@@ -10,6 +10,27 @@ import { ensurePoNumberForGroup } from "@/lib/po-numbering";
 import type { FabricOrderStatus } from "@/generated/prisma/client";
 import type { FabricOrderAlertFilter } from "@/lib/alert-filters";
 import { getAlertRulesMerged } from "./alert-rules";
+import { createLookupResolver } from "@/lib/lookups";
+
+async function attachFabricOrderLookupIds<T extends Record<string, unknown>>(data: T): Promise<T> {
+  const resolver = createLookupResolver();
+  if ("colour" in data) {
+    (data as Record<string, unknown>).colourId = await resolver.colourId(
+      data.colour as string | null | undefined,
+    );
+  }
+  if ("availableColour" in data) {
+    (data as Record<string, unknown>).availableColourId = await resolver.colourId(
+      data.availableColour as string | null | undefined,
+    );
+  }
+  if ("garmentingAt" in data) {
+    (data as Record<string, unknown>).garmentingAtId = await resolver.garmentingLocationId(
+      data.garmentingAt as string | null | undefined,
+    );
+  }
+  return data;
+}
 
 const TERMINAL_FABRIC_ORDER_STATUSES: FabricOrderStatus[] = ["FULLY_SETTLED"];
 
@@ -97,6 +118,7 @@ export async function getFabricOrder(id: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createFabricOrder(data: any) {
   const session = await requirePermission("inventory:fabric_orders:create");
+  await attachFabricOrderLookupIds(data);
   const order = await db.fabricOrder.create({ data });
   logAction(session.user!.id!, session.user!.name!, "CREATE", "FabricOrder", order.id);
   await syncFabricOrderProductLinks(order.id);
@@ -178,6 +200,7 @@ export async function updateFabricOrder(id: string, data: any) {
     }
   }
 
+  await attachFabricOrderLookupIds(data);
   const order = await db.fabricOrder.update({ where: { id }, data });
   const changes = previousOrder ? computeDiff(previousOrder as unknown as Record<string, unknown>, order as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "FabricOrder", id, changes);

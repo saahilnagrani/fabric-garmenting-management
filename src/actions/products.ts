@@ -11,6 +11,32 @@ import { validateStatusTransition } from "@/lib/state-machine";
 import { autoCreateDispatchesForProduct, type AutoDispatchResult } from "./accessory-dispatches";
 import type { ProductAlertFilter } from "@/lib/alert-filters";
 import { getAlertRulesMerged } from "./alert-rules";
+import { createLookupResolver } from "@/lib/lookups";
+
+/**
+ * Bundle 1 dual-write: derive Product FK columns from string fields in `data`.
+ * Mutates and returns `data`. Skipped lookups (null FK) leave the column null.
+ * Only sets a key if the corresponding string was provided in this update.
+ */
+async function attachProductLookupIds<T extends Record<string, unknown>>(data: T): Promise<T> {
+  const resolver = createLookupResolver();
+  if ("colourOrdered" in data) {
+    (data as Record<string, unknown>).colourOrderedId = await resolver.colourId(
+      data.colourOrdered as string | null | undefined,
+    );
+  }
+  if ("type" in data) {
+    (data as Record<string, unknown>).typeRefId = await resolver.productTypeId(
+      data.type as string | null | undefined,
+    );
+  }
+  if ("garmentingAt" in data) {
+    (data as Record<string, unknown>).garmentingAtId = await resolver.garmentingLocationId(
+      data.garmentingAt as string | null | undefined,
+    );
+  }
+  return data;
+}
 
 /**
  * Rebuilds ProductFabricOrder join rows for a single product.
@@ -143,6 +169,7 @@ export async function getProduct(id: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createProduct(data: any) {
   const session = await requirePermission("inventory:products:create");
+  await attachProductLookupIds(data);
   const product = await db.product.create({ data });
   logAction(session.user!.id!, session.user!.name!, "CREATE", "Product", product.id);
   await syncProductFabricOrderLinks(product.id);
@@ -216,6 +243,7 @@ export async function updateProduct(id: string, data: any) {
     data.statusChangedAt = new Date();
   }
 
+  await attachProductLookupIds(data);
   const product = await db.product.update({ where: { id }, data });
   const changes = previousProduct ? computeDiff(previousProduct as unknown as Record<string, unknown>, product as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "Product", id, changes);

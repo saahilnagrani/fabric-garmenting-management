@@ -3,6 +3,7 @@
 import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
+import { createLookupResolver } from "@/lib/lookups";
 
 export type PlannedSKUOrder = {
   styleNumber: string;
@@ -55,6 +56,7 @@ export async function createPlanOrders(
   fabricOrders: PlannedFabricOrder[]
 ) {
   await requirePermission("inventory:phases:edit");
+  const resolver = createLookupResolver();
   await db.$transaction(async (tx) => {
     // Map (articleNumber, colour) -> { productId, fabricName, fabric2Name }
     // used to build ProductFabricOrder join rows after fabric orders are created
@@ -63,6 +65,8 @@ export async function createPlanOrders(
       `${article.trim()}||${colour.toLowerCase().trim()}`;
 
     for (const sku of skuOrders) {
+      const colourOrderedId = await resolver.colourId(sku.colourOrdered);
+      const typeRefId = await resolver.productTypeId(sku.type);
       const product = await tx.product.create({
         data: {
           phaseId,
@@ -71,9 +75,11 @@ export async function createPlanOrders(
           articleNumber: sku.articleNumber,
           skuCode: sku.skuCode,
           colourOrdered: sku.colourOrdered,
+          colourOrderedId,
           garmentNumber: sku.garmentNumber,
           isRepeat: sku.isRepeat,
           type: sku.type,
+          typeRefId,
           gender: sku.gender as "MENS" | "WOMENS" | "KIDS",
           productName: sku.productName || null,
           fabricVendorId: sku.fabricVendorId,
@@ -113,6 +119,8 @@ export async function createPlanOrders(
     }
 
     for (const fabric of fabricOrders) {
+      const colourId = await resolver.colourId(fabric.colour);
+      const garmentingAtId = await resolver.garmentingLocationId(fabric.garmentingAt);
       const fabricOrder = await tx.fabricOrder.create({
         data: {
           phaseId,
@@ -121,12 +129,14 @@ export async function createPlanOrders(
           fabricVendorId: fabric.fabricVendorId,
           articleNumbers: fabric.articleNumbers,
           colour: fabric.colour,
+          colourId,
           fabricOrderedQuantityKg: fabric.fabricOrderedQuantityKg,
           costPerUnit: fabric.costPerUnit,
           isRepeat: fabric.isRepeat,
           gender: fabric.gender as "MENS" | "WOMENS" | "KIDS" | null,
           orderStatus: (fabric.orderStatus || "DRAFT_ORDER") as "DRAFT_ORDER" | "PO_SENT" | "PI_RECEIVED" | "ADVANCE_PAID" | "PARTIALLY_SHIPPED" | "DISPATCHED" | "RECEIVED" | "FULLY_SETTLED",
           garmentingAt: fabric.garmentingAt,
+          garmentingAtId,
         },
       });
 

@@ -5,6 +5,51 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
+import { createLookupResolver, type LookupResolver } from "@/lib/lookups";
+
+async function attachProductMasterScalarLookups<T extends Record<string, unknown>>(
+  data: T,
+  resolver: LookupResolver = createLookupResolver(),
+): Promise<T> {
+  if ("type" in data) {
+    (data as Record<string, unknown>).typeRefId = await resolver.productTypeId(
+      data.type as string | null | undefined,
+    );
+  }
+  return data;
+}
+
+async function syncProductMasterColourLinks(
+  productMasterId: string,
+  data: Record<string, unknown>,
+  resolver: LookupResolver = createLookupResolver(),
+) {
+  const slots: Array<[number, string]> = [
+    [1, "coloursAvailable"],
+    [2, "colours2Available"],
+    [3, "colours3Available"],
+    [4, "colours4Available"],
+  ];
+  const writes: Array<{ slot: number; key: string }> = slots.filter(([, key]) => key in data).map(([slot, key]) => ({ slot, key }));
+  if (writes.length === 0) return;
+
+  const newRows: Array<{ productMasterId: string; colourId: string; slot: number }> = [];
+  for (const { slot, key } of writes) {
+    const arr = (data[key] as Array<string | null | undefined> | null | undefined) ?? [];
+    const ids = await resolver.colourIds(arr);
+    for (const colourId of ids) newRows.push({ productMasterId, colourId, slot });
+  }
+
+  await db.productMasterColour.deleteMany({
+    where: {
+      productMasterId,
+      slot: { in: writes.map((w) => w.slot) },
+    },
+  });
+  if (newRows.length > 0) {
+    await db.productMasterColour.createMany({ data: newRows, skipDuplicates: true });
+  }
+}
 
 export const getProductMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:masters:view");
@@ -99,7 +144,9 @@ export async function createProductMaster(data: any) {
       where: { skuCode: createData.skuCode, isStrikedThrough: true },
     });
   }
+  await attachProductMasterScalarLookups(createData);
   const master = await db.productMaster.create({ data: createData });
+  await syncProductMasterColourLinks(master.id, createData);
   if (bomLines) await syncBomLines(master.id, bomLines);
   await linkArticleToFabricMaster(data.fabricName, data.articleNumber);
   await linkArticleToFabricMaster(data.fabric2Name, data.articleNumber);
@@ -116,7 +163,9 @@ export async function updateProductMaster(id: string, data: any) {
   const bomLines: BomLine[] | undefined = data.bomLines;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { bomLines: _bom, ...updateData } = data;
+  await attachProductMasterScalarLookups(updateData);
   const master = await db.productMaster.update({ where: { id }, data: updateData });
+  await syncProductMasterColourLinks(id, updateData);
   if (bomLines !== undefined) await syncBomLines(id, bomLines);
   // Reverse sync: if article number changed (renamed), unlink old without marking as deleted
   if (previous && previous.articleNumber && previous.articleNumber !== master.articleNumber) {
@@ -217,23 +266,25 @@ export async function batchCreateProductMasters(
 ) {
   const session = await requirePermission("inventory:masters:edit");
 
+  const resolver = createLookupResolver();
   const created = [];
   for (const entry of skuEntries) {
     // If an archived row holds this skuCode, remove it so the unique constraint doesn't block.
     await db.productMaster.deleteMany({
       where: { skuCode: entry.skuCode, isStrikedThrough: true },
     });
+    const createData = {
+      ...sharedData,
+      skuCode: entry.skuCode,
+      coloursAvailable: [entry.colour],
+      colours2Available: entry.colour2 ? [entry.colour2] : [],
+      colours3Available: entry.colour3 ? [entry.colour3] : [],
+      colours4Available: entry.colour4 ? [entry.colour4] : [],
+    };
+    await attachProductMasterScalarLookups(createData, resolver);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const master = await db.productMaster.create({
-      data: {
-        ...sharedData,
-        skuCode: entry.skuCode,
-        coloursAvailable: [entry.colour],
-        colours2Available: entry.colour2 ? [entry.colour2] : [],
-        colours3Available: entry.colour3 ? [entry.colour3] : [],
-        colours4Available: entry.colour4 ? [entry.colour4] : [],
-      } as any,
-    });
+    const master = await db.productMaster.create({ data: createData as any });
+    await syncProductMasterColourLinks(master.id, createData, resolver);
     created.push(master);
     logAction(session.user!.id!, session.user!.name!, "CREATE", "ProductMaster", master.id);
   }

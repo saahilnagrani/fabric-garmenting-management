@@ -6,6 +6,17 @@ import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import { ensureDnNumberForDispatchGroup, fiscalYearFromNumber } from "@/lib/po-numbering";
 import type { AccessoryDispatchStatus } from "@/generated/prisma/client";
+import { createLookupResolver } from "@/lib/lookups";
+
+async function attachAccessoryDispatchLookupIds<T extends Record<string, unknown>>(data: T): Promise<T> {
+  if ("destinationGarmenter" in data) {
+    const resolver = createLookupResolver();
+    (data as Record<string, unknown>).destinationGarmenterId = await resolver.garmentingLocationId(
+      data.destinationGarmenter as string | null | undefined,
+    );
+  }
+  return data;
+}
 
 export async function getAccessoryDispatches(phaseId: string) {
   await requirePermission("inventory:accessories:view");
@@ -30,6 +41,7 @@ export async function getAccessoryDispatches(phaseId: string) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createAccessoryDispatch(data: any) {
   const session = await requirePermission("inventory:accessories:create");
+  await attachAccessoryDispatchLookupIds(data);
   const row = await db.accessoryDispatch.create({ data });
   logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryDispatch", row.id);
   revalidatePath("/accessory-dispatches");
@@ -41,6 +53,7 @@ export async function createAccessoryDispatch(data: any) {
 export async function updateAccessoryDispatch(id: string, data: any) {
   const session = await requirePermission("inventory:accessories:edit");
   const previous = await db.accessoryDispatch.findUnique({ where: { id } });
+  await attachAccessoryDispatchLookupIds(data);
   const row = await db.accessoryDispatch.update({ where: { id }, data });
   const changes = previous
     ? computeDiff(previous as unknown as Record<string, unknown>, row as unknown as Record<string, unknown>)
@@ -314,6 +327,8 @@ export async function autoCreateDispatchesForProduct(
 
   let created = 0;
   let skipped = 0;
+  const resolver = createLookupResolver();
+  const destinationGarmenterId = await resolver.garmentingLocationId(product.garmentingAt);
   for (const line of bomLines) {
     if (existingAccessoryIds.has(line.accessoryId)) {
       skipped++;
@@ -327,6 +342,7 @@ export async function autoCreateDispatchesForProduct(
         accessoryId: line.accessoryId,
         quantity: qty,
         destinationGarmenter: product.garmentingAt || null,
+        destinationGarmenterId,
         dispatchDate: null,
       },
     });

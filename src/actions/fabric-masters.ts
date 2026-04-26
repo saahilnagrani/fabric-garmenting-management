@@ -6,6 +6,21 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import type { Gender } from "@/generated/prisma/client";
+import { createLookupResolver } from "@/lib/lookups";
+
+async function syncFabricMasterColourLinks(fabricMasterId: string, data: Record<string, unknown>) {
+  if (!("coloursAvailable" in data)) return;
+  const arr = (data.coloursAvailable as Array<string | null | undefined> | null | undefined) ?? [];
+  const resolver = createLookupResolver();
+  const ids = await resolver.colourIds(arr);
+  await db.fabricMasterColour.deleteMany({ where: { fabricMasterId } });
+  if (ids.length > 0) {
+    await db.fabricMasterColour.createMany({
+      data: ids.map((colourId) => ({ fabricMasterId, colourId })),
+      skipDuplicates: true,
+    });
+  }
+}
 
 export const getFabricMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:masters:view");
@@ -20,6 +35,7 @@ export const getFabricMasters = cache(async (includeArchived = false) => {
 export async function createFabricMaster(data: any) {
   const session = await requirePermission("inventory:masters:edit");
   const master = await db.fabricMaster.create({ data });
+  await syncFabricMasterColourLinks(master.id, data);
   logAction(session.user!.id!, session.user!.name!, "CREATE", "FabricMaster", master.id);
   revalidatePath("/fabric-masters");
   return master;
@@ -30,6 +46,7 @@ export async function updateFabricMaster(id: string, data: any) {
   const session = await requirePermission("inventory:masters:edit");
   const previous = await db.fabricMaster.findUnique({ where: { id } });
   const master = await db.fabricMaster.update({ where: { id }, data });
+  await syncFabricMasterColourLinks(id, data);
   const action = data.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
   const changes = previous ? computeDiff(previous as unknown as Record<string, unknown>, master as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, action, "FabricMaster", id, changes);

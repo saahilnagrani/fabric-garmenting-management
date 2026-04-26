@@ -4,6 +4,24 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
+import { createLookupResolver, type LookupResolver } from "@/lib/lookups";
+
+async function attachFabricBalanceLookupIds<T extends Record<string, unknown>>(
+  data: T,
+  resolver: LookupResolver = createLookupResolver(),
+): Promise<T> {
+  if ("colour" in data) {
+    (data as Record<string, unknown>).colourId = await resolver.colourId(
+      data.colour as string | null | undefined,
+    );
+  }
+  if ("garmentingLocation" in data) {
+    (data as Record<string, unknown>).garmentingLocationId = await resolver.garmentingLocationId(
+      data.garmentingLocation as string | null | undefined,
+    );
+  }
+  return data;
+}
 
 /**
  * Manual surplus fabric ledger. Each row represents a leftover quantity of a
@@ -28,6 +46,7 @@ export async function getFabricBalances() {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createFabricBalance(data: any) {
   const session = await requirePermission("inventory:fabric_orders:create");
+  await attachFabricBalanceLookupIds(data);
   const row = await db.fabricBalance.create({ data });
   logAction(session.user!.id!, session.user!.name!, "CREATE", "FabricBalance", row.id);
   revalidatePath("/fabric-balance");
@@ -54,24 +73,25 @@ export async function createFabricBalancesBulk(input: {
   if (input.entries.length === 0) {
     throw new Error("At least one colour row is required");
   }
-  const rows = await db.$transaction(
-    input.entries.map((e) =>
-      db.fabricBalance.create({
-        data: {
-          fabricMasterId: input.fabricMasterId,
-          vendorId: input.vendorId,
-          colour: e.colour,
-          remainingKg: e.remainingKg,
-          costPerKg: input.costPerKg,
-          sourcePhaseId: input.sourcePhaseId,
-          targetPhaseId: input.targetPhaseId,
-          notes: input.notes,
-          updateDate: input.updateDate,
-          garmentingLocation: input.garmentingLocation,
-        },
-      })
-    )
+  const resolver = createLookupResolver();
+  const garmentingLocationId = await resolver.garmentingLocationId(input.garmentingLocation);
+  const rowsData = await Promise.all(
+    input.entries.map(async (e) => ({
+      fabricMasterId: input.fabricMasterId,
+      vendorId: input.vendorId,
+      colour: e.colour,
+      colourId: await resolver.colourId(e.colour),
+      remainingKg: e.remainingKg,
+      costPerKg: input.costPerKg,
+      sourcePhaseId: input.sourcePhaseId,
+      targetPhaseId: input.targetPhaseId,
+      notes: input.notes,
+      updateDate: input.updateDate,
+      garmentingLocation: input.garmentingLocation,
+      garmentingLocationId,
+    })),
   );
+  const rows = await db.$transaction(rowsData.map((d) => db.fabricBalance.create({ data: d })));
   for (const row of rows) {
     logAction(session.user!.id!, session.user!.name!, "CREATE", "FabricBalance", row.id);
   }
@@ -83,6 +103,7 @@ export async function createFabricBalancesBulk(input: {
 export async function updateFabricBalance(id: string, data: any) {
   const session = await requirePermission("inventory:fabric_orders:edit");
   const previous = await db.fabricBalance.findUnique({ where: { id } });
+  await attachFabricBalanceLookupIds(data);
   const row = await db.fabricBalance.update({ where: { id }, data });
   const changes = previous
     ? computeDiff(previous as unknown as Record<string, unknown>, row as unknown as Record<string, unknown>)

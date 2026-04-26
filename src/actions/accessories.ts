@@ -7,6 +7,20 @@ import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import type { AccessoryUnit } from "@/generated/prisma/client";
 import { composeDisplayName, type PriceTier } from "@/lib/accessory-categories";
+import { createLookupResolver, type LookupResolver } from "@/lib/lookups";
+
+function colourFromAttributes(attrs: Record<string, unknown> | null | undefined): string | null {
+  if (!attrs) return null;
+  const c = attrs.colour;
+  return typeof c === "string" && c.trim() ? c : null;
+}
+
+async function colourIdFromAttributes(
+  attrs: Record<string, unknown> | null | undefined,
+  resolver: LookupResolver = createLookupResolver(),
+): Promise<string | null> {
+  return resolver.colourId(colourFromAttributes(attrs));
+}
 
 export const getAccessoryMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:accessories:view");
@@ -108,6 +122,7 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
     if (!displayName.trim()) throw new Error("Accessory has no identifying attributes");
   }
 
+  const colourId = await colourIdFromAttributes(attributes);
   const master = await db.accessoryMaster.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
@@ -121,6 +136,7 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
       hsnCode: input.hsnCode?.trim() || null,
       comments: input.comments?.trim() || null,
       imageUrl: input.imageUrl?.trim() || null,
+      colourId,
     } as any,
   });
 
@@ -179,11 +195,18 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
     }
   }
 
-  const created = await db.$transaction(
-    payloads.map((p) => {
+  const resolver = createLookupResolver();
+  const prepared = await Promise.all(
+    payloads.map(async (p) => {
       const attributes = normalizeAttributes(p.attributes ?? {});
       const displayName = composeDisplayName(p.category, attributes);
-      return db.accessoryMaster.create({
+      const colourId = await colourIdFromAttributes(attributes, resolver);
+      return { p, displayName, attributes, colourId };
+    }),
+  );
+  const created = await db.$transaction(
+    prepared.map(({ p, displayName, attributes, colourId }) =>
+      db.accessoryMaster.create({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         data: {
           displayName,
@@ -195,9 +218,10 @@ export async function createAccessoryMasters(input: CreateAccessoryMastersInput)
           defaultCostPerUnit: p.defaultCostPerUnit ?? null,
           hsnCode: p.hsnCode?.trim() || null,
           comments: p.comments?.trim() || null,
+          colourId,
         } as any,
-      });
-    })
+      }),
+    ),
   );
 
   for (const m of created) {
@@ -232,7 +256,6 @@ export async function bulkCreateAccessoryMasters(
           category: shared.category.trim(),
           attributes: attributes as any,
           priceTiers: (shared.priceTiers ?? []) as any,
-          vendorPageRef: shared.vendorPageRef?.trim() || null,
           unit: shared.unit,
           vendorId: shared.vendorId || null,
           defaultCostPerUnit: shared.defaultCostPerUnit ?? null,
@@ -283,11 +306,15 @@ export async function updateAccessoryMaster(id: string, data: any) {
     attrsToWrite = updateData.attributes !== undefined ? nextAttributes : undefined;
   }
 
+  const colourIdPatch = attrsToWrite !== undefined
+    ? { colourId: await colourIdFromAttributes(attrsToWrite) }
+    : {};
   const master = await db.accessoryMaster.update({
     where: { id },
     data: {
       ...updateData,
       ...(attrsToWrite !== undefined ? { attributes: attrsToWrite } : {}),
+      ...colourIdPatch,
       displayName: nextDisplayName,
     },
   });
