@@ -58,8 +58,10 @@ export function ColourList({ colours }: { colours: Colour[] }) {
       setEditingId(null);
       toast.success("Colour updated");
       router.refresh();
-    } catch {
-      toast.error("Failed to update colour. Name may already exist.");
+    } catch (err) {
+      console.error("updateColour failed", err);
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      toast.error(`Failed to update colour: ${msg}`);
     }
   }
 

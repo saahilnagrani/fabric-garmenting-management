@@ -25,12 +25,32 @@ export async function createGarmentingLocation(name: string) {
 
 export async function updateGarmentingLocation(id: string, name: string) {
   const session = await requirePermission("inventory:lists:edit");
-  const location = await db.garmentingLocation.update({
-    where: { id },
-    data: { name: name.trim() },
-  });
+  const newName = name.trim();
+
+  const existing = await db.garmentingLocation.findUnique({ where: { id } });
+  if (!existing) throw new Error("Garmenting location not found");
+  const oldName = existing.name;
+  const renamed = oldName !== newName;
+
+  const location = await db.$transaction(async (tx) => {
+    const updated = await tx.garmentingLocation.update({
+      where: { id },
+      data: { name: newName },
+    });
+    if (renamed) {
+      await tx.product.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.fabricOrder.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.accessoryDispatch.updateMany({ where: { destinationGarmenter: oldName }, data: { destinationGarmenter: newName } });
+      await tx.fabricBalance.updateMany({ where: { garmentingLocation: oldName }, data: { garmentingLocation: newName } });
+    }
+    return updated;
+  }, { timeout: 30_000, maxWait: 10_000 });
+
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "GarmentingLocation", id);
   revalidatePath("/lists/garmenting-locations");
+  if (renamed) {
+    revalidatePath("/", "layout");
+  }
   return location;
 }
 

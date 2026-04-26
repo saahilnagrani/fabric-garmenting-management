@@ -24,14 +24,29 @@ export async function createProductType(name: string, code?: string) {
 
 export async function updateProductType(id: string, name: string, code?: string) {
   const session = await requirePermission("inventory:lists:edit");
-  const data: { name: string; code?: string } = { name: name.trim() };
+  const newName = name.trim();
+  const data: { name: string; code?: string } = { name: newName };
   if (code !== undefined) data.code = code.trim().toUpperCase();
-  const productType = await db.productType.update({
-    where: { id },
-    data,
-  });
+
+  const existing = await db.productType.findUnique({ where: { id } });
+  if (!existing) throw new Error("Product type not found");
+  const oldName = existing.name;
+  const renamed = oldName !== newName;
+
+  const productType = await db.$transaction(async (tx) => {
+    const updated = await tx.productType.update({ where: { id }, data });
+    if (renamed) {
+      await tx.product.updateMany({ where: { type: oldName }, data: { type: newName } });
+      await tx.productMaster.updateMany({ where: { type: oldName }, data: { type: newName } });
+    }
+    return updated;
+  }, { timeout: 30_000, maxWait: 10_000 });
+
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "ProductType", id);
   revalidatePath("/lists/types");
+  if (renamed) {
+    revalidatePath("/", "layout");
+  }
   return productType;
 }
 
