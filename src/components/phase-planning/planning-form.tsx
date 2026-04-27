@@ -735,6 +735,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
+            skuColourLabel: colourLabel,
           });
         }
         if (article.fabric2Name && article.fabric2VendorId && cq.colour2) {
@@ -750,6 +751,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
+            skuColourLabel: colourLabel,
           });
         }
         if (article.fabric3Name && article.fabric3VendorId && cq.colour3) {
@@ -765,6 +767,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
+            skuColourLabel: colourLabel,
           });
         }
         if (article.fabric4Name && article.fabric4VendorId && cq.colour4) {
@@ -780,6 +783,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
+            skuColourLabel: colourLabel,
           });
         }
       }
@@ -888,6 +892,7 @@ export function PlanningForm({
           gender,
           orderStatus: "DRAFT_ORDER",
           garmentingAt: null,
+          skuColourLabel: colourLabel,
         });
       };
       emit(fabricName, fabricInfo?.vendorId, toNum(master.fabricCostPerKg) ?? fabricInfo?.mrp ?? null, toNum(master.garmentsPerKg), row.colour);

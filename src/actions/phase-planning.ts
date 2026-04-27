@@ -43,6 +43,11 @@ export type PlannedFabricOrder = {
   fabricVendorId: string;
   articleNumbers: string;
   colour: string;
+  // The full slash-joined colour label of the SKU this fabric order belongs to
+  // (e.g. "Black/Lime/Rani Pink"). Used at link time to find the matching
+  // Product when one SKU spans multiple fabric slots; the per-slot `colour`
+  // field above only carries the slot's own colour.
+  skuColourLabel: string;
   fabricOrderedQuantityKg: number;
   costPerUnit: number | null;
   isRepeat: boolean;
@@ -145,9 +150,12 @@ export async function createPlanOrders(
       });
 
       // Link to Product(s). articleNumbers may contain multiple (comma-separated).
+      // We look up by the SKU's full colour label (e.g. "Black/Lime") rather
+      // than the per-slot colour, since productMap is keyed by sku.colourOrdered
+      // (the joined label) and multi-fabric SKUs would otherwise miss.
       const articles = fabric.articleNumbers.split(",").map((a) => a.trim()).filter(Boolean);
       for (const article of articles) {
-        const product = productMap.get(key(article, fabric.colour));
+        const product = productMap.get(key(article, fabric.skuColourLabel));
         if (!product) continue;
         const slot = product.fabricName === fabric.fabricName ? 1 : product.fabric2Name === fabric.fabricName ? 2 : null;
         if (slot === null) continue;
