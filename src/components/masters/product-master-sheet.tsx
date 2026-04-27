@@ -1579,7 +1579,7 @@ export function ProductMasterSheet({
                     <Input className="h-8 text-xs" value={form.productName} onChange={(e) => updateField("productName", e.target.value)} />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-0.5">
                     <Label className="text-[11px]">Type *</Label>
                     <Combobox
@@ -1601,6 +1601,15 @@ export function ProductMasterSheet({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-0.5">
+                    <Label className="text-[11px]">Garmenting At</Label>
+                    <Combobox
+                      value={form.garmentingAt}
+                      onValueChange={(v) => updateField("garmentingAt", v)}
+                      options={garmentingLocations}
+                      placeholder="Select location..."
+                    />
                   </div>
                 </div>
               </CollapsibleSection>
