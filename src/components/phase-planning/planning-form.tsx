@@ -1456,19 +1456,27 @@ export function PlanningForm({
 
         return (
           <div key={sKey} className="border rounded-lg p-4 space-y-3">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="flex items-center gap-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3 flex-wrap">
                   <h3 className="font-semibold">{section.fabricName}</h3>
                   <span className="text-xs rounded bg-muted px-1.5 py-0.5 font-medium">{section.sectionColour}</span>
                   <span className="text-xs text-muted-foreground">({section.vendorName || "No vendor"})</span>
+                  <span className="text-2xl font-bold tabular-nums">
+                    {totalKg} kg
+                    {derivedKg > 0 && (
+                      <span className="text-xs font-normal text-muted-foreground ml-1">
+                        ({ownedKg} allocated + {derivedKg} derived)
+                      </span>
+                    )}
+                  </span>
                 </div>
                 <div className="text-sm text-muted-foreground">
                   {section.rows.length} article{section.rows.length === 1 ? "" : "s"}
                   {section.costPerKg ? ` · Rs ${section.costPerKg}/kg` : ""}
                 </div>
               </div>
-              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeFabricSection(sIdx)}>
+              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFabricSection(sIdx)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -1481,12 +1489,7 @@ export function PlanningForm({
                     <span>Article · Product</span>
                     <span>Colour</span>
                     <span className="text-right">Slot</span>
-                    <span className="text-right">
-                      Allocated
-                      <span className="block text-foreground font-semibold">
-                        {totalKg} kg{derivedKg > 0 ? ` (${ownedKg}+${derivedKg})` : ""}
-                      </span>
-                    </span>
+                    <span className="text-right">Allocated</span>
                     <span className="text-right">Qty</span>
                     {sizes.map((s) => <span key={s} className="text-center">{s}</span>)}
                     <span className="text-right">F1 (kg)</span>
