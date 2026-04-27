@@ -1454,26 +1454,25 @@ export function PlanningForm({
         const derivedKg = Math.round(rowCalcs.filter((c) => c.isLockedByOther).reduce((s, c) => s + (c.derivedKg ?? 0), 0) * 100) / 100;
         const totalKg = Math.round((ownedKg + derivedKg) * 100) / 100;
 
+        const colTemplate = "grid-cols-[150px_minmax(120px,1fr)_68px_80px_48px_repeat(6,40px)_repeat(4,48px)]";
         return (
           <div key={sKey} className="border rounded-lg p-4 space-y-3">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <h3 className="font-semibold">{section.fabricName}</h3>
-                  <span className="text-xs rounded bg-muted px-1.5 py-0.5 font-medium">{section.sectionColour}</span>
-                  <span className="text-xs text-muted-foreground">({section.vendorName || "No vendor"})</span>
-                  <span className="text-2xl font-bold tabular-nums">
+              <div className="overflow-x-auto flex-1">
+                <div className={`grid ${colTemplate} gap-1.5 items-center min-w-max`}>
+                  <div className="col-span-3 flex items-center gap-2 flex-wrap min-w-0">
+                    <h3 className="font-semibold">{section.fabricName}</h3>
+                    <span className="text-xs rounded bg-muted px-1.5 py-0.5 font-medium">{section.sectionColour}</span>
+                    <span className="text-xs text-muted-foreground">({section.vendorName || "No vendor"})</span>
+                  </div>
+                  <div className="text-base font-semibold tabular-nums text-right">
                     {totalKg} kg
-                    {derivedKg > 0 && (
-                      <span className="text-xs font-normal text-muted-foreground ml-1">
-                        ({ownedKg} allocated + {derivedKg} derived)
-                      </span>
-                    )}
-                  </span>
+                  </div>
                 </div>
-                <div className="text-sm text-muted-foreground">
+                <div className="text-sm text-muted-foreground mt-1">
                   {section.rows.length} article{section.rows.length === 1 ? "" : "s"}
                   {section.costPerKg ? ` · Rs ${section.costPerKg}/kg` : ""}
+                  {derivedKg > 0 ? ` · ${ownedKg} allocated + ${derivedKg} derived` : ""}
                 </div>
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => removeFabricSection(sIdx)}>
@@ -1482,7 +1481,6 @@ export function PlanningForm({
             </div>
 
             {(() => {
-              const colTemplate = "grid-cols-[150px_minmax(120px,1fr)_68px_80px_48px_repeat(6,40px)_repeat(4,48px)]";
               return (
                 <div className="grid gap-1.5 overflow-x-auto">
                   <div className={`grid ${colTemplate} gap-1.5 text-[10px] font-medium text-muted-foreground px-1 min-w-max`}>
