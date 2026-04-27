@@ -406,19 +406,18 @@ export function ProductGrid({
           />
           <DropdownMenuContent align="end" className="min-w-[200px]">
             {(() => {
-              const api = gridApiRef.current;
-              if (!api) {
-                return <DropdownMenuItem disabled>Grid not ready</DropdownMenuItem>;
-              }
+              // Bucket the (filtered) article orders by garmenter directly from the
+              // row data feeding the grid — rowData/enrichedData already reflects the
+              // user's current filters via the URL searchParams that drive the fetch.
               const idsByGarmenter = new Map<string, string[]>();
-              api.forEachNodeAfterFilter((node) => {
-                const id = node.data?.id ? String(node.data.id) : "";
-                const g = node.data?.garmentingAt ? String(node.data.garmentingAt) : "";
-                if (!id) return;
+              for (const r of enrichedData) {
+                const id = r.id ? String(r.id) : "";
+                const g = r.garmentingAt ? String(r.garmentingAt) : "";
+                if (!id) continue;
                 const key = g || "(Unassigned)";
                 if (!idsByGarmenter.has(key)) idsByGarmenter.set(key, []);
                 idsByGarmenter.get(key)!.push(id);
-              });
+              }
               const entries = Array.from(idsByGarmenter.entries()).sort(([a], [b]) => a.localeCompare(b));
               if (entries.length === 0) {
                 return <DropdownMenuItem disabled>No article orders</DropdownMenuItem>;
