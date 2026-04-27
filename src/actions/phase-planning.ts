@@ -119,6 +119,18 @@ export async function createPlanOrders(
           status: "PLANNED",
         },
       });
+
+      // Per-slot ProductColour rows from the slash-separated colourOrdered string.
+      const parts = (ao.colourOrdered ?? "").split("/").map((s) => s.trim()).filter(Boolean);
+      const colourLinks: Array<{ productId: string; colourId: string; slot: number }> = [];
+      for (let i = 0; i < parts.length; i++) {
+        const cid = await resolver.colourId(parts[i]);
+        if (cid) colourLinks.push({ productId: product.id, colourId: cid, slot: i + 1 });
+      }
+      if (colourLinks.length > 0) {
+        await tx.productColour.createMany({ data: colourLinks, skipDuplicates: true });
+      }
+
       createdArticleOrders.push({
         id: product.id,
         fabricName: ao.fabricName,

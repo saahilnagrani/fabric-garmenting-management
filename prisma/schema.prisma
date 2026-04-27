@@ -119,8 +119,12 @@ model Product {
 
   // Bundle1 Phase A: nullable FKs introduced alongside string columns.
   // Both are written by app code during dual-write phase. Strings drop in Phase C.
+  // Note: colourOrderedId only resolves for single-colour products. Multi-colour
+  // SKUs (slash-separated combos) are represented in the ProductColour join table.
   colourOrderedId  String?
   colourOrderedRef Colour? @relation("ProductColourOrdered", fields: [colourOrderedId], references: [id])
+
+  colourLinks ProductColour[]
 
   // Classification
   type        String
@@ -512,11 +516,24 @@ model Colour {
 
   fabricMasterAvailable  FabricMasterColour[]
   productMasterAvailable ProductMasterColour[]
+  productLinks           ProductColour[]
   fabricOrderColour      FabricOrder[]        @relation("FabricOrderColour")
   fabricOrderAvailable   FabricOrder[]        @relation("FabricOrderAvailableColour")
   fabricBalances         FabricBalance[]      @relation("FabricBalanceColour")
   products               Product[]            @relation("ProductColourOrdered")
   accessoryMasters       AccessoryMaster[]    @relation("AccessoryMasterColour")
+}
+
+model ProductColour {
+  productId String
+  colourId  String
+  slot      Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  colour    Colour  @relation(fields: [colourId], references: [id])
+
+  @@id([productId, colourId, slot])
+  @@index([productId])
+  @@index([colourId])
 }
 
 model FabricMasterColour {

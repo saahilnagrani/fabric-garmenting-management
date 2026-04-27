@@ -8,6 +8,9 @@
  * Run: npx tsx scripts/verify-lookup-backfill.ts
  */
 
+import { config } from "dotenv";
+config({ path: ".env.local" });
+config({ path: ".env" });
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
@@ -23,7 +26,8 @@ type ScalarCheck = {
 
 const scalarChecks: ScalarCheck[] = [
   { table: "Product",          stringCol: "type",                 fkCol: "typeRefId",               master: "ProductType" },
-  { table: "Product",          stringCol: "colourOrdered",        fkCol: "colourOrderedId",         master: "Colour" },
+  // Product.colourOrderedId only resolves for single-colour products (no "/" in name).
+  // Multi-colour combos are handled by the ProductColour join-table check below.
   { table: "Product",          stringCol: "garmentingAt",         fkCol: "garmentingAtId",          master: "GarmentingLocation" },
   { table: "ProductMaster",    stringCol: "type",                 fkCol: "typeRefId",               master: "ProductType" },
   { table: "FabricOrder",      stringCol: "colour",               fkCol: "colourId",                master: "Colour" },
@@ -64,6 +68,54 @@ async function checkScalar(c: ScalarCheck) {
     unmapped: unmapped[0].n,
     mismatched: mismatched[0].n,
   };
+}
+
+async function checkProductColourScalarSingle() {
+  // Single-colour products only: colourOrdered with no "/". For these, colourOrderedId
+  // must resolve. Multi-colour products are checked via the ProductColour join below.
+  const unmapped = await db.$queryRawUnsafe<Array<{ n: number }>>(`
+    SELECT COUNT(*)::int AS n FROM "Product"
+    WHERE "colourOrdered" IS NOT NULL AND TRIM("colourOrdered") <> ''
+      AND POSITION('/' IN "colourOrdered") = 0
+      AND "colourOrderedId" IS NULL`);
+  const mismatched = await db.$queryRawUnsafe<Array<{ n: number }>>(`
+    SELECT COUNT(*)::int AS n FROM "Product" p
+    JOIN "Colour" c ON c.id = p."colourOrderedId"
+    WHERE POSITION('/' IN p."colourOrdered") = 0
+      AND TRIM(p."colourOrdered") <> c.name`);
+  const populated = await db.$queryRawUnsafe<Array<{ n: number }>>(`
+    SELECT COUNT(*)::int AS n FROM "Product" WHERE "colourOrderedId" IS NOT NULL`);
+  return {
+    label: "Product.colourOrderedId (single-colour only)",
+    populated: populated[0].n,
+    unmapped: unmapped[0].n,
+    mismatched: mismatched[0].n,
+  };
+}
+
+async function checkProductColours() {
+  // For each Product with colourOrdered set, the ordered list of slash-parts must match
+  // the per-slot ProductColour rows. Implemented as a set-diff over (productId, slot, name).
+  const result = await db.$queryRawUnsafe<Array<{ mismatch: number }>>(`
+    WITH parts AS (
+      SELECT p.id AS pid, ord AS slot, TRIM(part) AS name
+      FROM "Product" p,
+           LATERAL unnest(string_to_array(p."colourOrdered", '/')) WITH ORDINALITY arr(part, ord)
+      WHERE p."colourOrdered" IS NOT NULL AND TRIM(p."colourOrdered") <> '' AND TRIM(part) <> ''
+    ),
+    join_pairs AS (
+      SELECT pc."productId" AS pid, pc.slot, c.name
+      FROM "ProductColour" pc
+      JOIN "Colour" c ON c.id = pc."colourId"
+    ),
+    diff AS (
+      SELECT * FROM parts EXCEPT SELECT * FROM join_pairs
+      UNION ALL
+      SELECT * FROM join_pairs EXCEPT SELECT * FROM parts
+    )
+    SELECT COUNT(*)::int AS mismatch FROM diff`);
+  const total = await db.productColour.count();
+  return { label: "Product.colourOrdered ↔ ProductColour", populated: total, unmapped: 0, mismatched: result[0].mismatch };
 }
 
 async function checkFabricMasterColours() {
@@ -127,9 +179,11 @@ function fmt(n: number) {
 
 async function main() {
   const scalar = await Promise.all(scalarChecks.map(checkScalar));
+  const pcSingle = await checkProductColourScalarSingle();
+  const pcJoin = await checkProductColours();
   const fmC = await checkFabricMasterColours();
   const pmC = await checkProductMasterColours();
-  const all = [...scalar, fmC, pmC];
+  const all = [...scalar, pcSingle, pcJoin, fmC, pmC];
 
   let totalIssues = 0;
   console.log("");

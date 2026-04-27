@@ -21,6 +21,9 @@ import { createLookupResolver } from "@/lib/lookups";
 async function attachProductLookupIds<T extends Record<string, unknown>>(data: T): Promise<T> {
   const resolver = createLookupResolver();
   if ("colourOrdered" in data) {
+    // Single FK only resolves when colourOrdered is a single-colour name in the master.
+    // Multi-colour combos like "A/B/C" don't match any single Colour row; the per-slot
+    // representation lives in ProductColour, synced by syncProductColourLinks below.
     (data as Record<string, unknown>).colourOrderedId = await resolver.colourId(
       data.colourOrdered as string | null | undefined,
     );
@@ -36,6 +39,29 @@ async function attachProductLookupIds<T extends Record<string, unknown>>(data: T
     );
   }
   return data;
+}
+
+/**
+ * Sync ProductColour rows for a product from `data.colourOrdered`. Splits on "/"
+ * and inserts one row per slot (1-based). Names that don't match a Colour master
+ * are skipped. Existing rows are deleted first so edits stay consistent.
+ */
+async function syncProductColourLinks(productId: string, data: Record<string, unknown>) {
+  if (!("colourOrdered" in data)) return;
+  const raw = data.colourOrdered as string | null | undefined;
+  await db.productColour.deleteMany({ where: { productId } });
+  if (!raw || !raw.trim()) return;
+  const parts = raw.split("/").map((s) => s.trim()).filter(Boolean);
+  if (parts.length === 0) return;
+  const resolver = createLookupResolver();
+  const rows: Array<{ productId: string; colourId: string; slot: number }> = [];
+  for (let i = 0; i < parts.length; i++) {
+    const colourId = await resolver.colourId(parts[i]);
+    if (colourId) rows.push({ productId, colourId, slot: i + 1 });
+  }
+  if (rows.length > 0) {
+    await db.productColour.createMany({ data: rows, skipDuplicates: true });
+  }
 }
 
 /**
@@ -171,6 +197,7 @@ export async function createProduct(data: any) {
   const session = await requirePermission("inventory:products:create");
   await attachProductLookupIds(data);
   const product = await db.product.create({ data });
+  await syncProductColourLinks(product.id, data);
   logAction(session.user!.id!, session.user!.name!, "CREATE", "Product", product.id);
   await syncProductFabricOrderLinks(product.id);
   const linkedCount = await db.productFabricOrder.count({ where: { productId: product.id } });
@@ -245,6 +272,7 @@ export async function updateProduct(id: string, data: any) {
 
   await attachProductLookupIds(data);
   const product = await db.product.update({ where: { id }, data });
+  await syncProductColourLinks(id, data);
   const changes = previousProduct ? computeDiff(previousProduct as unknown as Record<string, unknown>, product as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "Product", id, changes);
 
