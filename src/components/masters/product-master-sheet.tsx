@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +42,37 @@ import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 // Gender prefix for SKU code: MENS→M, WOMENS→W, KIDS→K
 const GENDER_PREFIX: Record<string, string> = { MENS: "M", WOMENS: "W", KIDS: "K" };
+
+/**
+ * Renders the sheet title at 20px and shrinks font-size step-by-step (down to
+ * 12px) until it fits on a single line.
+ */
+function AutoFitTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLHeadingElement | null>(null);
+  const [fontPx, setFontPx] = useState(20);
+
+  useLayoutEffect(() => {
+    setFontPx(20);
+  }, [text]);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth && fontPx > 12) {
+      setFontPx((f) => Math.max(12, f - 1));
+    }
+  }, [fontPx, text]);
+
+  return (
+    <SheetTitle
+      ref={ref}
+      className="font-semibold whitespace-nowrap overflow-hidden"
+      style={{ fontSize: `${fontPx}px`, lineHeight: 1.2 }}
+    >
+      {text}
+    </SheetTitle>
+  );
+}
 
 export type ProductMasterRow = {
   id: string;
@@ -971,11 +1002,11 @@ export function ProductMasterSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-amber-400">
         <SheetHeader className="pr-12">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <SheetTitle className="text-xl font-semibold">
-                  {(() => {
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <AutoFitTitle
+                  text={(() => {
                     if (!isEdit && step === 1) return "New Article";
                     const parts = [
                       form.articleNumber,
@@ -986,7 +1017,7 @@ export function ProductMasterSheet({
                     if (parts.length > 0) return parts.join(" - ");
                     return isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article";
                   })()}
-                </SheetTitle>
+                />
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
                 {cleanedAt && (
                   <span
