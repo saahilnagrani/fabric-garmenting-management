@@ -1259,7 +1259,7 @@ export function PlanningForm({
           </div>
         )}
 
-        <div className="sticky top-0 z-20 bg-background pt-2 pb-3 -mx-1 px-1 border-b">
+        <div className="sticky top-14 z-20 bg-background pt-2 pb-3 -mx-6 px-6 border-b">
           <div className="flex items-end gap-3">
             <div className="w-80">
               <label className="text-sm font-medium mb-1 block">Add Article</label>
