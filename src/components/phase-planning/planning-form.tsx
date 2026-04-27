@@ -133,6 +133,14 @@ export function PlanningForm({
   const [pickFabricKey, setPickFabricKey] = useState("");
   const [pickColour, setPickColour] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [scrollTargetKey, setScrollTargetKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!scrollTargetKey) return;
+    const el = document.querySelector<HTMLElement>(`[data-scroll-key="${CSS.escape(scrollTargetKey)}"]`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setScrollTargetKey(null);
+  }, [scrollTargetKey]);
 
   const [fabricSummaryOpen, setFabricSummaryOpen] = useState(false);
   const [draftHydrated, setDraftHydrated] = useState(false);
@@ -503,7 +511,11 @@ export function PlanningForm({
       onlineMrp: toNum(first.onlineMrp),
     };
 
-    setSelectedArticles((prev) => [...prev, article]);
+    setSelectedArticles((prev) => {
+      const next = [...prev, article];
+      setScrollTargetKey(`article-${article.articleNumber}-${next.length - 1}`);
+      return next;
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [articleGroups, fabricVendorMap, previousArticleSet, phaseNumber]);
 
@@ -598,6 +610,7 @@ export function PlanningForm({
       rows,
     };
     setFabricSections((prev) => [...prev, section]);
+    setScrollTargetKey(newSecKey);
     setPickFabricKey("");
     setPickColour("");
   }, [pickFabricKey, pickColour, usedFabrics, fabricSections, productMasters, fabricVendorMap]);
@@ -1246,15 +1259,17 @@ export function PlanningForm({
           </div>
         )}
 
-        <div className="flex items-end gap-3">
-          <div className="w-80">
-            <label className="text-sm font-medium mb-1 block">Add Article</label>
-            <Combobox
-              value=""
-              onValueChange={handleAddArticle}
-              options={articleOptions}
-              placeholder="Search by article # or product name..."
-            />
+        <div className="sticky top-0 z-20 bg-background pt-2 pb-3 -mx-1 px-1 border-b">
+          <div className="flex items-end gap-3">
+            <div className="w-80">
+              <label className="text-sm font-medium mb-1 block">Add Article</label>
+              <Combobox
+                value=""
+                onValueChange={handleAddArticle}
+                options={articleOptions}
+                placeholder="Search by article # or product name..."
+              />
+            </div>
           </div>
         </div>
 
@@ -1265,7 +1280,7 @@ export function PlanningForm({
         )}
 
         {selectedArticles.map((article, articleIdx) => (
-          <div key={`${article.articleNumber}-${articleIdx}`} className="border rounded-lg p-4 space-y-3">
+          <div key={`${article.articleNumber}-${articleIdx}`} data-scroll-key={`article-${article.articleNumber}-${articleIdx}`} className="border rounded-lg p-4 space-y-3">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
@@ -1395,28 +1410,30 @@ export function PlanningForm({
         </button>
       </div>
 
-      <div className="flex items-end gap-3">
-        <div className="w-64">
-          <label className="text-sm font-medium mb-1 block">Fabric</label>
-          <Combobox
-            value={pickFabricKey}
-            onValueChange={(v) => { setPickFabricKey(v); setPickColour(""); }}
-            options={fabricOptions}
-            placeholder="Search fabrics..."
-          />
+      <div className="sticky top-0 z-20 bg-background pt-2 pb-3 -mx-1 px-1 border-b">
+        <div className="flex items-end gap-3">
+          <div className="w-64">
+            <label className="text-sm font-medium mb-1 block">Fabric</label>
+            <Combobox
+              value={pickFabricKey}
+              onValueChange={(v) => { setPickFabricKey(v); setPickColour(""); }}
+              options={fabricOptions}
+              placeholder="Search fabrics..."
+            />
+          </div>
+          <div className="w-48">
+            <label className="text-sm font-medium mb-1 block">Colour</label>
+            <Combobox
+              value={pickColour}
+              onValueChange={setPickColour}
+              options={colourOptionsForPickedFabric}
+              placeholder={pickFabricKey ? "Pick colour..." : "Pick fabric first"}
+            />
+          </div>
+          <Button onClick={handleAddFabric} disabled={!pickFabricKey || !pickColour}>
+            Add Section
+          </Button>
         </div>
-        <div className="w-48">
-          <label className="text-sm font-medium mb-1 block">Colour</label>
-          <Combobox
-            value={pickColour}
-            onValueChange={setPickColour}
-            options={colourOptionsForPickedFabric}
-            placeholder={pickFabricKey ? "Pick colour..." : "Pick fabric first"}
-          />
-        </div>
-        <Button onClick={handleAddFabric} disabled={!pickFabricKey || !pickColour}>
-          Add Section
-        </Button>
       </div>
 
       {fabricSections.length === 0 && (
@@ -1456,7 +1473,7 @@ export function PlanningForm({
 
         const colTemplate = "grid-cols-[220px_minmax(120px,1fr)_68px_80px_48px_repeat(6,40px)_repeat(4,48px)]";
         return (
-          <div key={sKey} className="border rounded-lg p-4 space-y-3 relative">
+          <div key={sKey} data-scroll-key={sKey} className="border rounded-lg p-4 space-y-3 relative">
             <Button variant="ghost" size="icon" className="h-7 w-7 absolute top-2 right-2 z-10" onClick={() => removeFabricSection(sIdx)}>
               <X className="h-4 w-4" />
             </Button>
