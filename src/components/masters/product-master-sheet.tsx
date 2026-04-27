@@ -975,7 +975,17 @@ export function ProductMasterSheet({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <SheetTitle className="text-xl font-semibold">
-                  {isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article"}
+                  {(() => {
+                    if (!isEdit && step === 1) return "New Article";
+                    const parts = [
+                      form.articleNumber,
+                      form.type,
+                      form.productName,
+                      GENDER_LABELS[form.gender] || form.gender,
+                    ].filter((p) => p && String(p).trim());
+                    if (parts.length > 0) return parts.join(" - ");
+                    return isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article";
+                  })()}
                 </SheetTitle>
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
                 {cleanedAt && (
