@@ -81,6 +81,7 @@ export function ProductMasterGrid({
         valueFormatter: (p) => genderLabels[p.value] || p.value || "",
       },
       { field: "productName", headerName: "Product Name", minWidth: 100, editable: false },
+      { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false, valueFormatter: (p) => p.value || "—" },
       {
         field: "colours",
         headerName: "Colours",
