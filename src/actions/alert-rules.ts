@@ -77,6 +77,8 @@ export async function updateAlertRule(
         : def.defaultCriticalThresholdDays,
   };
 
+  const previous = await db.alertRule.findUnique({ where: { id } });
+
   const row = await db.alertRule.upsert({
     where: { id },
     create: { id, ...upsertData },
@@ -96,9 +98,15 @@ export async function updateAlertRule(
     "AlertRule",
     id,
     {
-      enabled: { new: row.enabled },
-      thresholdDays: { new: row.thresholdDays },
-      criticalThresholdDays: { new: row.criticalThresholdDays },
+      enabled: { old: previous?.enabled ?? def.defaultEnabled, new: row.enabled },
+      thresholdDays: {
+        old: previous?.thresholdDays ?? def.defaultThresholdDays,
+        new: row.thresholdDays,
+      },
+      criticalThresholdDays: {
+        old: previous?.criticalThresholdDays ?? def.defaultCriticalThresholdDays,
+        new: row.criticalThresholdDays,
+      },
     }
   );
 

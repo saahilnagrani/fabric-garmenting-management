@@ -37,7 +37,8 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { toast } from "sonner";
-import { Loader2, ChevronDown, ChevronRight, ChevronsUpDown, Archive, Plus, Trash2, ArrowLeft, ArrowRight, Lock, Unlock } from "lucide-react";
+import { Loader2, ChevronsUpDown, Archive, Plus, Trash2, ArrowLeft, ArrowRight, Lock, Unlock } from "lucide-react";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 // Gender prefix for SKU code: MENS→M, WOMENS→W, KIDS→K
 const GENDER_PREFIX: Record<string, string> = { MENS: "M", WOMENS: "W", KIDS: "K" };
@@ -186,38 +187,6 @@ type SkuEntry = { colour: string; colour2?: string; colour3?: string; colour4?: 
 
 const SECTIONS = ["productInfo", "fabric", "colours", "garmentingCosts", "pricing", "accessories", "phaseCosts"] as const;
 type SectionName = (typeof SECTIONS)[number];
-
-function CollapsibleSection({
-  title,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-          {title}
-        </span>
-      </button>
-      {expanded && <div className="px-2 py-1.5 space-y-1.5">{children}</div>}
-    </div>
-  );
-}
 
 type FabricData = { name: string; mrp: number | null };
 type Phase = { id: string; name: string; number: number };
@@ -997,8 +966,10 @@ export function ProductMasterSheet({
         <SheetHeader className="pr-12">
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <SheetTitle className="text-sm">{isEdit ? "Edit Article" : "New Article"}</SheetTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SheetTitle className="text-xl font-semibold">
+                  {isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article"}
+                </SheetTitle>
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
                 {cleanedAt && (
                   <span
@@ -1010,10 +981,8 @@ export function ProductMasterSheet({
                   </span>
                 )}
               </div>
-              <SheetDescription className="text-[11px]">
-                {isEdit
-                  ? `${editingRow.articleNumber || editingRow.styleNumber} — ${editingRow.skus.length} colour(s)`
-                  : "Create an article and generate variants per colour"}
+              <SheetDescription className="sr-only">
+                {isEdit ? "Edit article master" : "Create article master"}
               </SheetDescription>
             </div>
             {isEdit && (
@@ -1038,7 +1007,7 @@ export function ProductMasterSheet({
           </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-2 px-4 overflow-y-auto">
+        <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* ─── CREATE MODE: WIZARD ─── */}
           {!isEdit && step === 1 && (
             <>
@@ -1535,8 +1504,8 @@ export function ProductMasterSheet({
               </CollapsibleSection>
 
               {/* Summary */}
-              <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
+              <div className="rounded-lg border border-border border-l-4 border-l-primary px-2 py-1.5 space-y-1.5">
+                <h4 className="text-[11px] font-semibold uppercase text-primary tracking-wider">Summary</h4>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
                     <span className="text-muted-foreground text-[10px]">Total Garmenting</span>
@@ -2192,8 +2161,8 @@ export function ProductMasterSheet({
               )}
 
               {/* Summary */}
-              <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
+              <div className="rounded-lg border border-border border-l-4 border-l-primary px-2 py-1.5 space-y-1.5">
+                <h4 className="text-[11px] font-semibold uppercase text-primary tracking-wider">Summary</h4>
                 <div className="grid grid-cols-3 gap-2 text-xs">
                   <div>
                     <span className="text-muted-foreground text-[10px]">Total Garmenting</span>
@@ -2226,7 +2195,7 @@ export function ProductMasterSheet({
         </div>
 
         <SheetFooter>
-          <div className="flex gap-2 w-full">
+          <div className="flex flex-wrap gap-2 w-full">
             {/* Wizard navigation for create mode */}
             {!isEdit && step > 1 && (
               <Button variant="outline" size="lg" onClick={() => setStep(step - 1)}>

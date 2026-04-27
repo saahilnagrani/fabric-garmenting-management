@@ -15,7 +15,8 @@ import { createFabricMaster, updateFabricMaster, deleteFabricMaster, getStyleNum
 import { getPhaseCosts, upsertPhaseCost } from "@/actions/phase-costs";
 import { GENDER_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
-import { Loader2, ChevronDown, ChevronRight, ChevronsUpDown, Archive, Trash2, Lock, Unlock } from "lucide-react";
+import { Loader2, ChevronsUpDown, Archive, Trash2, Lock, Unlock, Ban } from "lucide-react";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 export type FabricMasterRow = {
   id: string;
@@ -85,38 +86,6 @@ function parseCommaSeparated(val: string): string[] {
 
 const SECTIONS = ["fabricInfo", "details", "phaseCosts"] as const;
 type SectionName = (typeof SECTIONS)[number];
-
-function CollapsibleSection({
-  title,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-          {title}
-        </span>
-      </button>
-      {expanded && <div className="px-2 py-1.5 space-y-1.5">{children}</div>}
-    </div>
-  );
-}
 
 export function FabricMasterSheet({
   open,
@@ -332,8 +301,10 @@ export function FabricMasterSheet({
         <SheetHeader className="pr-12">
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <SheetTitle className="text-sm">{isEdit ? "Edit Fabric Master" : "New Fabric Master"}</SheetTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SheetTitle className="text-xl font-semibold">
+                  {isEdit ? (form.fabricName.trim() || "Fabric") : "New Fabric Master"}
+                </SheetTitle>
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
                 {cleanedAt && (
                   <span
@@ -345,8 +316,8 @@ export function FabricMasterSheet({
                   </span>
                 )}
               </div>
-              <SheetDescription className="text-[11px]">
-                {isEdit ? "Update fabric details" : "Add a new fabric to the master database"}
+              <SheetDescription className="sr-only">
+                {isEdit ? "Edit fabric master" : "Create fabric master"}
               </SheetDescription>
             </div>
             <button
@@ -360,14 +331,14 @@ export function FabricMasterSheet({
           </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-3 px-4 overflow-y-auto">
+        <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* Fabric Info */}
           <CollapsibleSection
             title="Fabric Info"
             expanded={expandedSections.fabricInfo}
             onToggle={() => toggleSection("fabricInfo")}
           >
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               <div className="space-y-0.5">
                 <Label className="text-[11px]">Fabric Name *</Label>
                 <Input value={form.fabricName} onChange={(e) => updateField("fabricName", e.target.value)} autoFocus className="h-8 text-xs" />
@@ -385,8 +356,6 @@ export function FabricMasterSheet({
                 <Label className="text-[11px]">Cost/kg (Rs) *</Label>
                 <Input type="number" step="0.01" value={form.mrp} onChange={(e) => updateField("mrp", e.target.value)} className="h-8 text-xs" />
               </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
               <div className="space-y-0.5">
                 <Label className="text-[11px]">HSN Code</Label>
                 <Input value={form.hsnCode} onChange={(e) => updateField("hsnCode", e.target.value)} placeholder="e.g. 6004" className="h-8 text-xs" />
@@ -452,11 +421,23 @@ export function FabricMasterSheet({
             </div>
             {isEdit && editingRow?.deletedArticleNumbers && editingRow.deletedArticleNumbers.length > 0 && (
               <div className="space-y-0.5">
-                <Label className="text-[11px] text-muted-foreground">Deleted Article Numbers</Label>
-                <div className="flex flex-wrap gap-1 p-1.5 bg-red-50 border border-red-200 rounded min-h-[32px]">
+                <Label className="text-[11px] text-red-400 inline-flex items-center gap-1">
+                  <Ban className="h-3 w-3" />
+                  Deleted Article Numbers
+                </Label>
+                <div className="flex flex-wrap gap-1 p-1.5 bg-red-950/40 border-2 border-red-500/60 rounded min-h-[32px]">
                   {editingRow.deletedArticleNumbers.map((n, i) => (
-                    <span key={i} className="inline-flex items-center rounded bg-red-100 text-red-700 px-1.5 py-0.5 text-[11px] font-medium">
-                      {n}
+                    <span
+                      key={i}
+                      className="inline-flex items-center rounded-full border-2 border-red-500 bg-red-900/40 text-red-200 px-2 py-0.5 text-[11px] font-semibold"
+                    >
+                      <span className="relative inline-block">
+                        {n}
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute left-[-10%] top-1/2 w-[120%] h-[2px] bg-red-400 -rotate-[20deg] origin-center"
+                        />
+                      </span>
                     </span>
                   ))}
                 </div>
@@ -484,7 +465,7 @@ export function FabricMasterSheet({
         </div>
 
         <SheetFooter>
-          <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
+          <div className={`flex gap-2 ${isEdit ? "flex-wrap" : "flex-col"}`}>
             <Button size="lg" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1 min-h-9">
               {submitting ? (
                 <>
@@ -511,7 +492,7 @@ export function FabricMasterSheet({
                 ) : (
                   <>
                     <Archive className="mr-2 h-4 w-4" />
-                    {isArchived ? "Unarchive Fabric" : "Archive Fabric"}
+                    {isArchived ? "Unarchive" : "Archive"}
                   </>
                 )}
               </Button>

@@ -21,22 +21,16 @@ export default async function PhasePlanningPage() {
   ]);
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold">Phase Planning</h1>
-        <p className="text-sm text-muted-foreground">
-          Plan Article and Fabric orders for {phase.name}
-        </p>
-      </div>
-      <PlanningForm
-        phaseId={phase.id}
-        phaseNumber={phase.number}
-        productMasters={JSON.parse(JSON.stringify(productMasters))}
-        fabricMasters={JSON.parse(JSON.stringify(fabricMasters))}
-        vendors={vendors}
-        previousArticles={Array.from(previousArticles)}
-        sizeDistributions={sizeDistributions.map((d) => ({ size: d.size, percentage: d.percentage }))}
-      />
-    </div>
+    <PlanningForm
+      key={phase.id}
+      phaseId={phase.id}
+      phaseNumber={phase.number}
+      phaseName={phase.name}
+      productMasters={JSON.parse(JSON.stringify(productMasters))}
+      fabricMasters={JSON.parse(JSON.stringify(fabricMasters))}
+      vendors={vendors}
+      previousArticles={Array.from(previousArticles)}
+      sizeDistributions={sizeDistributions.map((d) => ({ size: d.size, percentage: d.percentage }))}
+    />
   );
 }

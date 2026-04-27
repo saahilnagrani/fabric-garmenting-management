@@ -17,7 +17,8 @@ import { createFabricOrder, updateFabricOrder, deleteFabricOrder, findExistingOr
 import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS, PRODUCT_STATUS_LABELS } from "@/lib/constants";
 import { showAutoAdvanceToast } from "@/lib/toast-helpers";
 import { toast } from "sonner";
-import { Loader2, Trash2, ChevronDown, ChevronRight, ChevronLeft, ChevronsUpDown } from "lucide-react";
+import { Loader2, Trash2, ChevronRight, ChevronLeft, ChevronsUpDown } from "lucide-react";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import React from "react";
 
 type Vendor = { id: string; name: string };
@@ -115,38 +116,6 @@ type LinkedProduct = {
   fabricSlot: number;
 };
 type SectionName = (typeof SECTIONS)[number];
-
-function CollapsibleSection({
-  title,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border border-border rounded overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-          {title}
-        </span>
-      </button>
-      {expanded && <div className="px-2 py-1.5 space-y-1.5">{children}</div>}
-    </div>
-  );
-}
 
 export function FabricOrderSheet({
   open,
@@ -479,14 +448,14 @@ export function FabricOrderSheet({
         <SheetHeader className="pr-12 pb-1">
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-1.5">
-                <SheetTitle className="text-sm">{isEditing ? "Edit Fabric Order" : "New Fabric Order"}</SheetTitle>
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1 py-0.5 rounded leading-none">Order</span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SheetTitle className="text-xl font-semibold">
+                  {isEditing ? (form.fabricName.trim() || "Fabric Order") : "New Fabric Order"}
+                </SheetTitle>
+                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded leading-none">Order</span>
               </div>
-              <SheetDescription className="text-[11px]">
-                {isEditing
-                  ? "Update the fabric order details below"
-                  : "Enter fabric name to auto-populate from Fabrics Master DB"}
+              <SheetDescription className="sr-only">
+                {isEditing ? "Edit fabric order" : "Create fabric order"}
               </SheetDescription>
               {hasMultipleOrders && (
                 <div className="flex items-center gap-1.5 mt-1">
@@ -525,7 +494,7 @@ export function FabricOrderSheet({
           </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-2 px-4 overflow-y-auto">
+        <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* Fabric Info */}
           <CollapsibleSection
             title="Fabric Info"
@@ -592,13 +561,13 @@ export function FabricOrderSheet({
               </div>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded bg-muted/50 border border-border px-2 py-1.5">
+              <div className="rounded bg-primary/5 border border-primary/20 px-2 py-1.5">
                 <div className="text-[9px] text-muted-foreground">Expected = Unit x Ordered</div>
                 <div className="text-xs font-semibold">
                   {computedExpectedCost > 0 ? `Rs ${computedExpectedCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}
                 </div>
               </div>
-              <div className="rounded bg-muted/50 border border-border px-2 py-1.5">
+              <div className="rounded bg-primary/5 border border-primary/20 px-2 py-1.5">
                 <div className="text-[9px] text-muted-foreground">Actual = Unit x Shipped</div>
                 <div className="text-xs font-semibold">
                   {computedActualCost > 0 ? `Rs ${computedActualCost.toLocaleString("en-IN", { minimumFractionDigits: 2 })}` : "-"}

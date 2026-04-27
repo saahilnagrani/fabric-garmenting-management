@@ -28,6 +28,7 @@ import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
+import { ExportExcelButton } from "@/components/ag-grid/export-excel-button";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -364,6 +365,7 @@ export function ProductGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Article Order
         </Button>
+        <ExportExcelButton gridApiRef={gridApiRef} fileName="article-orders" sheetName="Article Orders" />
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
           colStateKey={COL_STATE_KEY}

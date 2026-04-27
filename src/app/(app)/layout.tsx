@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { TopBar } from "@/components/layout/top-bar";
 import { Providers } from "@/components/providers";
+import { ReloadDebug } from "@/components/reload-debug";
 import { Toaster } from "sonner";
 import { getPhases } from "@/actions/phases";
 import { getDashboardAlerts, type DashboardAlert } from "@/actions/dashboard";
@@ -30,6 +31,7 @@ export default async function AppLayout({
 
   return (
     <Providers>
+      <ReloadDebug />
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset>

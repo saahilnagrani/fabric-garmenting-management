@@ -415,7 +415,7 @@ export function AccessoryMasterSheet({
         </div>
 
         <SheetFooter>
-          <div className={`flex gap-2 ${isEdit ? "" : "flex-col"}`}>
+          <div className={`flex gap-2 ${isEdit ? "flex-wrap" : "flex-col"}`}>
             <Button
               size="lg"
               onClick={isEdit ? handleUpdate : handleCreate}

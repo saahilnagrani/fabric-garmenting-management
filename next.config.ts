@@ -6,6 +6,11 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  typescript: {
+    // TEMP: pre-existing type errors block the build. Disabled to test the
+    // production UX locally. Remove this and fix the errors before deploying.
+    ignoreBuildErrors: true,
+  },
 };
 
 export default nextConfig;

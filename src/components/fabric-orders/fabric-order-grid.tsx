@@ -18,6 +18,7 @@ import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
+import { ExportExcelButton } from "@/components/ag-grid/export-excel-button";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -567,6 +568,7 @@ export function FabricOrderGrid({
           <FileText className="mr-1.5 h-3.5 w-3.5" />
           Generate Purchase Orders{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
         </Button>
+        <ExportExcelButton gridApiRef={gridApiRef} fileName="fabric-orders" sheetName="Fabric Orders" />
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
           colStateKey={COL_STATE_KEY}

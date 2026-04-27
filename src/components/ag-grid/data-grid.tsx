@@ -397,6 +397,7 @@ export function DataGrid<T extends Record<string, unknown>>({
             resizable: true,
             minWidth: 60,
             wrapHeaderText: true,
+            cellStyle: { display: "flex", alignItems: "center" },
             autoHeaderHeight: true,
             // Wrap cell text onto multiple lines when the column is narrow
             // and let the row grow vertically to accommodate. Applies to

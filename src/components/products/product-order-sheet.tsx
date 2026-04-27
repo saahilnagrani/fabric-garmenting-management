@@ -27,7 +27,8 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { toast } from "sonner";
-import { Loader2, Trash2, ChevronDown, ChevronRight, ChevronsUpDown } from "lucide-react";
+import { Loader2, Trash2, ChevronsUpDown } from "lucide-react";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 type Vendor = { id: string; name: string; type?: string };
 type ProductMasterType = Record<string, unknown>;
@@ -250,38 +251,6 @@ type LinkedFabricOrder = {
   fabricSlot: number;
 };
 type SectionName = (typeof SECTIONS)[number];
-
-function CollapsibleSection({
-  title,
-  expanded,
-  onToggle,
-  children,
-}: {
-  title: string;
-  expanded: boolean;
-  onToggle: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="border border-border rounded-lg overflow-hidden">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full flex items-center gap-1 px-2 py-1 bg-muted/50 hover:bg-muted transition-colors text-left"
-      >
-        {expanded ? (
-          <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        ) : (
-          <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-        )}
-        <span className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">
-          {title}
-        </span>
-      </button>
-      {expanded && <div className="px-2 py-1.5 space-y-1.5">{children}</div>}
-    </div>
-  );
-}
 
 type SizeDistItem = { size: string; percentage: number };
 
@@ -746,14 +715,14 @@ export function ProductOrderSheet({
         <SheetHeader className="pr-12">
           <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <SheetTitle className="text-sm">{isEditing ? "Edit Article Order" : "New Article Order"}</SheetTitle>
+              <div className="flex items-center gap-2 flex-wrap">
+                <SheetTitle className="text-xl font-semibold">
+                  {isEditing ? (form.articleNumber.trim() || "Article Order") : "New Article Order"}
+                </SheetTitle>
                 <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Order</span>
               </div>
-              <SheetDescription className="text-[11px]">
-                {isEditing
-                  ? "Update the article order details below"
-                  : "Pick an article and target quantity to auto-populate everything from Articles Master DB"}
+              <SheetDescription className="sr-only">
+                {isEditing ? "Edit article order" : "Create article order"}
               </SheetDescription>
             </div>
             <button
@@ -767,7 +736,7 @@ export function ProductOrderSheet({
           </div>
         </SheetHeader>
 
-        <div className="flex-1 space-y-3 px-4 overflow-y-auto">
+        <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* Primary field - SKU search + Target Quantity (always visible, not collapsible) */}
           <div className="grid grid-cols-[1fr_120px] gap-2">
             <div className="space-y-0.5">
@@ -1170,7 +1139,7 @@ export function ProductOrderSheet({
                 ))}
                 <div className="space-y-0.5">
                   <Label className="text-[10px] text-center block font-semibold">Total</Label>
-                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-muted/50 rounded border border-border">
+                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-primary/5 rounded border border-primary/20 text-primary">
                     {stitchedTotal}
                   </div>
                 </div>
@@ -1199,7 +1168,7 @@ export function ProductOrderSheet({
                 ))}
                 <div className="space-y-0.5">
                   <Label className="text-[10px] text-center block font-semibold">Total</Label>
-                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-muted/50 rounded border border-border">
+                  <div className="h-8 flex items-center justify-center text-sm font-semibold bg-primary/5 rounded border border-primary/20 text-primary">
                     {inwardTotal}
                   </div>
                 </div>
@@ -1262,8 +1231,8 @@ export function ProductOrderSheet({
           </CollapsibleSection>
 
           {/* Computed Summary (always visible) */}
-          <div className="rounded-lg bg-muted/50 border border-border px-2 py-1.5 space-y-1.5">
-            <h4 className="text-[10px] font-semibold uppercase text-muted-foreground tracking-wider">Summary</h4>
+          <div className="rounded-lg border border-border border-l-4 border-l-primary px-2 py-1.5 space-y-1.5">
+            <h4 className="text-[11px] font-semibold uppercase text-primary tracking-wider">Summary</h4>
             <div className="grid grid-cols-3 gap-2 text-sm">
               <div>
                 <span className="text-muted-foreground text-[10px]">Total Garmenting</span>
