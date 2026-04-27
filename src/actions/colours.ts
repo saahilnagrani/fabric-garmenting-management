@@ -51,6 +51,25 @@ export async function updateColour(id: string, name: string, code: string) {
       await tx.$executeRaw`UPDATE "ProductMaster" SET "colours2Available" = array_replace("colours2Available", ${oldName}, ${newName}) WHERE ${oldName} = ANY("colours2Available")`;
       await tx.$executeRaw`UPDATE "ProductMaster" SET "colours3Available" = array_replace("colours3Available", ${oldName}, ${newName}) WHERE ${oldName} = ANY("colours3Available")`;
       await tx.$executeRaw`UPDATE "ProductMaster" SET "colours4Available" = array_replace("colours4Available", ${oldName}, ${newName}) WHERE ${oldName} = ANY("colours4Available")`;
+
+      // Multi-colour products store slash-separated combos in colourOrdered (e.g. "Kofee/Tint Pink").
+      // The updateMany above only handles single-colour rows. Rewrite combos by splitting on "/",
+      // replacing any exact-match part, and rejoining. EXISTS guard limits the rewrite to affected rows.
+      await tx.$executeRaw`
+        UPDATE "Product"
+        SET "colourOrdered" = (
+          SELECT string_agg(
+            CASE WHEN TRIM(part) = ${oldName} THEN ${newName} ELSE TRIM(part) END,
+            '/'
+          )
+          FROM unnest(string_to_array("colourOrdered", '/')) AS part
+        )
+        WHERE position('/' IN "colourOrdered") > 0
+          AND EXISTS (
+            SELECT 1 FROM unnest(string_to_array("colourOrdered", '/')) AS p
+            WHERE TRIM(p) = ${oldName}
+          )
+      `;
     }
 
     return updated;
