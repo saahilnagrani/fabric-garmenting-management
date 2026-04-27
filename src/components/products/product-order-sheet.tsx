@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -37,6 +37,29 @@ function toNum(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return isNaN(n) ? null : n;
+}
+
+/** Sheet title that shrinks from 20px down to 12px so it fits on one row. */
+function AutoFitOrderTitle({ text }: { text: string }) {
+  const ref = useRef<HTMLHeadingElement | null>(null);
+  const [fontPx, setFontPx] = useState(20);
+  useLayoutEffect(() => { setFontPx(20); }, [text]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (el.scrollWidth > el.clientWidth && fontPx > 12) {
+      setFontPx((f) => Math.max(12, f - 1));
+    }
+  }, [fontPx, text]);
+  return (
+    <SheetTitle
+      ref={ref}
+      className="font-semibold whitespace-nowrap overflow-hidden"
+      style={{ fontSize: `${fontPx}px`, lineHeight: 1.2 }}
+    >
+      {text}
+    </SheetTitle>
+  );
 }
 
 /** Parse any stored date format ("15 Nov 2025", ISO, Date) to a yyyy-mm-dd value for <input type="date">. */
@@ -232,7 +255,6 @@ const SECTIONS = [
   "productInfo",
   "orderDetails",
   "fabric1",
-  "fabric2",
   "linkedFabricOrders",
   "accessoryBom",
   "quantities",
@@ -312,19 +334,19 @@ export function ProductOrderSheet({
   }, [fabricMasters]);
 
   // Build Combobox options for SKU search.
-  // Label format: "<articleNumber> - <skuCode> - <productName> (<colour>)"
+  // Label format: "<articleNumber> - <type> (<colour>)"
   // Each ProductMaster row has one colour in coloursAvailable[0].
   const skuOptions = React.useMemo(() => {
     return productMasters.map((m) => {
       const skuCode = String(m.skuCode || "");
       const styleName = String(m.productName || "");
       const articleNum = String(m.articleNumber || "");
+      const type = String(m.type || "");
       const coloursAvailable = Array.isArray(m.coloursAvailable) ? (m.coloursAvailable as string[]) : [];
       const colour = coloursAvailable[0] || "";
       const parts: string[] = [];
       if (articleNum) parts.push(articleNum);
-      if (skuCode) parts.push(skuCode);
-      if (styleName) parts.push(styleName);
+      if (type) parts.push(type);
       const head = parts.join(" - ");
       const label = colour ? `${head} (${colour})` : head;
       const searchText = [
@@ -332,7 +354,7 @@ export function ProductOrderSheet({
         String(m.styleNumber || ""),
         skuCode,
         styleName,
-        String(m.type || ""),
+        type,
         colour,
       ].join(" ");
       return { label, value: skuCode, searchText };
@@ -350,13 +372,9 @@ export function ProductOrderSheet({
       setShowDeleteConfirm(false);
       // All sections expanded by default, EXCEPT Fabric 2 which starts collapsed
       // when creating a new order or editing an existing one with no fabric 2 data.
-      const fabric2HasData =
-        !!editingRow &&
-        (!!editingRow.fabric2Name || !!editingRow.fabric2CostPerKg || !!editingRow.fabric2OrderedQuantityKg);
       setExpandedSections(
         Object.fromEntries(
           SECTIONS.map((s) => {
-            if (s === "fabric2") return [s, !isNew && fabric2HasData];
             if (s === "accessoryBom") return [s, false];
             return [s, true];
           })
@@ -713,13 +731,23 @@ export function ProductOrderSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-blue-500">
         <SheetHeader className="pr-12">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <SheetTitle className="text-xl font-semibold">
-                  {isEditing ? (form.articleNumber.trim() || "Article Order") : "New Article Order"}
-                </SheetTitle>
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">Order</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap min-w-0">
+                <AutoFitOrderTitle
+                  text={(() => {
+                    if (!isEditing && !form.articleNumber.trim()) return "New Article Order";
+                    const parts = [
+                      form.articleNumber,
+                      form.type,
+                      form.productName,
+                      GENDER_LABELS[form.gender] || form.gender,
+                    ].filter((p) => p && String(p).trim());
+                    if (parts.length > 0) return parts.join(" - ");
+                    return isEditing ? "Article Order" : "New Article Order";
+                  })()}
+                />
+                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Order</span>
               </div>
               <SheetDescription className="sr-only">
                 {isEditing ? "Edit article order" : "Create article order"}
@@ -762,7 +790,7 @@ export function ProductOrderSheet({
             </div>
           </div>
 
-          {/* Product Info */}
+          {/* Product Info — read-only; values come from the article master picked above */}
           <CollapsibleSection
             title="Product Info"
             expanded={expandedSections.productInfo}
@@ -770,39 +798,30 @@ export function ProductOrderSheet({
           >
             <div className="grid grid-cols-4 gap-2">
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Article # *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.articleNumber} onChange={(e) => updateField("articleNumber", e.target.value)} />
+                <Label className="text-[11px]">Article #</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.articleNumber || "—"}</div>
               </div>
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Article Code *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.skuCode} onChange={(e) => updateField("skuCode", e.target.value)} />
+                <Label className="text-[11px]">Article Code</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.skuCode || "—"}</div>
               </div>
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Product Name *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.productName} onChange={(e) => updateField("productName", e.target.value)} />
+                <Label className="text-[11px]">Product Name</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.productName || "—"}</div>
               </div>
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Colour *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.colourOrdered} onChange={(e) => updateField("colourOrdered", e.target.value)} />
+                <Label className="text-[11px]">Colour</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.colourOrdered || "—"}</div>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Type *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.type} onChange={(e) => updateField("type", e.target.value)} />
+                <Label className="text-[11px]">Type</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.type || "—"}</div>
               </div>
               <div className="space-y-0.5">
-                <Label className="text-[11px]">Gender *</Label>
-                <Select value={form.gender} onValueChange={(v) => updateField("gender", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
-                    <span className="truncate">{GENDER_LABELS[form.gender] || "Select"}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.entries(GENDER_LABELS).map(([k, v]) => (
-                      <SelectItem key={k} value={k}>{v}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label className="text-[11px]">Gender</Label>
+                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{GENDER_LABELS[form.gender] || form.gender || "—"}</div>
               </div>
               <div className="flex items-end pb-1.5 gap-2">
                 <button
@@ -875,105 +894,48 @@ export function ProductOrderSheet({
             </div>
           </CollapsibleSection>
 
-          {/* Fabric 1 */}
+          {/* Fabric — read-only meta per slot, with editable cost & qty */}
           <CollapsibleSection
-            title={`Fabric 1${linkedFabricOrders.filter((l) => l.fabricSlot === 1).map((l) => l.colour).filter(Boolean).join(", ") ? ` · ${linkedFabricOrders.filter((l) => l.fabricSlot === 1).map((l) => l.colour).filter(Boolean).join(", ")}` : ""}`}
+            title="Fabric"
             expanded={expandedSections.fabric1}
             onToggle={() => toggleSection("fabric1")}
           >
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Fabric Name *</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.fabricName} onChange={(e) => updateField("fabricName", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Fabric Vendor *</Label>
-                <Select value={form.fabricVendorId} onValueChange={(v) => updateField("fabricVendorId", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
-                    <span className="truncate">{vendorLabels[form.fabricVendorId] || "Select vendor"}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {vendors
-                      .filter((v) => v.type === "FABRIC_SUPPLIER")
-                      .map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Garments/kg</Label>
-                <div className="grid grid-cols-2 gap-1">
-                  <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" placeholder="Assumed" title="Assumed (from master)" value={form.assumedFabricGarmentsPerKg} onChange={(e) => updateField("assumedFabricGarmentsPerKg", e.target.value)} />
-                  <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" placeholder="Actual" title="Cutting Report (actual)" value={form.cuttingReportGarmentsPerKg} onChange={(e) => updateField("cuttingReportGarmentsPerKg", e.target.value)} />
+            {(() => {
+              const slotColour = (slot: number) =>
+                linkedFabricOrders.find((l) => l.fabricSlot === slot)?.colour || "—";
+              const fabricSlots = [
+                { num: 1, name: form.fabricName, vendorId: form.fabricVendorId, gpk: form.assumedFabricGarmentsPerKg, costKey: "fabricCostPerKg" as const, orderedKey: "fabricOrderedQuantityKg" as const, shippedKey: "fabricShippedQuantityKg" as const, value: { cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg } },
+                { num: 2, name: form.fabric2Name, vendorId: form.fabric2VendorId, gpk: form.assumedFabric2GarmentsPerKg, costKey: "fabric2CostPerKg" as const, orderedKey: "fabric2OrderedQuantityKg" as const, shippedKey: "fabric2ShippedQuantityKg" as const, value: { cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg } },
+              ].filter((s) => s.name);
+              return (
+                <div className="space-y-3">
+                  {fabricSlots.map((s) => (
+                    <div key={s.num} className="space-y-1.5">
+                      <div className="text-xs font-medium">
+                        F{s.num}: {[s.name, slotColour(s.num), vendorLabels[s.vendorId] || "—", s.gpk ? `${s.gpk}/kg` : "—/kg"].filter(Boolean).join(" · ")}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="space-y-0.5">
+                          <Label className="text-[11px]">Cost/kg (Rs)</Label>
+                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.cost} onChange={(e) => updateField(s.costKey, e.target.value)} />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[11px]">Ordered Qty (kg)</Label>
+                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.ordered} onChange={(e) => updateField(s.orderedKey, e.target.value)} />
+                        </div>
+                        <div className="space-y-0.5">
+                          <Label className="text-[11px]">Shipped Qty (kg)</Label>
+                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.shipped} onChange={(e) => updateField(s.shippedKey, e.target.value)} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                  {fabricSlots.length === 0 && (
+                    <p className="text-[11px] text-muted-foreground py-1">No fabric defined on the article master for this SKU.</p>
+                  )}
                 </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Cost/kg (Rs)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabricCostPerKg} onChange={(e) => updateField("fabricCostPerKg", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Ordered Qty (kg)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabricOrderedQuantityKg} onChange={(e) => updateField("fabricOrderedQuantityKg", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Shipped Qty (kg)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabricShippedQuantityKg} onChange={(e) => updateField("fabricShippedQuantityKg", e.target.value)} />
-              </div>
-            </div>
-          </CollapsibleSection>
-
-          {/* Fabric 2 */}
-          <CollapsibleSection
-            title={`Fabric 2${linkedFabricOrders.filter((l) => l.fabricSlot === 2).map((l) => l.colour).filter(Boolean).join(", ") ? ` · ${linkedFabricOrders.filter((l) => l.fabricSlot === 2).map((l) => l.colour).filter(Boolean).join(", ")}` : ""}`}
-            expanded={expandedSections.fabric2}
-            onToggle={() => toggleSection("fabric2")}
-          >
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Fabric 2 Name</Label>
-                <Input className="h-8 text-xs md:text-xs" value={form.fabric2Name} onChange={(e) => updateField("fabric2Name", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Fabric 2 Vendor</Label>
-                <Select value={form.fabric2VendorId} onValueChange={(v) => updateField("fabric2VendorId", v ?? "")}>
-                  <SelectTrigger className="h-8 text-xs md:text-xs w-full">
-                    <span className="truncate">{vendorLabels[form.fabric2VendorId] || "Select vendor"}</span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="">None</SelectItem>
-                    {vendors
-                      .filter((v) => v.type === "FABRIC_SUPPLIER")
-                      .map((v) => (
-                        <SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Garments/kg</Label>
-                <div className="grid grid-cols-2 gap-1">
-                  <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" placeholder="Assumed" title="Assumed (from master)" value={form.assumedFabric2GarmentsPerKg} onChange={(e) => updateField("assumedFabric2GarmentsPerKg", e.target.value)} />
-                  <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" placeholder="Actual" title="Cutting Report (actual)" value={form.cuttingReportGarmentsPerKg2} onChange={(e) => updateField("cuttingReportGarmentsPerKg2", e.target.value)} />
-                </div>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Cost/kg (Rs)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabric2CostPerKg} onChange={(e) => updateField("fabric2CostPerKg", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Ordered Qty (kg)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabric2OrderedQuantityKg} onChange={(e) => updateField("fabric2OrderedQuantityKg", e.target.value)} />
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Shipped Qty (kg)</Label>
-                <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={form.fabric2ShippedQuantityKg} onChange={(e) => updateField("fabric2ShippedQuantityKg", e.target.value)} />
-              </div>
-            </div>
+              );
+            })()}
           </CollapsibleSection>
 
           {/* Linked Fabric Orders - only visible when editing */}
