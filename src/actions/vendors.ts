@@ -29,10 +29,36 @@ export async function createVendor(data: {
 export async function updateVendor(id: string, data: any) {
   const session = await requirePermission("inventory:vendors:edit");
   const previous = await db.vendor.findUnique({ where: { id } });
-  const vendor = await db.vendor.update({ where: { id }, data });
+  if (!previous) throw new Error("Vendor not found");
+
+  const oldName = previous.name;
+  const newName = typeof data.name === "string" ? data.name.trim() : oldName;
+  const renamed = oldName !== newName;
+  // Garmenter renames need to fan out to every consumer that stores the
+  // garmenter as a name string. The matching GarmentingLocation row (paired
+  // by name) is also renamed so its FK consumers stay consistent — see
+  // updateGarmentingLocation for the same fan-out from the other side.
+  const isGarmenter = previous.type === "GARMENTING";
+
+  const vendor = await db.$transaction(async (tx) => {
+    const updated = await tx.vendor.update({ where: { id }, data });
+    if (renamed && isGarmenter) {
+      await tx.product.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.productMaster.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.fabricOrder.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.accessoryDispatch.updateMany({ where: { destinationGarmenter: oldName }, data: { destinationGarmenter: newName } });
+      await tx.fabricBalance.updateMany({ where: { garmentingLocation: oldName }, data: { garmentingLocation: newName } });
+      await tx.garmentingLocation.updateMany({ where: { name: oldName }, data: { name: newName } });
+    }
+    return updated;
+  }, { timeout: 30_000, maxWait: 10_000 });
+
   const changes = previous ? computeDiff(previous as unknown as Record<string, unknown>, vendor as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "Vendor", id, changes);
   revalidatePath("/vendors");
+  if (renamed && isGarmenter) {
+    revalidatePath("/", "layout");
+  }
   return vendor;
 }
 
