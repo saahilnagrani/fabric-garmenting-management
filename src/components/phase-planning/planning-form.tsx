@@ -1510,8 +1510,8 @@ export function PlanningForm({
                       <div key={oKey} className={`grid ${colTemplate} gap-1.5 items-center min-w-max`}>
                         <span className="text-sm truncate">
                           <span className="font-medium">{row.articleNumber}</span>
-                          <span className="text-muted-foreground"> · {row.styleName}</span>
                           {productType && <span className="text-muted-foreground"> · {productType}</span>}
+                          <span className="text-muted-foreground"> · {row.styleName}</span>
                         </span>
                         <span className="text-sm truncate">
                           {row.colour}
