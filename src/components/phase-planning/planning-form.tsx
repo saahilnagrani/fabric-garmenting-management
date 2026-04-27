@@ -1454,7 +1454,7 @@ export function PlanningForm({
         const derivedKg = Math.round(rowCalcs.filter((c) => c.isLockedByOther).reduce((s, c) => s + (c.derivedKg ?? 0), 0) * 100) / 100;
         const totalKg = Math.round((ownedKg + derivedKg) * 100) / 100;
 
-        const colTemplate = "grid-cols-[150px_minmax(120px,1fr)_68px_80px_48px_repeat(6,40px)_repeat(4,48px)]";
+        const colTemplate = "grid-cols-[220px_minmax(120px,1fr)_68px_80px_48px_repeat(6,40px)_repeat(4,48px)]";
         return (
           <div key={sKey} className="border rounded-lg p-4 space-y-3 relative">
             <Button variant="ghost" size="icon" className="h-7 w-7 absolute top-2 right-2 z-10" onClick={() => removeFabricSection(sIdx)}>
