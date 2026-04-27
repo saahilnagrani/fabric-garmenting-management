@@ -23,12 +23,20 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { Plus, Check, FileDown } from "lucide-react";
+import { Plus, Check, FileDown, ChevronDown } from "lucide-react";
 import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { ExportExcelButton } from "@/components/ag-grid/export-excel-button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -386,26 +394,57 @@ export function ProductGrid({
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Article Order
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const api = gridApiRef.current;
-            if (!api) return;
-            const ids: string[] = [];
-            api.forEachNodeAfterFilter((node) => {
-              if (node.data?.id) ids.push(String(node.data.id));
-            });
-            if (ids.length === 0) {
-              toast.error("No article orders to include in the plan.");
-              return;
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button variant="outline" size="sm">
+                <FileDown className="mr-1.5 h-3.5 w-3.5" />
+                Garmenting Plan PDF
+                <ChevronDown className="ml-1 h-3.5 w-3.5" />
+              </Button>
             }
-            window.open(`/products/garmenting-plan?ids=${ids.join(",")}`, "_blank");
-          }}
-        >
-          <FileDown className="mr-1.5 h-3.5 w-3.5" />
-          Garmenting Plan PDF
-        </Button>
+          />
+          <DropdownMenuContent align="end" className="min-w-[200px]">
+            {(() => {
+              const api = gridApiRef.current;
+              if (!api) {
+                return <DropdownMenuItem disabled>Grid not ready</DropdownMenuItem>;
+              }
+              const idsByGarmenter = new Map<string, string[]>();
+              api.forEachNodeAfterFilter((node) => {
+                const id = node.data?.id ? String(node.data.id) : "";
+                const g = node.data?.garmentingAt ? String(node.data.garmentingAt) : "";
+                if (!id) return;
+                const key = g || "(Unassigned)";
+                if (!idsByGarmenter.has(key)) idsByGarmenter.set(key, []);
+                idsByGarmenter.get(key)!.push(id);
+              });
+              const entries = Array.from(idsByGarmenter.entries()).sort(([a], [b]) => a.localeCompare(b));
+              if (entries.length === 0) {
+                return <DropdownMenuItem disabled>No article orders</DropdownMenuItem>;
+              }
+              return (
+                <>
+                  <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
+                    Select a garmenter
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {entries.map(([name, ids]) => (
+                    <DropdownMenuItem
+                      key={name}
+                      onClick={() => {
+                        window.open(`/products/garmenting-plan?ids=${ids.join(",")}`, "_blank");
+                      }}
+                    >
+                      <span className="flex-1 truncate">{name}</span>
+                      <span className="ml-2 text-[10px] text-muted-foreground">{ids.length}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              );
+            })()}
+          </DropdownMenuContent>
+        </DropdownMenu>
         <ExportExcelButton gridApiRef={gridApiRef} fileName="article-orders" sheetName="Article Orders" />
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
