@@ -796,47 +796,45 @@ export function ProductOrderSheet({
             expanded={expandedSections.productInfo}
             onToggle={() => toggleSection("productInfo")}
           >
-            <div className="grid grid-cols-4 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Article #</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.articleNumber || "—"}</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Article #</span>
+                <span className="font-medium truncate">{form.articleNumber || "—"}</span>
               </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Article Code</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.skuCode || "—"}</div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Article Code</span>
+                <span className="font-medium truncate">{form.skuCode || "—"}</span>
               </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Product Name</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.productName || "—"}</div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Product Name</span>
+                <span className="font-medium truncate">{form.productName || "—"}</span>
               </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Colour</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.colourOrdered || "—"}</div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Colour</span>
+                <span className="font-medium truncate">{form.colourOrdered || "—"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Type</span>
+                <span className="font-medium truncate">{form.type || "—"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Gender</span>
+                <span className="font-medium truncate">{GENDER_LABELS[form.gender] || form.gender || "—"}</span>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Type</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{form.type || "—"}</div>
-              </div>
-              <div className="space-y-0.5">
-                <Label className="text-[11px]">Gender</Label>
-                <div className="h-8 px-2 flex items-center text-xs rounded border bg-muted/30 truncate">{GENDER_LABELS[form.gender] || form.gender || "—"}</div>
-              </div>
-              <div className="flex items-end pb-1.5 gap-2">
-                <button
-                  type="button"
-                  onClick={() => updateField("isRepeat", !form.isRepeat)}
-                  className={`h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0 ${form.isRepeat ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
-                >
-                  {form.isRepeat && (
-                    <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
-                  )}
-                </button>
-                <Label className="text-[11px]">Repeat Order</Label>
-              </div>
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => updateField("isRepeat", !form.isRepeat)}
+                className={`h-4 w-4 rounded border flex items-center justify-center transition-colors shrink-0 ${form.isRepeat ? "bg-blue-500 border-blue-500" : "border-gray-300 bg-white"}`}
+              >
+                {form.isRepeat && (
+                  <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                )}
+              </button>
+              <Label className="text-[11px]">Repeat Order</Label>
             </div>
           </CollapsibleSection>
 
@@ -894,43 +892,79 @@ export function ProductOrderSheet({
             </div>
           </CollapsibleSection>
 
-          {/* Fabric — read-only meta per slot, with editable cost & qty */}
+          {/* Fabric — read-only meta per slot (sourced from article master), with
+              editable cost & qty for slots 1-2 (only those are stored on the order). */}
           <CollapsibleSection
             title="Fabric"
             expanded={expandedSections.fabric1}
             onToggle={() => toggleSection("fabric1")}
           >
             {(() => {
-              const slotColour = (slot: number) =>
-                linkedFabricOrders.find((l) => l.fabricSlot === slot)?.colour || "—";
-              const fabricSlots = [
-                { num: 1, name: form.fabricName, vendorId: form.fabricVendorId, gpk: form.assumedFabricGarmentsPerKg, costKey: "fabricCostPerKg" as const, orderedKey: "fabricOrderedQuantityKg" as const, shippedKey: "fabricShippedQuantityKg" as const, value: { cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg } },
-                { num: 2, name: form.fabric2Name, vendorId: form.fabric2VendorId, gpk: form.assumedFabric2GarmentsPerKg, costKey: "fabric2CostPerKg" as const, orderedKey: "fabric2OrderedQuantityKg" as const, shippedKey: "fabric2ShippedQuantityKg" as const, value: { cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg } },
-              ].filter((s) => s.name);
+              const master = productMasters.find((m) => String((m as Record<string, unknown>).skuCode) === form.skuCode) as Record<string, unknown> | undefined;
+              const colourTokens = (form.colourOrdered || "").split("/").map((c) => c.trim()).filter(Boolean);
+              const slotColour = (slot: number) => {
+                const linked = linkedFabricOrders.find((l) => l.fabricSlot === slot)?.colour;
+                if (linked) return linked;
+                return colourTokens[slot - 1] || "—";
+              };
+              const slotVendorName = (fabricName: string) => {
+                const vid = fabricNameToVendorId.get(fabricName) || "";
+                return vendorLabels[vid] || "—";
+              };
+              type Slot = {
+                num: number;
+                name: string;
+                gpk: string;
+                editable: boolean;
+                cost?: string;
+                ordered?: string;
+                shipped?: string;
+                costKey?: keyof FormData;
+                orderedKey?: keyof FormData;
+                shippedKey?: keyof FormData;
+              };
+              const slots: Slot[] = [];
+              if (master) {
+                const f1 = String(master.fabricName || form.fabricName || "");
+                if (f1) slots.push({ num: 1, name: f1, gpk: form.assumedFabricGarmentsPerKg || String(master.garmentsPerKg ?? ""), editable: true, cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg, costKey: "fabricCostPerKg", orderedKey: "fabricOrderedQuantityKg", shippedKey: "fabricShippedQuantityKg" });
+                const f2 = String(master.fabric2Name || form.fabric2Name || "");
+                if (f2) slots.push({ num: 2, name: f2, gpk: form.assumedFabric2GarmentsPerKg || String(master.garmentsPerKg2 ?? ""), editable: true, cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg, costKey: "fabric2CostPerKg", orderedKey: "fabric2OrderedQuantityKg", shippedKey: "fabric2ShippedQuantityKg" });
+                const f3 = String(master.fabric3Name || "");
+                if (f3) slots.push({ num: 3, name: f3, gpk: String(master.garmentsPerKg3 ?? ""), editable: false });
+                const f4 = String(master.fabric4Name || "");
+                if (f4) slots.push({ num: 4, name: f4, gpk: String(master.garmentsPerKg4 ?? ""), editable: false });
+              } else {
+                if (form.fabricName) slots.push({ num: 1, name: form.fabricName, gpk: form.assumedFabricGarmentsPerKg, editable: true, cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg, costKey: "fabricCostPerKg", orderedKey: "fabricOrderedQuantityKg", shippedKey: "fabricShippedQuantityKg" });
+                if (form.fabric2Name) slots.push({ num: 2, name: form.fabric2Name, gpk: form.assumedFabric2GarmentsPerKg, editable: true, cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg, costKey: "fabric2CostPerKg", orderedKey: "fabric2OrderedQuantityKg", shippedKey: "fabric2ShippedQuantityKg" });
+              }
               return (
                 <div className="space-y-3">
-                  {fabricSlots.map((s) => (
+                  {slots.map((s) => (
                     <div key={s.num} className="space-y-1.5">
                       <div className="text-xs font-medium">
-                        F{s.num}: {[s.name, slotColour(s.num), vendorLabels[s.vendorId] || "—", s.gpk ? `${s.gpk}/kg` : "—/kg"].filter(Boolean).join(" · ")}
+                        F{s.num}: {s.name} · {slotColour(s.num)} · {slotVendorName(s.name)} · {s.gpk ? `${s.gpk}/kg` : "—/kg"}
                       </div>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div className="space-y-0.5">
-                          <Label className="text-[11px]">Cost/kg (Rs)</Label>
-                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.cost} onChange={(e) => updateField(s.costKey, e.target.value)} />
+                      {s.editable ? (
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-0.5">
+                            <Label className="text-[11px]">Cost/kg (Rs)</Label>
+                            <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.cost ?? ""} onChange={(e) => s.costKey && updateField(s.costKey, e.target.value)} />
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[11px]">Ordered Qty (kg)</Label>
+                            <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.ordered ?? ""} onChange={(e) => s.orderedKey && updateField(s.orderedKey, e.target.value)} />
+                          </div>
+                          <div className="space-y-0.5">
+                            <Label className="text-[11px]">Shipped Qty (kg)</Label>
+                            <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.shipped ?? ""} onChange={(e) => s.shippedKey && updateField(s.shippedKey, e.target.value)} />
+                          </div>
                         </div>
-                        <div className="space-y-0.5">
-                          <Label className="text-[11px]">Ordered Qty (kg)</Label>
-                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.ordered} onChange={(e) => updateField(s.orderedKey, e.target.value)} />
-                        </div>
-                        <div className="space-y-0.5">
-                          <Label className="text-[11px]">Shipped Qty (kg)</Label>
-                          <Input className="h-8 text-xs md:text-xs" type="number" step="0.01" value={s.value.shipped} onChange={(e) => updateField(s.shippedKey, e.target.value)} />
-                        </div>
-                      </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground italic">Cost & quantities for this fabric are tracked on its linked fabric order.</p>
+                      )}
                     </div>
                   ))}
-                  {fabricSlots.length === 0 && (
+                  {slots.length === 0 && (
                     <p className="text-[11px] text-muted-foreground py-1">No fabric defined on the article master for this SKU.</p>
                   )}
                 </div>
