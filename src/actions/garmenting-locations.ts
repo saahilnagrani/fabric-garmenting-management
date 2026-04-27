@@ -39,6 +39,7 @@ export async function updateGarmentingLocation(id: string, name: string) {
     });
     if (renamed) {
       await tx.product.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
+      await tx.productMaster.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
       await tx.fabricOrder.updateMany({ where: { garmentingAt: oldName }, data: { garmentingAt: newName } });
       await tx.accessoryDispatch.updateMany({ where: { destinationGarmenter: oldName }, data: { destinationGarmenter: newName } });
       await tx.fabricBalance.updateMany({ where: { garmentingLocation: oldName }, data: { garmentingLocation: newName } });
