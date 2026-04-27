@@ -33,7 +33,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -424,9 +423,9 @@ export function ProductGrid({
               }
               return (
                 <>
-                  <DropdownMenuLabel className="text-[11px] text-muted-foreground font-normal">
+                  <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
                     Select a garmenter
-                  </DropdownMenuLabel>
+                  </div>
                   <DropdownMenuSeparator />
                   {entries.map(([name, ids]) => (
                     <DropdownMenuItem
