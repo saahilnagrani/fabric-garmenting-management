@@ -2261,7 +2261,7 @@ export function ProductMasterSheet({
         </div>
 
         <SheetFooter>
-          <div className="flex flex-wrap gap-2 w-full">
+          <div className="flex flex-nowrap gap-1.5 w-full">
             {/* Wizard navigation for create mode */}
             {!isEdit && step > 1 && (
               <Button variant="outline" size="lg" onClick={() => setStep(step - 1)}>
@@ -2316,10 +2316,10 @@ export function ProductMasterSheet({
             {/* Edit mode buttons */}
             {isEdit && (
               <>
-                <Button size="lg" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1">
+                <Button size="sm" onClick={handleSubmit} disabled={submitting || archiving} className="flex-1 min-w-0 text-[11px] px-2">
                   {submitting ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       Updating...
                     </>
                   ) : (
@@ -2328,44 +2328,44 @@ export function ProductMasterSheet({
                 </Button>
                 <Button
                   variant="outline"
-                  size="lg"
+                  size="sm"
                   onClick={handleArchive}
                   disabled={submitting || archiving}
-                  className="flex-1"
+                  className="flex-1 min-w-0 text-[11px] px-2"
                 >
                   {archiving ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       {isArchived ? "Unarchiving..." : "Archiving..."}
                     </>
                   ) : (
                     <>
-                      <Archive className="mr-2 h-4 w-4" />
+                      <Archive className="mr-1 h-3 w-3" />
                       {isArchived ? "Unarchive" : "Archive"}
                     </>
                   )}
                 </Button>
                 <Button
                   variant={cleanedAt ? "default" : "outline"}
-                  size="lg"
+                  size="sm"
                   onClick={handleToggleCleaned}
                   disabled={submitting || archiving || markingClean}
-                  className={`flex-1 ${cleanedAt ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
+                  className={`flex-1 min-w-0 text-[11px] px-2 ${cleanedAt ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}`}
                   title={cleanedAt ? `Cleaned on ${new Date(cleanedAt).toLocaleString()}. Excel imports will skip this article.` : "Mark this article as manually cleaned so Excel imports won't overwrite it."}
                 >
                   {markingClean ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
                       Saving...
                     </>
                   ) : cleanedAt ? (
                     <>
-                      <Unlock className="mr-2 h-4 w-4" />
+                      <Unlock className="mr-1 h-3 w-3" />
                       Unmark Cleaned
                     </>
                   ) : (
                     <>
-                      <Lock className="mr-2 h-4 w-4" />
+                      <Lock className="mr-1 h-3 w-3" />
                       Mark Cleaned
                     </>
                   )}
@@ -2375,12 +2375,12 @@ export function ProductMasterSheet({
             {isEdit && !showDeleteConfirm && (
               <Button
                 variant="destructive"
-                size="lg"
+                size="sm"
                 onClick={() => setShowDeleteConfirm(true)}
                 disabled={submitting || archiving || deleting}
-                className="flex-1"
+                className="flex-1 min-w-0 text-[11px] px-2"
               >
-                <Trash2 className="mr-2 h-4 w-4" />
+                <Trash2 className="mr-1 h-3 w-3" />
                 Delete
               </Button>
             )}
