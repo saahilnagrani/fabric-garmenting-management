@@ -877,7 +877,7 @@ export function ProductOrderSheet({
 
           {/* Fabric 1 */}
           <CollapsibleSection
-            title="Fabric 1"
+            title={`Fabric 1${linkedFabricOrders.filter((l) => l.fabricSlot === 1).map((l) => l.colour).filter(Boolean).join(", ") ? ` · ${linkedFabricOrders.filter((l) => l.fabricSlot === 1).map((l) => l.colour).filter(Boolean).join(", ")}` : ""}`}
             expanded={expandedSections.fabric1}
             onToggle={() => toggleSection("fabric1")}
           >
@@ -927,7 +927,7 @@ export function ProductOrderSheet({
 
           {/* Fabric 2 */}
           <CollapsibleSection
-            title="Fabric 2"
+            title={`Fabric 2${linkedFabricOrders.filter((l) => l.fabricSlot === 2).map((l) => l.colour).filter(Boolean).join(", ") ? ` · ${linkedFabricOrders.filter((l) => l.fabricSlot === 2).map((l) => l.colour).filter(Boolean).join(", ")}` : ""}`}
             expanded={expandedSections.fabric2}
             onToggle={() => toggleSection("fabric2")}
           >

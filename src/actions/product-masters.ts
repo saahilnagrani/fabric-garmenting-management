@@ -16,6 +16,11 @@ async function attachProductMasterScalarLookups<T extends Record<string, unknown
       data.type as string | null | undefined,
     );
   }
+  if ("garmentingAt" in data) {
+    (data as Record<string, unknown>).garmentingAtId = await resolver.garmentingLocationId(
+      data.garmentingAt as string | null | undefined,
+    );
+  }
   return data;
 }
 
@@ -414,6 +419,7 @@ export const getProductMastersGrouped = cache(async (includeArchived = false) =>
       inwardShipping: n(first.inwardShipping),
       proposedMrp: n(first.proposedMrp),
       onlineMrp: n(first.onlineMrp),
+      garmentingAt: first.garmentingAt,
       isStrikedThrough: first.isStrikedThrough,
       manuallyCleanedAt: first.manuallyCleanedAt,
     };

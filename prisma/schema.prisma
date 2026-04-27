@@ -428,6 +428,7 @@ model GarmentingLocation {
   updatedAt DateTime @updatedAt
 
   products            Product[]           @relation("ProductGarmentingAt")
+  productMasters      ProductMaster[]     @relation("ProductMasterGarmentingAt")
   fabricOrders        FabricOrder[]       @relation("FabricOrderGarmentingAt")
   accessoryDispatches AccessoryDispatch[] @relation("AccessoryDispatchGarmenter")
   fabricBalances      FabricBalance[]     @relation("FabricBalanceGarmentingLocation")
@@ -632,6 +633,9 @@ model ProductMaster {
   inwardShipping              Decimal? @db.Decimal(10, 2)
   proposedMrp                 Decimal? @db.Decimal(10, 2)
   onlineMrp                   Decimal? @db.Decimal(10, 2)
+  garmentingAt                String?
+  garmentingAtId              String?
+  garmentingAtRef             GarmentingLocation? @relation("ProductMasterGarmentingAt", fields: [garmentingAtId], references: [id])
   isStrikedThrough            Boolean  @default(false)
   manuallyCleanedAt           DateTime?
   createdAt                   DateTime @default(now())
@@ -643,6 +647,7 @@ model ProductMaster {
   @@index([skuCode])
   @@index([styleNumber])
   @@index([typeRefId])
+  @@index([garmentingAtId])
 }
 
 // ─── ACCESSORIES ─────────────────────────────────────────────────

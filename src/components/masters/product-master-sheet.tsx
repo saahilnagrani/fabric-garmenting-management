@@ -110,6 +110,7 @@ export type GroupedStyleRow = {
   inwardShipping: number | null;
   proposedMrp: number | null;
   onlineMrp: number | null;
+  garmentingAt: string | null;
   isStrikedThrough: boolean;
 };
 
@@ -149,6 +150,7 @@ type StyleFormData = {
   inwardShipping: string;
   proposedMrp: string;
   onlineMrp: string;
+  garmentingAt: string;
 };
 
 const emptyStyleForm: StyleFormData = {
@@ -181,6 +183,7 @@ const emptyStyleForm: StyleFormData = {
   inwardShipping: "",
   proposedMrp: "",
   onlineMrp: "",
+  garmentingAt: "",
 };
 
 type SkuEntry = { colour: string; colour2?: string; colour3?: string; colour4?: string; skuCode: string };
@@ -207,6 +210,7 @@ export function ProductMasterSheet({
   coloursWithCode = [],
   phases = [],
   accessories = [],
+  garmentingLocations = [],
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -218,6 +222,7 @@ export function ProductMasterSheet({
   coloursWithCode?: ColourWithCode[];
   phases?: Phase[];
   accessories?: AccessoryOption[];
+  garmentingLocations?: string[];
 }) {
   const router = useRouter();
   const [form, setForm] = useState<StyleFormData>({ ...emptyStyleForm });
@@ -335,6 +340,7 @@ export function ProductMasterSheet({
           inwardShipping: s(editingRow.inwardShipping),
           proposedMrp: s(editingRow.proposedMrp),
           onlineMrp: s(editingRow.onlineMrp),
+          garmentingAt: s(editingRow.garmentingAt),
         });
         setSkuEntries(
           editingRow.skus.map((sku) => ({
@@ -810,6 +816,7 @@ export function ProductMasterSheet({
         inwardShipping: toNum(form.inwardShipping),
         proposedMrp: toNum(form.proposedMrp),
         onlineMrp: toNum(form.onlineMrp),
+        garmentingAt: form.garmentingAt || null,
       };
 
       if (isEdit) {
@@ -1026,7 +1033,7 @@ export function ProductMasterSheet({
                     <Input className="h-8 text-xs" value={form.styleNumber} onChange={(e) => updateField("styleNumber", e.target.value)} placeholder="Legacy field" />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-3 gap-2">
                   <div className="space-y-0.5">
                     <Label className="text-[11px]">Product Type *</Label>
                     <Combobox
@@ -1051,6 +1058,15 @@ export function ProductMasterSheet({
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-0.5">
+                    <Label className="text-[11px]">Garmenting At</Label>
+                    <Combobox
+                      value={form.garmentingAt}
+                      onValueChange={(v) => updateField("garmentingAt", v)}
+                      options={garmentingLocations}
+                      placeholder="Select location..."
+                    />
                   </div>
                 </div>
               </CollapsibleSection>

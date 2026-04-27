@@ -43,6 +43,7 @@ type SelectedArticle = {
   type: string;
   gender: string;
   productName: string;
+  garmentingAt: string | null;
   availableColours: string[];
   colourQtys: ColourQty[];
   isRepeat: boolean;
@@ -484,6 +485,7 @@ export function PlanningForm({
       type: String(first.type || ""),
       gender: String(first.gender || "MENS"),
       productName: String(first.productName || ""),
+      garmentingAt: first.garmentingAt ? String(first.garmentingAt) : null,
       availableColours: colourEntries.map((e) => [e.colour, e.colour2, e.colour3, e.colour4].filter(Boolean).join("/")),
       colourQtys: colourEntries.map((e) => ({ colour: e.colour, colour2: e.colour2, colour3: e.colour3, colour4: e.colour4, qty: 0 })),
       isRepeat: isRepeatArticle(articleNumber),
@@ -703,6 +705,7 @@ export function PlanningForm({
           outwardShippingCost: article.outwardShippingCost,
           proposedMrp: article.proposedMrp,
           onlineMrp: article.onlineMrp,
+          garmentingAt: article.garmentingAt,
         });
 
         if (article.fabricVendorId) {
@@ -853,6 +856,7 @@ export function PlanningForm({
         outwardShippingCost: toNum(master.inwardShipping),
         proposedMrp: toNum(master.proposedMrp),
         onlineMrp: toNum(master.onlineMrp),
+        garmentingAt: master.garmentingAt ? String(master.garmentingAt) : null,
       });
 
       // Fabric orders for each slot the article has
@@ -961,20 +965,22 @@ export function PlanningForm({
             <table className="w-full text-sm table-fixed">
               <thead className="bg-muted/50">
                 <tr>
-                  <th className="px-3 py-2 text-left font-medium w-[20%]">Product</th>
-                  <th className="px-3 py-2 text-left font-medium w-[10%]">Article #</th>
-                  <th className="px-3 py-2 text-left font-medium w-[18%]">Article Code</th>
-                  <th className="px-3 py-2 text-left font-medium w-[18%]">Colour</th>
-                  <th className="px-3 py-2 text-right font-medium w-[12%]">Target Qty</th>
-                  <th className="px-3 py-2 text-left font-medium w-[14%]">Fabric</th>
-                  <th className="px-3 py-2 text-left font-medium w-[8%]">Repeat?</th>
+                  <th className="px-3 py-2 text-left font-medium w-[16%]">Product</th>
+                  <th className="px-3 py-2 text-left font-medium w-[9%]">Article #</th>
+                  <th className="px-3 py-2 text-left font-medium w-[10%]">Type</th>
+                  <th className="px-3 py-2 text-left font-medium w-[15%]">Article Code</th>
+                  <th className="px-3 py-2 text-left font-medium w-[15%]">Colour</th>
+                  <th className="px-3 py-2 text-right font-medium w-[10%]">Target Qty</th>
+                  <th className="px-3 py-2 text-left font-medium w-[12%]">Fabric</th>
+                  <th className="px-3 py-2 text-left font-medium w-[7%]">Repeat?</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {skuOrders.map((sku, i) => (
                   <tr key={i}>
-                    <td className="px-3 py-2">{sku.styleNumber}</td>
+                    <td className="px-3 py-2">{sku.productName || sku.styleNumber}</td>
                     <td className="px-3 py-2">{sku.articleNumber}</td>
+                    <td className="px-3 py-2">{sku.type || "—"}</td>
                     <td className="px-3 py-2">{sku.skuCode || "—"}</td>
                     <td className="px-3 py-2">{sku.colourOrdered}</td>
                     <td className="px-3 py-2 text-right">{sku.garmentNumber}</td>
@@ -1458,8 +1464,7 @@ export function PlanningForm({
                   <span className="text-xs text-muted-foreground">({section.vendorName || "No vendor"})</span>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {section.rows.length} article{section.rows.length === 1 ? "" : "s"} · {totalKg} kg total
-                  {derivedKg > 0 ? ` (${ownedKg} allocated here + ${derivedKg} derived)` : ""}
+                  {section.rows.length} article{section.rows.length === 1 ? "" : "s"}
                   {section.costPerKg ? ` · Rs ${section.costPerKg}/kg` : ""}
                 </div>
               </div>
@@ -1476,7 +1481,12 @@ export function PlanningForm({
                     <span>Article · Product</span>
                     <span>Colour</span>
                     <span className="text-right">Slot</span>
-                    <span className="text-right">Allocated</span>
+                    <span className="text-right">
+                      Allocated
+                      <span className="block text-foreground font-semibold">
+                        {totalKg} kg{derivedKg > 0 ? ` (${ownedKg}+${derivedKg})` : ""}
+                      </span>
+                    </span>
                     <span className="text-right">Qty</span>
                     {sizes.map((s) => <span key={s} className="text-center">{s}</span>)}
                     <span className="text-right">F1 (kg)</span>
@@ -1489,6 +1499,7 @@ export function PlanningForm({
                     // Article master lookup for full fabric slot info (gpk of all slots)
                     const masters = articleGroups.get(row.articleNumber) || [];
                     const master = masters[0];
+                    const productType = master ? String(master.type || "") : "";
                     const gpk1 = master ? toNum(master.garmentsPerKg) : null;
                     const gpk2 = master ? toNum(master.garmentsPerKg2) : null;
                     const gpk3 = master ? toNum(master.garmentsPerKg3) : null;
@@ -1503,6 +1514,7 @@ export function PlanningForm({
                         <span className="text-sm truncate">
                           <span className="font-medium">{row.articleNumber}</span>
                           <span className="text-muted-foreground"> · {row.styleName}</span>
+                          {productType && <span className="text-muted-foreground"> · {productType}</span>}
                         </span>
                         <span className="text-sm truncate">
                           {row.colour}

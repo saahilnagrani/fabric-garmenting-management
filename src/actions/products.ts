@@ -372,6 +372,45 @@ export async function getProductLinkedFabricOrders(productId: string) {
   }));
 }
 
+/**
+ * Fetch the data needed to render a per-vendor garmenting plan PDF for a set
+ * of article orders (Products). Each product is paired with its slot-1 fabric
+ * order's colour and ordered qty (kg). Grouped by garmentingAt downstream.
+ */
+export async function getGarmentingPlanData(productIds: string[]) {
+  await requirePermission("inventory:products:view");
+  if (!productIds.length) return [];
+  const products = await db.product.findMany({
+    where: { id: { in: productIds } },
+    include: {
+      fabricOrderLinks: {
+        include: { fabricOrder: { select: { colour: true, fabricOrderedQuantityKg: true, fabricName: true } } },
+      },
+    },
+  });
+  return products.map((p) => {
+    const slot1 = p.fabricOrderLinks.find((l) => l.fabricSlot === 1);
+    const fabricQtyKg = slot1?.fabricOrder?.fabricOrderedQuantityKg
+      ? Number(slot1.fabricOrder.fabricOrderedQuantityKg)
+      : Number(p.fabricOrderedQuantityKg ?? 0);
+    const gpk = Number(p.assumedFabricGarmentsPerKg ?? 0);
+    const target = Number(p.garmentNumber ?? 0);
+    const expectedFG = target > 0 ? target : Math.round(fabricQtyKg * gpk);
+    return {
+      id: p.id,
+      garmentingAt: p.garmentingAt || "",
+      articleNumber: p.articleNumber || "",
+      productName: p.productName || "",
+      type: p.type || "",
+      fabricName: slot1?.fabricOrder?.fabricName || p.fabricName,
+      colour: slot1?.fabricOrder?.colour || p.colourOrdered || "",
+      fabricQtyKg,
+      garmentsPerKg: gpk,
+      expectedFG,
+    };
+  });
+}
+
 export async function bulkUpdateProductStatus(
   ids: string[],
   status: ProductStatus

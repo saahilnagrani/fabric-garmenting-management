@@ -35,6 +35,7 @@ export type PlannedSKUOrder = {
   outwardShippingCost: number | null;
   proposedMrp: number | null;
   onlineMrp: number | null;
+  garmentingAt: string | null;
 };
 
 export type PlannedFabricOrder = {
@@ -67,6 +68,7 @@ export async function createPlanOrders(
     for (const sku of skuOrders) {
       const colourOrderedId = await resolver.colourId(sku.colourOrdered);
       const typeRefId = await resolver.productTypeId(sku.type);
+      const garmentingAtId = await resolver.garmentingLocationId(sku.garmentingAt);
       const product = await tx.product.create({
         data: {
           phaseId,
@@ -80,6 +82,8 @@ export async function createPlanOrders(
           isRepeat: sku.isRepeat,
           type: sku.type,
           typeRefId,
+          garmentingAt: sku.garmentingAt,
+          garmentingAtId,
           gender: sku.gender as "MENS" | "WOMENS" | "KIDS",
           productName: sku.productName || null,
           fabricVendorId: sku.fabricVendorId,

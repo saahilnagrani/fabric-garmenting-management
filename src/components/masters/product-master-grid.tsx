@@ -35,6 +35,7 @@ export function ProductMasterGrid({
   coloursWithCode = [],
   phases = [],
   accessories = [],
+  garmentingLocations = [],
   showArchived = false,
 }: {
   groupedMasters: GroupedStyleRow[];
@@ -45,6 +46,7 @@ export function ProductMasterGrid({
   coloursWithCode?: ColourWithCode[];
   phases?: Phase[];
   accessories?: AccessoryOption[];
+  garmentingLocations?: string[];
   showArchived?: boolean;
 }) {
   const router = useRouter();
@@ -254,6 +256,7 @@ export function ProductMasterGrid({
         coloursWithCode={coloursWithCode}
         phases={phases}
         accessories={accessories}
+        garmentingLocations={garmentingLocations}
       />
     </>
   );

@@ -23,7 +23,7 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
-import { Plus, Check } from "lucide-react";
+import { Plus, Check, FileDown } from "lucide-react";
 import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
@@ -136,10 +136,31 @@ export function ProductGrid({
     field, headerName, minWidth: w, type: "numericColumn", editable: false,
   });
 
-  // Helper: expected garments = assumedFabricGarmentsPerKg * fabricShippedQuantityKg
+  // Mirror the order sheet logic:
+  //   total = garmentNumber (target qty) when > 0, else round(fabricQtyKg × garmentsPerKg)
+  //   fabricQtyKg = shipped || ordered
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const expectedGarments = (data: any): number =>
-    (toNum(data?.assumedFabricGarmentsPerKg) || 0) * (toNum(data?.fabricShippedQuantityKg) || 0);
+  const expectedGarments = (data: any): number => {
+    const target = toNum(data?.garmentNumber) || 0;
+    if (target > 0) return target;
+    const kg = toNum(data?.fabricShippedQuantityKg) || toNum(data?.fabricOrderedQuantityKg) || 0;
+    const gpk = toNum(data?.assumedFabricGarmentsPerKg) || 0;
+    return Math.round(kg * gpk);
+  };
+
+  const sizePctMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of sizeDistributions) m.set(s.size, s.percentage);
+    return m;
+  }, [sizeDistributions]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const expectedForSize = (data: any, size: string): number => {
+    const total = expectedGarments(data);
+    if (!total) return 0;
+    const pct = sizePctMap.get(size) || 0;
+    return Math.round((total * pct) / 100);
+  };
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     { field: "styleNumber", headerName: "Style # (legacy)", pinned: "left", minWidth: 90, editable: false },
@@ -194,17 +215,17 @@ export function ProductGrid({
     { headerName: "Expected No. Of Garments", minWidth: 130, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? expectedGarments(p.data) : 0 },
     { headerName: "Actual No. of Garments Stitched", minWidth: 140, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalSizeCount(p.data) : 0 },
     // Sizes - Stitched
-    { headerName: "Expected XS", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: () => 0 },
+    { headerName: "Expected XS", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XS") : 0 },
     numCol("actualStitchedXS", "Actual Stitched - XS", 85),
-    { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 8) : 0 },
+    { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "S") : 0 },
     numCol("actualStitchedS", "Actual Stitched - S", 85),
-    { headerName: "Expected M", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
+    { headerName: "Expected M", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "M") : 0 },
     numCol("actualStitchedM", "Actual Stitched - M", 85),
-    { headerName: "Expected L", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
+    { headerName: "Expected L", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "L") : 0 },
     numCol("actualStitchedL", "Actual Stitched - L", 85),
-    { headerName: "Expected XL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 4) : 0 },
+    { headerName: "Expected XL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XL") : 0 },
     numCol("actualStitchedXL", "Actual Stitched - XL", 90),
-    { headerName: "Expected XXL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? Math.round(expectedGarments(p.data) / 8) : 0 },
+    { headerName: "Expected XXL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XXL") : 0 },
     numCol("actualStitchedXXL", "Actual Stitched - XXL", 95),
     // Sizes - Inward
     numCol("actualInwardXS", "Actual Inward XS", 85),
@@ -364,6 +385,26 @@ export function ProductGrid({
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Article Order
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const api = gridApiRef.current;
+            if (!api) return;
+            const ids: string[] = [];
+            api.forEachNodeAfterFilter((node) => {
+              if (node.data?.id) ids.push(String(node.data.id));
+            });
+            if (ids.length === 0) {
+              toast.error("No article orders to include in the plan.");
+              return;
+            }
+            window.open(`/products/garmenting-plan?ids=${ids.join(",")}`, "_blank");
+          }}
+        >
+          <FileDown className="mr-1.5 h-3.5 w-3.5" />
+          Garmenting Plan PDF
         </Button>
         <ExportExcelButton gridApiRef={gridApiRef} fileName="article-orders" sheetName="Article Orders" />
         <ManageColumnsDialog
