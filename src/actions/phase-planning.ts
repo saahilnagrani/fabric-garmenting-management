@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { createLookupResolver } from "@/lib/lookups";
 
-export type PlannedSKUOrder = {
+export type PlannedArticleOrder = {
   styleNumber: string;
   articleNumber: string;
   skuCode: string;
@@ -43,11 +43,11 @@ export type PlannedFabricOrder = {
   fabricVendorId: string;
   articleNumbers: string;
   colour: string;
-  // The full slash-joined colour label of the SKU this fabric order belongs to
-  // (e.g. "Black/Lime/Rani Pink"). Used at link time to find the matching
-  // Product when one SKU spans multiple fabric slots; the per-slot `colour`
-  // field above only carries the slot's own colour.
-  skuColourLabel: string;
+  // Index of the article order this fabric order belongs to, within the
+  // articleOrders array passed to createPlanOrders. Used to wire the
+  // ProductFabricOrder join row by direct identity, with no string parsing
+  // or colour-key matching, so multi-fabric article orders link correctly.
+  articleOrderIndex: number;
   fabricOrderedQuantityKg: number;
   costPerUnit: number | null;
   isRepeat: boolean;
@@ -58,72 +58,71 @@ export type PlannedFabricOrder = {
 
 export async function createPlanOrders(
   phaseId: string,
-  skuOrders: PlannedSKUOrder[],
+  articleOrders: PlannedArticleOrder[],
   fabricOrders: PlannedFabricOrder[]
 ) {
   await requirePermission("inventory:phases:edit");
   const resolver = createLookupResolver();
   await db.$transaction(async (tx) => {
-    // Map (articleNumber, colour) -> { productId, fabricName, fabric2Name }
-    // used to build ProductFabricOrder join rows after fabric orders are created
-    const productMap = new Map<string, { id: string; fabricName: string; fabric2Name: string | null }>();
-    const key = (article: string, colour: string) =>
-      `${article.trim()}||${colour.toLowerCase().trim()}`;
+    // Parallel array to articleOrders: holds the created Product's id and the
+    // fabric names for each slot, so we can resolve which slot a fabric order
+    // belongs to without re-deriving identity from text fields.
+    const createdArticleOrders: { id: string; fabricName: string; fabric2Name: string | null }[] = [];
 
-    for (const sku of skuOrders) {
-      const colourOrderedId = await resolver.colourId(sku.colourOrdered);
-      const typeRefId = await resolver.productTypeId(sku.type);
-      const garmentingAtId = await resolver.garmentingLocationId(sku.garmentingAt);
+    for (const ao of articleOrders) {
+      const colourOrderedId = await resolver.colourId(ao.colourOrdered);
+      const typeRefId = await resolver.productTypeId(ao.type);
+      const garmentingAtId = await resolver.garmentingLocationId(ao.garmentingAt);
       const product = await tx.product.create({
         data: {
           phaseId,
           orderDate: new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }),
-          styleNumber: sku.styleNumber,
-          articleNumber: sku.articleNumber,
-          skuCode: sku.skuCode,
-          colourOrdered: sku.colourOrdered,
+          styleNumber: ao.styleNumber,
+          articleNumber: ao.articleNumber,
+          skuCode: ao.skuCode,
+          colourOrdered: ao.colourOrdered,
           colourOrderedId,
-          garmentNumber: sku.garmentNumber,
-          isRepeat: sku.isRepeat,
-          type: sku.type,
+          garmentNumber: ao.garmentNumber,
+          isRepeat: ao.isRepeat,
+          type: ao.type,
           typeRefId,
-          garmentingAt: sku.garmentingAt,
+          garmentingAt: ao.garmentingAt,
           garmentingAtId,
-          gender: sku.gender as "MENS" | "WOMENS" | "KIDS",
-          productName: sku.productName || null,
-          fabricVendorId: sku.fabricVendorId,
-          fabricName: sku.fabricName,
-          fabric2Name: sku.fabric2Name,
-          fabric2VendorId: sku.fabric2VendorId,
-          fabricCostPerKg: sku.fabricCostPerKg,
-          fabric2CostPerKg: sku.fabric2CostPerKg,
-          assumedFabricGarmentsPerKg: sku.assumedFabricGarmentsPerKg,
-          assumedFabric2GarmentsPerKg: sku.assumedFabric2GarmentsPerKg,
-          fabricOrderedQuantityKg: sku.assumedFabricGarmentsPerKg
-            ? sku.garmentNumber / Number(sku.assumedFabricGarmentsPerKg)
+          gender: ao.gender as "MENS" | "WOMENS" | "KIDS",
+          productName: ao.productName || null,
+          fabricVendorId: ao.fabricVendorId,
+          fabricName: ao.fabricName,
+          fabric2Name: ao.fabric2Name,
+          fabric2VendorId: ao.fabric2VendorId,
+          fabricCostPerKg: ao.fabricCostPerKg,
+          fabric2CostPerKg: ao.fabric2CostPerKg,
+          assumedFabricGarmentsPerKg: ao.assumedFabricGarmentsPerKg,
+          assumedFabric2GarmentsPerKg: ao.assumedFabric2GarmentsPerKg,
+          fabricOrderedQuantityKg: ao.assumedFabricGarmentsPerKg
+            ? ao.garmentNumber / Number(ao.assumedFabricGarmentsPerKg)
             : null,
-          fabric2OrderedQuantityKg: sku.assumedFabric2GarmentsPerKg
-            ? sku.garmentNumber / Number(sku.assumedFabric2GarmentsPerKg)
+          fabric2OrderedQuantityKg: ao.assumedFabric2GarmentsPerKg
+            ? ao.garmentNumber / Number(ao.assumedFabric2GarmentsPerKg)
             : null,
-          stitchingCost: sku.stitchingCost,
-          brandLogoCost: sku.brandLogoCost,
-          neckTwillCost: sku.neckTwillCost,
-          reflectorsCost: sku.reflectorsCost,
-          fusingCost: sku.fusingCost,
-          accessoriesCost: sku.accessoriesCost,
-          brandTagCost: sku.brandTagCost,
-          sizeTagCost: sku.sizeTagCost,
-          packagingCost: sku.packagingCost,
-          outwardShippingCost: sku.outwardShippingCost,
-          proposedMrp: sku.proposedMrp,
-          onlineMrp: sku.onlineMrp,
+          stitchingCost: ao.stitchingCost,
+          brandLogoCost: ao.brandLogoCost,
+          neckTwillCost: ao.neckTwillCost,
+          reflectorsCost: ao.reflectorsCost,
+          fusingCost: ao.fusingCost,
+          accessoriesCost: ao.accessoriesCost,
+          brandTagCost: ao.brandTagCost,
+          sizeTagCost: ao.sizeTagCost,
+          packagingCost: ao.packagingCost,
+          outwardShippingCost: ao.outwardShippingCost,
+          proposedMrp: ao.proposedMrp,
+          onlineMrp: ao.onlineMrp,
           status: "PLANNED",
         },
       });
-      productMap.set(key(sku.articleNumber, sku.colourOrdered), {
+      createdArticleOrders.push({
         id: product.id,
-        fabricName: sku.fabricName,
-        fabric2Name: sku.fabric2Name,
+        fabricName: ao.fabricName,
+        fabric2Name: ao.fabric2Name,
       });
     }
 
@@ -149,20 +148,16 @@ export async function createPlanOrders(
         },
       });
 
-      // Link to Product(s). articleNumbers may contain multiple (comma-separated).
-      // We look up by the SKU's full colour label (e.g. "Black/Lime") rather
-      // than the per-slot colour, since productMap is keyed by sku.colourOrdered
-      // (the joined label) and multi-fabric SKUs would otherwise miss.
-      const articles = fabric.articleNumbers.split(",").map((a) => a.trim()).filter(Boolean);
-      for (const article of articles) {
-        const product = productMap.get(key(article, fabric.skuColourLabel));
-        if (!product) continue;
-        const slot = product.fabricName === fabric.fabricName ? 1 : product.fabric2Name === fabric.fabricName ? 2 : null;
-        if (slot === null) continue;
-        await tx.productFabricOrder.create({
-          data: { productId: product.id, fabricOrderId: fabricOrder.id, fabricSlot: slot },
-        });
-      }
+      // Direct lookup by index — no colour parsing, no key collisions.
+      const articleOrder = createdArticleOrders[fabric.articleOrderIndex];
+      if (!articleOrder) continue;
+      const slot =
+        articleOrder.fabricName === fabric.fabricName ? 1 :
+        articleOrder.fabric2Name === fabric.fabricName ? 2 : null;
+      if (slot === null) continue;
+      await tx.productFabricOrder.create({
+        data: { productId: articleOrder.id, fabricOrderId: fabricOrder.id, fabricSlot: slot },
+      });
     }
   });
   revalidatePath("/products");

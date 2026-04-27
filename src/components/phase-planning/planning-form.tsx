@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
-import { createPlanOrders, type PlannedSKUOrder, type PlannedFabricOrder } from "@/actions/phase-planning";
+import { createPlanOrders, type PlannedArticleOrder, type PlannedFabricOrder } from "@/actions/phase-planning";
 import { saveDraft, loadDraft, deleteDraft } from "@/actions/phase-planning-draft";
 import { GENDER_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
@@ -681,7 +681,7 @@ export function PlanningForm({
 
   // Build orders from quantity-mode selectedArticles
   const quantityOrders = useMemo(() => {
-    const skus: PlannedSKUOrder[] = [];
+    const articleOrders: PlannedArticleOrder[] = [];
     const fabrics: PlannedFabricOrder[] = [];
 
     for (const article of selectedArticles) {
@@ -689,7 +689,8 @@ export function PlanningForm({
         if (cq.qty <= 0) continue;
 
         const colourLabel = [cq.colour, cq.colour2, cq.colour3, cq.colour4].filter(Boolean).join("/");
-        skus.push({
+        const articleOrderIndex = articleOrders.length;
+        articleOrders.push({
           styleNumber: article.styleName,
           articleNumber: article.articleNumber,
           skuCode: findSkuCode(article.articleNumber, cq.colour, cq.colour2, cq.colour3, cq.colour4),
@@ -735,7 +736,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
-            skuColourLabel: colourLabel,
+            articleOrderIndex,
           });
         }
         if (article.fabric2Name && article.fabric2VendorId && cq.colour2) {
@@ -751,7 +752,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
-            skuColourLabel: colourLabel,
+            articleOrderIndex,
           });
         }
         if (article.fabric3Name && article.fabric3VendorId && cq.colour3) {
@@ -767,7 +768,7 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
-            skuColourLabel: colourLabel,
+            articleOrderIndex,
           });
         }
         if (article.fabric4Name && article.fabric4VendorId && cq.colour4) {
@@ -783,18 +784,18 @@ export function PlanningForm({
             gender: article.gender,
             orderStatus: "DRAFT_ORDER",
             garmentingAt: null,
-            skuColourLabel: colourLabel,
+            articleOrderIndex,
           });
         }
       }
     }
-    return { skuOrders: skus, fabricOrders: fabrics };
+    return { articleOrders, fabricOrders: fabrics };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArticles]);
 
   // Build orders from fabric-mode sections + ownership
   const fabricModeOrders = useMemo(() => {
-    const skus: PlannedSKUOrder[] = [];
+    const articleOrders: PlannedArticleOrder[] = [];
     const fabrics: PlannedFabricOrder[] = [];
 
     // For each (article, colour) that has an owner, compute qty from owner's kg × gpkForSlot
@@ -844,7 +845,8 @@ export function PlanningForm({
       const type = String(master.type || "");
       const colourLabel = [row.colour, row.colour2, row.colour3, row.colour4].filter(Boolean).join("/");
 
-      skus.push({
+      const articleOrderIndex = articleOrders.length;
+      articleOrders.push({
         styleNumber: styleName,
         articleNumber,
         skuCode: row.skuCode || findSkuCode(articleNumber, row.colour, row.colour2, row.colour3, row.colour4),
@@ -892,7 +894,7 @@ export function PlanningForm({
           gender,
           orderStatus: "DRAFT_ORDER",
           garmentingAt: null,
-          skuColourLabel: colourLabel,
+          articleOrderIndex,
         });
       };
       emit(fabricName, fabricInfo?.vendorId, toNum(master.fabricCostPerKg) ?? fabricInfo?.mrp ?? null, toNum(master.garmentsPerKg), row.colour);
@@ -901,11 +903,11 @@ export function PlanningForm({
       emit(fabric4Name, fabric4Info?.vendorId || null, toNum(master.fabric4CostPerKg) ?? fabric4Info?.mrp ?? null, toNum(master.garmentsPerKg4), row.colour4);
     }
 
-    return { skuOrders: skus, fabricOrders: fabrics };
+    return { articleOrders, fabricOrders: fabrics };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fabricSections, ownership, articleGroups, fabricVendorMap]);
 
-  const { skuOrders, fabricOrders } = mode === "fabric" ? fabricModeOrders : quantityOrders;
+  const { articleOrders, fabricOrders } = mode === "fabric" ? fabricModeOrders : quantityOrders;
 
   // Grouped fabric summary
   const fabricSummary = useMemo(() => {
@@ -936,13 +938,13 @@ export function PlanningForm({
   }, [fabricOrders, vendors]);
 
   async function handleCreate() {
-    if (skuOrders.length === 0) {
+    if (articleOrders.length === 0) {
       toast.error("No orders to create.");
       return;
     }
     setSubmitting(true);
     try {
-      await createPlanOrders(phaseId, skuOrders, fabricOrders);
+      await createPlanOrders(phaseId, articleOrders, fabricOrders);
       // Clear only the just-submitted mode's slice; the other mode's draft (if any) is preserved.
       try {
         const otherHasContent = mode === "quantity" ? fabricSections.length > 0 : selectedArticles.length > 0;
@@ -955,7 +957,7 @@ export function PlanningForm({
           await saveDraft(phaseId, payload);
         }
       } catch { /* ignore */ }
-      toast.success(`Created ${skuOrders.length} article orders and ${fabricOrders.length} fabric orders`);
+      toast.success(`Created ${articleOrders.length} article orders and ${fabricOrders.length} fabric orders`);
       router.push("/products");
       router.refresh();
     } catch {
@@ -979,7 +981,7 @@ export function PlanningForm({
         </Button>
 
         <div>
-          <h2 className="text-lg font-semibold mb-3">Article Orders ({skuOrders.length})</h2>
+          <h2 className="text-lg font-semibold mb-3">Article Orders ({articleOrders.length})</h2>
           <div className="border rounded-lg overflow-auto">
             <table className="w-full text-sm table-fixed">
               <thead className="bg-muted/50">
@@ -995,16 +997,16 @@ export function PlanningForm({
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {skuOrders.map((sku, i) => (
+                {articleOrders.map((ao, i) => (
                   <tr key={i}>
-                    <td className="px-3 py-2">{sku.productName || sku.styleNumber}</td>
-                    <td className="px-3 py-2">{sku.articleNumber}</td>
-                    <td className="px-3 py-2">{sku.type || "—"}</td>
-                    <td className="px-3 py-2">{sku.skuCode || "—"}</td>
-                    <td className="px-3 py-2">{sku.colourOrdered}</td>
-                    <td className="px-3 py-2 text-right">{sku.garmentNumber}</td>
-                    <td className="px-3 py-2">{sku.fabricName}</td>
-                    <td className="px-3 py-2">{sku.isRepeat ? "Yes" : "No"}</td>
+                    <td className="px-3 py-2">{ao.productName || ao.styleNumber}</td>
+                    <td className="px-3 py-2">{ao.articleNumber}</td>
+                    <td className="px-3 py-2">{ao.type || "—"}</td>
+                    <td className="px-3 py-2">{ao.skuCode || "—"}</td>
+                    <td className="px-3 py-2">{ao.colourOrdered}</td>
+                    <td className="px-3 py-2 text-right">{ao.garmentNumber}</td>
+                    <td className="px-3 py-2">{ao.fabricName}</td>
+                    <td className="px-3 py-2">{ao.isRepeat ? "Yes" : "No"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1048,9 +1050,9 @@ export function PlanningForm({
         </div>
 
         <div className="flex gap-3">
-          <Button onClick={handleCreate} disabled={submitting || skuOrders.length === 0}>
+          <Button onClick={handleCreate} disabled={submitting || articleOrders.length === 0}>
             {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            Create {skuOrders.length} Article Orders + {fabricOrders.length} Fabric Orders
+            Create {articleOrders.length} Article Orders + {fabricOrders.length} Fabric Orders
           </Button>
         </div>
       </div>
@@ -1406,7 +1408,7 @@ export function PlanningForm({
               if (!hasQty) { toast.error("Enter quantities for at least one colour"); return; }
               setStep("review");
             }}>
-              Review Orders ({skuOrders.length} Article + {fabricOrders.length} Fabric)
+              Review Orders ({articleOrders.length} Article + {fabricOrders.length} Fabric)
             </Button>
           </div>
         )}
@@ -1607,10 +1609,10 @@ export function PlanningForm({
       {fabricSections.length > 0 && (
         <div className="flex gap-3">
           <Button onClick={() => {
-            if (skuOrders.length === 0) { toast.error("Allocate some fabric to articles first"); return; }
+            if (articleOrders.length === 0) { toast.error("Allocate some fabric to articles first"); return; }
             setStep("review");
           }}>
-            Review Orders ({skuOrders.length} Article + {fabricOrders.length} Fabric)
+            Review Orders ({articleOrders.length} Article + {fabricOrders.length} Fabric)
           </Button>
         </div>
       )}
