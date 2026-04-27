@@ -36,7 +36,7 @@ export default async function AppLayout({
         <AppSidebar />
         <SidebarInset>
           <TopBar phases={phases} userName={session?.user?.name} alerts={alerts} />
-          <main className="flex-1 overflow-auto p-6">{children}</main>
+          <main className="flex-1 p-6">{children}</main>
         </SidebarInset>
         <Toaster closeButton richColors />
       </SidebarProvider>
