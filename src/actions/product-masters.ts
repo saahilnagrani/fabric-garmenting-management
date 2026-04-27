@@ -139,6 +139,9 @@ async function syncBomLines(productMasterId: string, lines: BomLine[]) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createProductMaster(data: any) {
   const session = await requirePermission("inventory:masters:edit");
+  if (!data?.garmentingAt || !String(data.garmentingAt).trim()) {
+    throw new Error("Garmenting At is required");
+  }
   // Pull bomLines off the payload before passing to Prisma
   const bomLines: BomLine[] | undefined = data.bomLines;
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -163,6 +166,11 @@ export async function createProductMaster(data: any) {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function updateProductMaster(id: string, data: any) {
   const session = await requirePermission("inventory:masters:edit");
+  // Only enforce required-ness when this update is actually touching the field
+  // (so e.g. a partial isStrikedThrough archive update isn't rejected).
+  if ("garmentingAt" in data && (!data.garmentingAt || !String(data.garmentingAt).trim())) {
+    throw new Error("Garmenting At is required");
+  }
   const previous = await db.productMaster.findUnique({ where: { id } });
   // Pull bomLines off the payload before passing to Prisma
   const bomLines: BomLine[] | undefined = data.bomLines;

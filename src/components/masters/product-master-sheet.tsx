@@ -775,6 +775,10 @@ export function ProductMasterSheet({
       toast.error("Gender is required");
       return;
     }
+    if (!form.garmentingAt.trim()) {
+      toast.error("Garmenting At is required");
+      return;
+    }
     if (skuEntries.length === 0) {
       toast.error("Select at least one colour to generate variants");
       return;
@@ -1101,7 +1105,7 @@ export function ProductMasterSheet({
                     </Select>
                   </div>
                   <div className="space-y-0.5">
-                    <Label className="text-[11px]">Garmenting At</Label>
+                    <Label className="text-[11px]">Garmenting At *</Label>
                     <Combobox
                       value={form.garmentingAt}
                       onValueChange={(v) => updateField("garmentingAt", v)}
@@ -1644,7 +1648,7 @@ export function ProductMasterSheet({
                     </Select>
                   </div>
                   <div className="space-y-0.5">
-                    <Label className="text-[11px]">Garmenting At</Label>
+                    <Label className="text-[11px]">Garmenting At *</Label>
                     <Combobox
                       value={form.garmentingAt}
                       onValueChange={(v) => updateField("garmentingAt", v)}
