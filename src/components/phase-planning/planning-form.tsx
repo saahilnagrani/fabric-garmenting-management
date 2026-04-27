@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
 import { createPlanOrders, type PlannedSKUOrder, type PlannedFabricOrder } from "@/actions/phase-planning";
 import { saveDraft, loadDraft, deleteDraft } from "@/actions/phase-planning-draft";
+import { GENDER_LABELS } from "@/lib/constants";
 import { toast } from "sonner";
 import { X, ArrowLeft, Loader2, ChevronDown, ChevronRight, Package, Layers } from "lucide-react";
 
@@ -1283,9 +1284,14 @@ export function PlanningForm({
           <div key={`${article.articleNumber}-${articleIdx}`} data-scroll-key={`article-${article.articleNumber}-${articleIdx}`} className="border rounded-lg p-4 space-y-3">
             <div className="flex items-start justify-between">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="font-semibold">
-                    {article.articleNumber} - {article.styleName}
+                    {[
+                      article.articleNumber,
+                      article.type,
+                      article.styleName,
+                      GENDER_LABELS[article.gender] || article.gender,
+                    ].filter(Boolean).join(" - ")}
                   </h3>
                   {article.isRepeat && (
                     <span className="text-xs bg-yellow-100 text-yellow-800 px-1.5 py-0.5 rounded">
@@ -1293,20 +1299,28 @@ export function PlanningForm({
                     </span>
                   )}
                 </div>
-                <div className="text-sm text-muted-foreground mt-0.5 space-x-4">
-                  <span>Fabric: {article.fabricName} ({article.fabricVendorName || "No vendor"})</span>
-                  {article.fabric2Name && <span>| 2nd: {article.fabric2Name} ({article.fabric2VendorName || "No vendor"})</span>}
-                  {article.fabric3Name && <span>| 3rd: {article.fabric3Name} ({article.fabric3VendorName || "No vendor"})</span>}
-                  {article.fabric4Name && <span>| 4th: {article.fabric4Name} ({article.fabric4VendorName || "No vendor"})</span>}
+                <div className="text-sm text-muted-foreground mt-0.5">
+                  Fabric 1: {article.fabricName} ({article.fabricVendorName || "No vendor"})
+                  {article.garmentsPerKg ? ` · ${article.garmentsPerKg}/kg` : ""}
                 </div>
-                <div className="text-sm text-muted-foreground space-x-4">
-                  <span>Garments/kg: {article.garmentsPerKg ?? "—"}</span>
-                  {article.garmentsPerKg2 && <span>| 2nd: {article.garmentsPerKg2}</span>}
-                  {article.garmentsPerKg3 && <span>| 3rd: {article.garmentsPerKg3}</span>}
-                  {article.garmentsPerKg4 && <span>| 4th: {article.garmentsPerKg4}</span>}
-                  <span>| Type: {article.type}</span>
-                  <span>| Gender: {article.gender}</span>
-                </div>
+                {article.fabric2Name && (
+                  <div className="text-sm text-muted-foreground">
+                    Fabric 2: {article.fabric2Name} ({article.fabric2VendorName || "No vendor"})
+                    {article.garmentsPerKg2 ? ` · ${article.garmentsPerKg2}/kg` : ""}
+                  </div>
+                )}
+                {article.fabric3Name && (
+                  <div className="text-sm text-muted-foreground">
+                    Fabric 3: {article.fabric3Name} ({article.fabric3VendorName || "No vendor"})
+                    {article.garmentsPerKg3 ? ` · ${article.garmentsPerKg3}/kg` : ""}
+                  </div>
+                )}
+                {article.fabric4Name && (
+                  <div className="text-sm text-muted-foreground">
+                    Fabric 4: {article.fabric4Name} ({article.fabric4VendorName || "No vendor"})
+                    {article.garmentsPerKg4 ? ` · ${article.garmentsPerKg4}/kg` : ""}
+                  </div>
+                )}
               </div>
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeArticle(articleIdx)}>
                 <X className="h-4 w-4" />
