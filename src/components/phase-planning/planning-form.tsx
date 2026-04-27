@@ -1494,7 +1494,6 @@ export function PlanningForm({
                   <div className="text-sm text-muted-foreground px-1">
                     {section.rows.length} article{section.rows.length === 1 ? "" : "s"}
                     {section.costPerKg ? ` · Rs ${section.costPerKg}/kg` : ""}
-                    {derivedKg > 0 ? ` · ${ownedKg} allocated + ${derivedKg} derived` : ""}
                   </div>
                   <div className={`grid ${colTemplate} gap-1.5 text-[10px] font-medium text-muted-foreground px-1 min-w-max`}>
                     <span>Article · Product</span>
