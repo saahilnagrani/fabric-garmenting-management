@@ -1,0 +1,327 @@
+/**
+ * PROTOTYPE-ONLY synthesis layer.
+ *
+ * The fabric custody rework introduces tables that don't exist yet:
+ * FabricReceipt, GarmenterDispatch, Allocation, Reservation. Until the schema
+ * lands, these helpers derive deterministic synthetic events from the real
+ * FabricOrder + Product rows already in the DB, so the proto screens can
+ * display the new model without touching production data.
+ *
+ * Everything in here is pure: same input → same output. No side effects.
+ * Safe to delete when the real tables exist.
+ */
+
+// Structural — matches Prisma Decimal without importing it. Anything with
+// toString() works (Decimal, BigInt, string).
+type DecimalLike = { toString(): string };
+type Num = DecimalLike | number | null | undefined;
+
+const toNum = (v: Num): number => {
+  if (v == null) return 0;
+  if (typeof v === "number") return v;
+  return Number(v.toString());
+};
+
+export type SynthFabricOrder = {
+  id: string;
+  fabricName: string;
+  colour: string;
+  vendorName: string;
+  orderedKg: number;
+  shippedKg: number;
+  orderDate: Date | null;
+  garmentingAtName: string | null;
+};
+
+export type SynthReceipt = {
+  id: string;
+  fabricOrderId: string;
+  date: Date;
+  qtyKg: number;
+  lotRef: string;
+};
+
+export type SynthDispatch = {
+  id: string;
+  fabricOrderId: string;
+  garmenterName: string;
+  date: Date;
+  qtyKg: number;
+};
+
+export type SynthAllocation = {
+  id: string;
+  fabricOrderId: string;
+  productId: string | null; // null when this is a Reservation
+  productLabel: string;
+  garmenterName: string;
+  qtyKg: number;
+  consumedKg: number;
+  isReservation: boolean;
+  reservationPurpose?: string;
+};
+
+export type SynthCustody = {
+  fabricOrderId: string;
+  orderedKg: number;
+  receivedKg: number;
+  onOrderKg: number;
+  inOurHandsKg: number;
+  atGarmenterKg: Record<string, number>; // garmenter name → kg
+  surplusKg: number; // received − ordered, clamped at 0
+  isOverReceived: boolean;
+};
+
+const DEMO_OVERRECEIPT_FRACTION = 0.25;
+
+/**
+ * Hash a string into a stable integer in [0, mod). Used to make synthesis
+ * deterministic (same FO id always produces the same synthetic dates / lots).
+ */
+function stableHash(s: string, mod: number): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return ((h % mod) + mod) % mod;
+}
+
+function addDays(d: Date, n: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + n);
+  return out;
+}
+
+/**
+ * Synthesize FabricReceipt events for a FabricOrder.
+ *
+ * Rules:
+ * - 0 received → no receipts (purely on-order at vendor)
+ * - shipped >= ordered → 1–2 receipts summing to shipped (full receipt)
+ * - shipped < ordered → 1–2 receipts summing to shipped (partial receipt)
+ * - If `forceOverReceipt` is true, append an extra receipt that pushes total
+ *   to ~125% of ordered. Used to demo the surplus flow on one selected FO.
+ */
+export function synthesizeReceipts(
+  fo: SynthFabricOrder,
+  opts?: { forceOverReceipt?: boolean }
+): SynthReceipt[] {
+  const ordered = fo.orderedKg;
+  let shipped = fo.shippedKg;
+  if (shipped <= 0) return [];
+
+  if (opts?.forceOverReceipt && shipped <= ordered) {
+    shipped = Math.round(ordered * (1 + DEMO_OVERRECEIPT_FRACTION) * 10) / 10;
+  }
+
+  const baseDate = fo.orderDate ?? new Date();
+  const offset = stableHash(fo.id, 14) + 14; // 14–28 days after order
+  const splitFraction = (stableHash(fo.id, 60) + 30) / 100; // 0.30–0.90
+  const shouldSplit = shipped > 40;
+
+  if (!shouldSplit) {
+    return [
+      {
+        id: `R-${stableHash(fo.id + "1", 9000) + 1000}`,
+        fabricOrderId: fo.id,
+        date: addDays(baseDate, offset),
+        qtyKg: round1(shipped),
+        lotRef: `${fo.vendorName.slice(0, 2).toUpperCase()}-${stableHash(fo.id, 99)}`,
+      },
+    ];
+  }
+
+  const first = round1(shipped * splitFraction);
+  const second = round1(shipped - first);
+  return [
+    {
+      id: `R-${stableHash(fo.id + "1", 9000) + 1000}`,
+      fabricOrderId: fo.id,
+      date: addDays(baseDate, offset),
+      qtyKg: first,
+      lotRef: `${fo.vendorName.slice(0, 2).toUpperCase()}-${stableHash(fo.id, 99)}A`,
+    },
+    {
+      id: `R-${stableHash(fo.id + "2", 9000) + 1000}`,
+      fabricOrderId: fo.id,
+      date: addDays(baseDate, offset + 14),
+      qtyKg: second,
+      lotRef: `${fo.vendorName.slice(0, 2).toUpperCase()}-${stableHash(fo.id, 99)}B`,
+    },
+  ];
+}
+
+/**
+ * Synthesize GarmenterDispatch events for a FabricOrder.
+ *
+ * Treats the FO's garmentingAt as a single dispatch destination. If receipts
+ * total > 0 and a garmenter is set, mint one dispatch that absorbs all
+ * received qty up to (but not exceeding) the originally ordered amount —
+ * surplus stays "in our hands". Real model would split across multiple
+ * dispatches; this is enough to demo the screens.
+ */
+export function synthesizeDispatches(
+  fo: SynthFabricOrder,
+  receipts: SynthReceipt[]
+): SynthDispatch[] {
+  if (!fo.garmentingAtName || receipts.length === 0) return [];
+  const totalReceived = receipts.reduce((s, r) => s + r.qtyKg, 0);
+  const dispatchable = Math.min(totalReceived, fo.orderedKg);
+  if (dispatchable <= 0) return [];
+  const dispatchDate = addDays(receipts[receipts.length - 1].date, 3);
+  return [
+    {
+      id: `D-${stableHash(fo.id, 9000) + 1000}`,
+      fabricOrderId: fo.id,
+      garmenterName: fo.garmentingAtName,
+      date: dispatchDate,
+      qtyKg: round1(dispatchable),
+    },
+  ];
+}
+
+/**
+ * Synthesize Allocation rows for a FabricOrder.
+ *
+ * Pulls real Product↔FabricOrder links and treats each as an allocation of
+ * the article's `fabricOrderedQuantityKg` against the FO. Adds a synthetic
+ * Reservation for one out of every ~5 FOs to demo the reservation case.
+ */
+export function synthesizeAllocations(
+  fo: SynthFabricOrder,
+  linkedProducts: { productId: string; styleNumber: string; productName: string | null; demandKg: number }[],
+  dispatches: SynthDispatch[]
+): SynthAllocation[] {
+  const garmenter = dispatches[0]?.garmenterName ?? fo.garmentingAtName ?? "—";
+  const allocations: SynthAllocation[] = linkedProducts.map((p, i) => ({
+    id: `ALC-${stableHash(fo.id + p.productId, 90000) + 10000}`,
+    fabricOrderId: fo.id,
+    productId: p.productId,
+    productLabel: p.productName
+      ? `${shortId(p.productId)} · ${p.productName}`
+      : `${shortId(p.productId)} · ${p.styleNumber}`,
+    garmenterName: garmenter,
+    qtyKg: round1(p.demandKg),
+    consumedKg: round1(p.demandKg * ((stableHash(p.productId, 70) + 10) / 100)), // 10–80% consumed
+    isReservation: false,
+  }));
+
+  if (stableHash(fo.id, 5) === 0 && dispatches.length > 0) {
+    const reserveQty = round1(Math.min(20, dispatches[0].qtyKg * 0.1));
+    if (reserveQty >= 1) {
+      allocations.push({
+        id: `RSV-${stableHash(fo.id, 90000) + 10000}`,
+        fabricOrderId: fo.id,
+        productId: null,
+        productLabel: "Sampling reservation",
+        garmenterName: garmenter,
+        qtyKg: reserveQty,
+        consumedKg: 0,
+        isReservation: true,
+        reservationPurpose: "sampling",
+      });
+    }
+  }
+
+  return allocations;
+}
+
+/**
+ * Compute the custody breakdown for a FabricOrder, given its receipts,
+ * dispatches and allocations. This is the data the new Custody column on
+ * the fabric-orders grid renders.
+ */
+export function computeCustody(
+  fo: SynthFabricOrder,
+  receipts: SynthReceipt[],
+  dispatches: SynthDispatch[]
+): SynthCustody {
+  const ordered = fo.orderedKg;
+  const received = round1(receipts.reduce((s, r) => s + r.qtyKg, 0));
+
+  const atGarmenterKg: Record<string, number> = {};
+  let totalDispatched = 0;
+  for (const d of dispatches) {
+    atGarmenterKg[d.garmenterName] = (atGarmenterKg[d.garmenterName] ?? 0) + d.qtyKg;
+    totalDispatched += d.qtyKg;
+  }
+
+  const inOurHandsKg = round1(Math.max(0, received - totalDispatched));
+  const onOrderKg = round1(Math.max(0, ordered - received));
+  const surplusKg = round1(Math.max(0, received - ordered));
+
+  return {
+    fabricOrderId: fo.id,
+    orderedKg: ordered,
+    receivedKg: received,
+    onOrderKg,
+    inOurHandsKg,
+    atGarmenterKg,
+    surplusKg,
+    isOverReceived: surplusKg > 0,
+  };
+}
+
+/**
+ * Top-level convenience: takes a FabricOrder + its linked products and
+ * returns everything the proto screens need for that order.
+ */
+export function synthesizeFabricOrder(
+  fo: SynthFabricOrder,
+  linkedProducts: { productId: string; styleNumber: string; productName: string | null; demandKg: number }[],
+  opts?: { forceOverReceipt?: boolean }
+) {
+  const receipts = synthesizeReceipts(fo, opts);
+  const dispatches = synthesizeDispatches(fo, receipts);
+  const allocations = synthesizeAllocations(fo, linkedProducts, dispatches);
+  const custody = computeCustody(fo, receipts, dispatches);
+  return { fabricOrder: fo, receipts, dispatches, allocations, custody };
+}
+
+/**
+ * Pick exactly one FabricOrder from a list to be the over-receipt demo.
+ * Stable across renders.
+ */
+export function pickOverReceiptDemoId(orders: { id: string; shippedKg: number; orderedKg: number }[]): string | null {
+  // Prefer one that's already partially received and has a vendor; if none
+  // qualify, pick the first one with shipped > 0.
+  const candidates = orders.filter((o) => o.shippedKg > 0 && o.shippedKg <= o.orderedKg);
+  if (candidates.length === 0) return null;
+  return candidates[stableHash("over", candidates.length)].id;
+}
+
+// ─── helpers ─────────────────────────────────────────────────────────────
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+const shortId = (id: string) => `AO-${stableHash(id, 9000) + 1000}`;
+
+export const protoNumberFmt = {
+  toNum,
+  round1,
+  shortId,
+};
+
+/**
+ * Adapter: turn a raw Prisma FabricOrder + relations into the SynthFabricOrder
+ * shape used by all the helpers above. Centralizes Decimal conversion.
+ */
+export function adaptFabricOrder(row: {
+  id: string;
+  fabricName: string;
+  colour: string;
+  fabricOrderedQuantityKg: Num;
+  fabricShippedQuantityKg: Num;
+  orderDate: Date | null;
+  fabricVendor: { name: string } | null;
+  garmentingAtRef: { name: string } | null;
+  garmentingAt: string | null;
+}): SynthFabricOrder {
+  return {
+    id: row.id,
+    fabricName: row.fabricName,
+    colour: row.colour,
+    vendorName: row.fabricVendor?.name ?? "—",
+    orderedKg: toNum(row.fabricOrderedQuantityKg),
+    shippedKg: toNum(row.fabricShippedQuantityKg),
+    orderDate: row.orderDate,
+    garmentingAtName: row.garmentingAtRef?.name ?? row.garmentingAt ?? null,
+  };
+}

@@ -43,6 +43,10 @@ interface NavItem {
   permission: Permission;
 }
 
+const protoItems: NavItem[] = [
+  { title: "Custody (proto)", href: "/proto", icon: Layers, permission: "inventory:fabric_orders:view" },
+];
+
 const navItems: NavItem[] = [
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, permission: "inventory:dashboard:view" },
   { title: "Phase Planning", href: "/phase-planning", icon: CalendarPlus, permission: "inventory:phases:view" },
@@ -90,15 +94,17 @@ export function AppSidebar() {
     permissionOverrides: session?.user?.permissionOverrides,
   }), [session]);
 
+  const visibleProto = useMemo(() => protoItems.filter((item) => hasPermission(permCtx, item.permission)), [permCtx]);
   const visibleNav = useMemo(() => navItems.filter((item) => hasPermission(permCtx, item.permission)), [permCtx]);
   const visibleMasters = useMemo(() => masterItems.filter((item) => hasPermission(permCtx, item.permission)), [permCtx]);
   const visibleLists = useMemo(() => listItems.filter((item) => hasPermission(permCtx, item.permission)), [permCtx]);
 
   const allItems = useMemo(() => [
+    ...visibleProto,
     ...visibleNav,
     ...visibleMasters,
     ...visibleLists,
-  ], [visibleNav, visibleMasters, visibleLists]);
+  ], [visibleProto, visibleNav, visibleMasters, visibleLists]);
 
   useEffect(() => {
     const container = contentRef.current;
@@ -165,6 +171,21 @@ export function AppSidebar() {
               transition: "top 250ms cubic-bezier(0.25, 0.1, 0.25, 1), height 150ms ease",
             }}
           />
+        )}
+        {visibleProto.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="flex items-center gap-2">
+              Prototype
+              <span className="inline-flex items-center px-1.5 h-3.5 rounded-full text-[8.5px] font-medium uppercase tracking-wider bg-[oklch(0.95_0.04_45)] border border-[oklch(0.85_0.06_45)] text-[oklch(0.45_0.16_45)]">
+                proto
+              </span>
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {visibleProto.map(renderItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         )}
         {visibleNav.length > 0 && (
           <SidebarGroup>
