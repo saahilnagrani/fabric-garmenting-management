@@ -4,6 +4,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
   applyDemoState,
+  assignFoDisplayNumbers,
   pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
@@ -54,6 +55,7 @@ export default async function ProtoGarmentersPage({ searchParams }: { searchPara
     }),
     db.fabricOrder.findMany({
       where: { phaseId: phase.id, isStrikedThrough: false },
+      orderBy: { createdAt: "desc" },
       include: {
         fabricVendor: { select: { name: true } },
         garmentingAtRef: { select: { name: true } },
@@ -126,15 +128,8 @@ export default async function ProtoGarmentersPage({ searchParams }: { searchPara
     articleCount: number;
   };
 
-  // Build a stable display number per FO (matches fabric-orders page approach)
-  const foDisplayNumber = new Map<string, string>();
-  const sortedSynth = [...synthesized].sort((a, b) => {
-    const order: Record<string, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
-    const ai = demoStates.get(a.fabricOrder.id);
-    const bi = demoStates.get(b.fabricOrder.id);
-    return (ai ? order[ai] : 99) - (bi ? order[bi] : 99);
-  });
-  sortedSynth.forEach((s, i) => foDisplayNumber.set(s.fabricOrder.id, `FO-${String(i + 1).padStart(4, "0")}`));
+  // Canonical FO display numbers (shared across all proto screens).
+  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
 
   // Group dispatches and allocations by garmenter → fabric+colour
   const byGarmenter = new Map<string, Map<string, FabricBlock>>();

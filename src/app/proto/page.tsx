@@ -39,7 +39,7 @@ const screens = [
     href: "/proto/article-orders",
     title: "Article orders & allocation",
     n: "05",
-    status: "static · same as /fabric-prototypes",
+    status: "live · real DB data",
     blurb:
       "Article orders grid with stacked allocation cell (from-received + from-expected + shortfall).",
   },

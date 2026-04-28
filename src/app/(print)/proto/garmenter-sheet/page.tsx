@@ -3,6 +3,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
   applyDemoState,
+  assignFoDisplayNumbers,
   pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
@@ -30,6 +31,7 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
 
   const orders = await db.fabricOrder.findMany({
     where: { phaseId: phase.id, isStrikedThrough: false },
+    orderBy: { createdAt: "desc" },
     include: {
       fabricVendor: { select: { name: true } },
       garmentingAtRef: { select: { name: true } },
@@ -70,15 +72,8 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
     return synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId });
   });
 
-  // Stable display numbers (same algorithm as the live screen)
-  const sortedSynth = [...synthesized].sort((a, b) => {
-    const order: Record<string, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
-    const ai = demoStates.get(a.fabricOrder.id);
-    const bi = demoStates.get(b.fabricOrder.id);
-    return (ai ? order[ai] : 99) - (bi ? order[bi] : 99);
-  });
-  const foDisplayNumber = new Map<string, string>();
-  sortedSynth.forEach((s, i) => foDisplayNumber.set(s.fabricOrder.id, `FO-${String(i + 1).padStart(4, "0")}`));
+  // Canonical FO display numbers (shared across all proto screens).
+  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
 
   // Aggregate this garmenter's fabric blocks
   type Block = {

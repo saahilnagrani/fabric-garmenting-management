@@ -3,6 +3,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
   applyDemoState,
+  assignFoDisplayNumbers,
   pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
@@ -99,20 +100,22 @@ export default async function ProtoFabricOrdersPage() {
     { onOrder: 0, inOurHands: 0, atGarmenter: 0, surplus: 0 }
   );
 
-  // Sort: demo orders first (so the screen tells its story without scrolling),
-  // then the rest. Strip Decimal/Date types for the client boundary. Assign
-  // FO-0001..FO-NNNN display numbers AFTER sort so demo rows are first.
+  // Canonical FO display numbers (shared across all proto screens).
+  const displayNumbers = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
+
+  // Sort rows so demo orders appear first in the table.
   const demoOrder: Record<string, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
   const sortedSynth = [...synthesized].sort((a, b) => {
     const aState = demoStates.get(a.fabricOrder.id);
     const bState = demoStates.get(b.fabricOrder.id);
     const ai = aState ? demoOrder[aState] : 99;
     const bi = bState ? demoOrder[bState] : 99;
-    return ai - bi;
+    if (ai !== bi) return ai - bi;
+    return a.fabricOrder.id.localeCompare(b.fabricOrder.id);
   });
-  const serialized = sortedSynth.map((s, idx) => ({
+  const serialized = sortedSynth.map((s) => ({
     fabricOrder: s.fabricOrder,
-    displayNumber: `FO-${String(idx + 1).padStart(4, "0")}`,
+    displayNumber: displayNumbers.get(s.fabricOrder.id) ?? "FO-????",
     receipts: s.receipts.map((r) => ({ ...r, date: r.date.toISOString() })),
     dispatches: s.dispatches.map((d) => ({ ...d, date: d.date.toISOString() })),
     allocations: s.allocations,

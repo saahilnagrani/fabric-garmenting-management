@@ -313,16 +313,49 @@ export type DemoState = "vendor" | "partial" | "full" | "over";
  * Returns a Map keyed by FO id. Orders not in the map should be left at
  * their natural state (whatever shippedKg already says).
  *
- * Picks the first 4 orders with orderedKg > 0 and assigns them in order
- * full → partial → over → vendor. Stable across renders.
+ * Sorts input by id internally so the SAME 4 FOs are always picked
+ * regardless of how the caller ordered the query. This is critical for
+ * cross-screen consistency (a row that's "demo over-receipt" on the fabric
+ * orders page is also the over-receipt on garmenters and article orders).
  */
 export function pickDemoStates(
   orders: { id: string; orderedKg: number; shippedKg: number }[]
 ): Map<string, DemoState> {
   const states: DemoState[] = ["full", "partial", "over", "vendor"];
-  const candidates = orders.filter((o) => o.orderedKg > 0).slice(0, states.length);
+  const candidates = orders
+    .filter((o) => o.orderedKg > 0)
+    .slice() // don't mutate caller
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .slice(0, states.length);
   const out = new Map<string, DemoState>();
   candidates.forEach((o, i) => out.set(o.id, states[i]));
+  return out;
+}
+
+/**
+ * Assign FO-NNNN display numbers deterministically across all proto screens.
+ *
+ * Demo orders come first in fixed state order (over, partial, full, vendor)
+ * so FO-0001..FO-0004 are always the demo set. Everything else is then
+ * sorted by id ascending so the mapping is identical on every page.
+ */
+export function assignFoDisplayNumbers(
+  orders: { id: string }[],
+  demoStates: Map<string, DemoState>
+): Map<string, string> {
+  const demoOrder: Record<DemoState, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
+  const sorted = orders
+    .slice()
+    .sort((a, b) => {
+      const ad = demoStates.get(a.id);
+      const bd = demoStates.get(b.id);
+      const ai = ad ? demoOrder[ad] : 999;
+      const bi = bd ? demoOrder[bd] : 999;
+      if (ai !== bi) return ai - bi;
+      return a.id.localeCompare(b.id);
+    });
+  const out = new Map<string, string>();
+  sorted.forEach((o, i) => out.set(o.id, `FO-${String(i + 1).padStart(4, "0")}`));
   return out;
 }
 
