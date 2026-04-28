@@ -36,7 +36,7 @@ export default async function GarmentingPlanPage({
     );
   }
 
-  // Group by garmenting vendor
+  // Group by garmenter (one section/page per garmenter).
   const byVendor = new Map<string, PlanRow[]>();
   for (const r of rows) {
     const key = r.garmentingAt || "(Unassigned)";
@@ -44,12 +44,12 @@ export default async function GarmentingPlanPage({
     byVendor.get(key)!.push(r);
   }
 
-  // Sort articles within each vendor by article number, then fabric/colour
+  // Within each garmenter, sort by article number then fabric slot so the
+  // multi-fabric rows for an article stay contiguous and in slot order.
   for (const list of byVendor.values()) {
     list.sort((a, b) =>
       a.articleNumber.localeCompare(b.articleNumber, undefined, { numeric: true }) ||
-      a.fabricName.localeCompare(b.fabricName) ||
-      a.colour.localeCompare(b.colour)
+      a.fabricSlot - b.fabricSlot
     );
   }
 
@@ -69,15 +69,37 @@ export default async function GarmentingPlanPage({
 
       <div className="no-print sticky top-0 z-10 flex items-center justify-between border-b bg-white px-6 py-3">
         <div className="text-sm text-muted-foreground">
-          {byVendor.size} garmenting plan{byVendor.size === 1 ? "" : "s"} ready · {rows.length} article line{rows.length === 1 ? "" : "s"}
+          {byVendor.size} garmenting plan{byVendor.size === 1 ? "" : "s"} ready · {rows.length} fabric line{rows.length === 1 ? "" : "s"}
         </div>
         <PrintButton />
       </div>
 
       <div className="mx-auto max-w-[210mm] px-8 py-6 print:px-0 print:py-0">
         {Array.from(byVendor.entries()).map(([vendorName, vendorRows]) => {
+          // Group rows by article order so we can rowSpan the article-level
+          // cells (Article Number, Expected FG) across each article's fabric
+          // rows. Vendor name is rowSpan across the whole table since this
+          // section is a single garmenter.
+          type ArticleGroup = { productId: string; articleNumber: string; expectedFG: number; rows: PlanRow[] };
+          const groups: ArticleGroup[] = [];
+          for (const r of vendorRows) {
+            const last = groups[groups.length - 1];
+            if (last && last.productId === r.productId) {
+              last.rows.push(r);
+            } else {
+              groups.push({
+                productId: r.productId,
+                articleNumber: r.articleNumber,
+                expectedFG: r.expectedFG,
+                rows: [r],
+              });
+            }
+          }
+
           const totalKg = vendorRows.reduce((s, r) => s + r.fabricQtyKg, 0);
-          const totalFG = vendorRows.reduce((s, r) => s + r.expectedFG, 0);
+          const totalFG = groups.reduce((s, g) => s + g.expectedFG, 0);
+          const totalRows = vendorRows.length;
+
           return (
             <section key={vendorName} className="vendor-page mb-10 print:mb-0">
               <div className="border-2 border-black p-3 mb-3">
@@ -88,7 +110,7 @@ export default async function GarmentingPlanPage({
                   </div>
                   <div className="text-[11px] text-right">
                     <div>Date: {today}</div>
-                    <div>{vendorRows.length} article{vendorRows.length === 1 ? "" : "s"}</div>
+                    <div>{groups.length} article{groups.length === 1 ? "" : "s"} · {totalRows} fabric line{totalRows === 1 ? "" : "s"}</div>
                   </div>
                 </div>
               </div>
@@ -106,17 +128,44 @@ export default async function GarmentingPlanPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {vendorRows.map((r) => (
-                    <tr key={r.id} className="align-top">
-                      <td className="border border-black px-2 py-1">{vendorName}</td>
-                      <td className="border border-black px-2 py-1">{r.articleNumber || "—"}</td>
-                      <td className="border border-black px-2 py-1">{r.fabricName || "—"}</td>
-                      <td className="border border-black px-2 py-1">{r.colour || "—"}</td>
-                      <td className="border border-black px-2 py-1 text-right">{formatKg(r.fabricQtyKg)}</td>
-                      <td className="border border-black px-2 py-1 text-right">{r.garmentsPerKg || "—"}</td>
-                      <td className="border border-black px-2 py-1 text-right">{r.expectedFG}</td>
-                    </tr>
-                  ))}
+                  {groups.map((group, gi) =>
+                    group.rows.map((r, ri) => {
+                      const isFirstRowOfGarmenter = gi === 0 && ri === 0;
+                      const isFirstRowOfGroup = ri === 0;
+                      return (
+                        <tr key={`${group.productId}-${r.fabricSlot}`} className="align-middle">
+                          {isFirstRowOfGarmenter && (
+                            <td
+                              rowSpan={totalRows}
+                              className="border border-black px-2 py-1 align-middle text-center font-medium"
+                            >
+                              {vendorName}
+                            </td>
+                          )}
+                          {isFirstRowOfGroup && (
+                            <td
+                              rowSpan={group.rows.length}
+                              className="border border-black px-2 py-1 align-middle text-center"
+                            >
+                              {group.articleNumber || "—"}
+                            </td>
+                          )}
+                          <td className="border border-black px-2 py-1">{r.fabricName || "—"}</td>
+                          <td className="border border-black px-2 py-1">{r.colour || "—"}</td>
+                          <td className="border border-black px-2 py-1 text-right">{formatKg(r.fabricQtyKg)}</td>
+                          <td className="border border-black px-2 py-1 text-right">{r.garmentsPerKg || "—"}</td>
+                          {isFirstRowOfGroup && (
+                            <td
+                              rowSpan={group.rows.length}
+                              className="border border-black px-2 py-1 text-right align-middle"
+                            >
+                              {group.expectedFG}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
                 <tfoot>
                   <tr className="bg-gray-50 font-semibold">

@@ -401,9 +401,10 @@ export async function getProductLinkedFabricOrders(productId: string) {
 }
 
 /**
- * Fetch the data needed to render a per-vendor garmenting plan PDF for a set
- * of article orders (Products). Each product is paired with its slot-1 fabric
- * order's colour and ordered qty (kg). Grouped by garmentingAt downstream.
+ * Fetch the data needed to render a per-garmenter garmenting plan PDF for a
+ * set of article orders. Returns one row per (article order, fabric slot) so
+ * the print view can render multiple fabric rows per article and merge cells
+ * (article number, expected FG) across them.
  */
 export async function getGarmentingPlanData(productIds: string[]) {
   await requirePermission("inventory:products:view");
@@ -416,27 +417,80 @@ export async function getGarmentingPlanData(productIds: string[]) {
       },
     },
   });
-  return products.map((p) => {
-    const slot1 = p.fabricOrderLinks.find((l) => l.fabricSlot === 1);
-    const fabricQtyKg = slot1?.fabricOrder?.fabricOrderedQuantityKg
-      ? Number(slot1.fabricOrder.fabricOrderedQuantityKg)
-      : Number(p.fabricOrderedQuantityKg ?? 0);
-    const gpk = Number(p.assumedFabricGarmentsPerKg ?? 0);
+  type Row = {
+    productId: string;
+    garmentingAt: string;
+    articleNumber: string;
+    productName: string;
+    type: string;
+    fabricSlot: number;
+    fabricName: string;
+    colour: string;
+    fabricQtyKg: number;
+    garmentsPerKg: number;
+    expectedFG: number;
+  };
+  const rows: Row[] = [];
+  for (const p of products) {
     const target = Number(p.garmentNumber ?? 0);
-    const expectedFG = target > 0 ? target : Math.round(fabricQtyKg * gpk);
-    return {
-      id: p.id,
-      garmentingAt: p.garmentingAt || "",
-      articleNumber: p.articleNumber || "",
-      productName: p.productName || "",
-      type: p.type || "",
-      fabricName: slot1?.fabricOrder?.fabricName || p.fabricName,
-      colour: slot1?.fabricOrder?.colour || p.colourOrdered || "",
-      fabricQtyKg,
-      garmentsPerKg: gpk,
-      expectedFG,
-    };
-  });
+    const slot1Link = p.fabricOrderLinks.find((l) => l.fabricSlot === 1);
+    const slot1Qty = slot1Link?.fabricOrder?.fabricOrderedQuantityKg
+      ? Number(slot1Link.fabricOrder.fabricOrderedQuantityKg)
+      : Number(p.fabricOrderedQuantityKg ?? 0);
+    const slot1Gpk = Number(p.assumedFabricGarmentsPerKg ?? 0);
+    const expectedFG = target > 0 ? target : Math.round(slot1Qty * slot1Gpk);
+
+    type Slot = { fabricName: string; colour: string; qtyKg: number; gpk: number };
+    const slots = new Map<number, Slot>();
+    for (const link of p.fabricOrderLinks) {
+      slots.set(link.fabricSlot, {
+        fabricName: link.fabricOrder.fabricName || "",
+        colour: link.fabricOrder.colour || "",
+        qtyKg: Number(link.fabricOrder.fabricOrderedQuantityKg ?? 0),
+        gpk:
+          link.fabricSlot === 1 ? Number(p.assumedFabricGarmentsPerKg ?? 0) :
+          link.fabricSlot === 2 ? Number(p.assumedFabric2GarmentsPerKg ?? 0) :
+          0,
+      });
+    }
+    // Fall back to article order's own fabric fields when a slot has no
+    // linked fabric order (e.g. older orders or planning-time gaps).
+    const colourTokens = (p.colourOrdered || "").split("/").map((c) => c.trim());
+    if (!slots.has(1) && p.fabricName) {
+      slots.set(1, {
+        fabricName: p.fabricName,
+        colour: colourTokens[0] || p.colourOrdered || "",
+        qtyKg: Number(p.fabricOrderedQuantityKg ?? 0),
+        gpk: Number(p.assumedFabricGarmentsPerKg ?? 0),
+      });
+    }
+    if (!slots.has(2) && p.fabric2Name) {
+      slots.set(2, {
+        fabricName: p.fabric2Name,
+        colour: colourTokens[1] || "",
+        qtyKg: Number(p.fabric2OrderedQuantityKg ?? 0),
+        gpk: Number(p.assumedFabric2GarmentsPerKg ?? 0),
+      });
+    }
+
+    const sortedSlots = Array.from(slots.entries()).sort(([a], [b]) => a - b);
+    for (const [slotNum, slot] of sortedSlots) {
+      rows.push({
+        productId: p.id,
+        garmentingAt: p.garmentingAt || "",
+        articleNumber: p.articleNumber || "",
+        productName: p.productName || "",
+        type: p.type || "",
+        fabricSlot: slotNum,
+        fabricName: slot.fabricName,
+        colour: slot.colour,
+        fabricQtyKg: slot.qtyKg,
+        garmentsPerKg: slot.gpk,
+        expectedFG,
+      });
+    }
+  }
+  return rows;
 }
 
 export async function bulkUpdateProductStatus(
