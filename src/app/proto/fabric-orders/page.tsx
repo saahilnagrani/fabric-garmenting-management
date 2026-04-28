@@ -44,6 +44,8 @@ export default async function ProtoFabricOrdersPage() {
               styleNumber: true,
               productName: true,
               fabricOrderedQuantityKg: true,
+              garmentingAt: true,
+              garmentingAtRef: { select: { name: true } },
             },
           },
         },
@@ -57,7 +59,9 @@ export default async function ProtoFabricOrdersPage() {
 
   const synthesized = orders.map((row) => {
     const baseFo = adaptFabricOrder(row);
-    const fo = applyDemoState(baseFo, demoStates.get(baseFo.id));
+    const inferredGarm = baseFo.garmentingAtName ?? inferGarmenterFromProducts(row.productLinks);
+    const foWithGarm = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
+    const fo = applyDemoState(foWithGarm, demoStates.get(baseFo.id));
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
       articleNumber: link.product.articleNumber,
@@ -69,6 +73,19 @@ export default async function ProtoFabricOrdersPage() {
       forceOverReceipt: fo.id === overReceiptId,
     });
   });
+
+  function inferGarmenterFromProducts(
+    links: { product: { garmentingAt: string | null; garmentingAtRef: { name: string } | null } }[]
+  ): string | null {
+    const counts = new Map<string, number>();
+    for (const link of links) {
+      const name = link.product.garmentingAtRef?.name ?? link.product.garmentingAt;
+      if (!name) continue;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    if (counts.size === 0) return null;
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  }
 
   // Headline KPIs across the phase
   const totals = synthesized.reduce(

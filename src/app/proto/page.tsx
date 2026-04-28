@@ -31,7 +31,7 @@ const screens = [
     href: "/proto/garmenters",
     title: "Garmenters",
     n: "04",
-    status: "static · same as /fabric-prototypes",
+    status: "live · real DB data",
     blurb:
       "Per-garmenter view with every fabric in their custody, allocations, reservations, remaining. Replaces the existing Garmenting Plan PDF.",
   },

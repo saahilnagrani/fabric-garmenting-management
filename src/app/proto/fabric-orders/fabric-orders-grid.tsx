@@ -317,12 +317,12 @@ function RowGroup({
                 <span className="font-mono font-medium">+{kgN(row.custody.surplusKg)} kg</span> over order on {row.displayNumber} — keep, allocate, or reserve.
               </span>
               <div className="ml-auto flex gap-2">
-                <Button size="xs" variant="outline" asChild>
-                  <Link href="/fabric-prototypes/dispatch-to-garmenter.html">Allocate surplus</Link>
-                </Button>
-                <Button size="xs" variant="outline" asChild>
-                  <Link href="/fabric-prototypes/dispatch-to-garmenter.html">Reserve for next phase</Link>
-                </Button>
+                <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
+                  <Button size="xs" variant="outline">Allocate surplus</Button>
+                </Link>
+                <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
+                  <Button size="xs" variant="outline">Reserve for next phase</Button>
+                </Link>
               </div>
             </div>
           </td>
@@ -352,12 +352,12 @@ function RowGroup({
                   </ul>
                 )}
                 <div className="flex gap-2 mt-3">
-                  <Button size="xs" variant="outline" asChild>
-                    <Link href="/fabric-prototypes/receive-fabric.html"><Plus className="h-3 w-3" /> Log receipt</Link>
-                  </Button>
-                  <Button size="xs" variant="outline" asChild>
-                    <Link href="/fabric-prototypes/dispatch-to-garmenter.html"><ArrowRight className="h-3 w-3" /> Dispatch</Link>
-                  </Button>
+                  <Link href="/fabric-prototypes/receive-fabric.html">
+                    <Button size="xs" variant="outline"><Plus className="h-3 w-3" /> Log receipt</Button>
+                  </Link>
+                  <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
+                    <Button size="xs" variant="outline"><ArrowRight className="h-3 w-3" /> Dispatch</Button>
+                  </Link>
                 </div>
               </div>
 
