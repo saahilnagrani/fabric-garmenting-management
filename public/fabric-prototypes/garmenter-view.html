@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Garmenters · Hyperballik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --background:oklch(1 0 0); --foreground:oklch(0.20 0 0); --primary:oklch(0.20 0 0); --primary-foreground:oklch(0.985 0 0); --secondary:oklch(0.96 0.003 80); --muted:oklch(0.96 0.003 80); --muted-foreground:oklch(0.50 0 0); --accent:oklch(0.65 0.16 45); --accent-foreground:oklch(1 0 0); --border:oklch(0.91 0.003 80); --card:oklch(1 0 0); --sidebar:oklch(0.985 0 0); --sidebar-accent:oklch(0.95 0.02 45); --sidebar-border:oklch(0.91 0.003 80); }
+  html,body{background:var(--background);color:var(--foreground);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .num{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums;}
+  .text-muted{color:var(--muted-foreground);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:8px;}
+  .btn:active{transform:translateY(1px);}
+  .btn-default{background:var(--primary);color:var(--primary-foreground);}.btn-default:hover{opacity:.9;}
+  .btn-outline{background:var(--background);border:1px solid var(--border);color:var(--foreground);}.btn-outline:hover{background:var(--secondary);}
+  .btn-ghost{background:transparent;}.btn-ghost:hover{background:var(--secondary);}
+  .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:6px;}
+  .btn-xs{height:26px;padding:0 8px;font-size:12px;border-radius:6px;}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;font-size:11px;font-weight:500;border-radius:9999px;line-height:1;white-space:nowrap;}
+  .badge-secondary{background:var(--secondary);color:var(--foreground);}
+  .badge-accent{background:oklch(0.95 0.02 45);color:oklch(0.45 0.16 45);border:1px solid oklch(0.85 0.06 45);}
+  .badge-vendor{background:oklch(0.96 0.012 80);color:oklch(0.40 0.04 80);border:1px solid oklch(0.88 0.02 80);}
+  .badge-custody{background:oklch(0.95 0.02 250);color:oklch(0.40 0.10 250);border:1px solid oklch(0.85 0.05 250);}
+  .badge-garm{background:oklch(0.95 0.04 140);color:oklch(0.40 0.10 140);border:1px solid oklch(0.85 0.06 140);}
+  .badge-alloc{background:oklch(0.96 0.04 75);color:oklch(0.45 0.10 75);border:1px solid oklch(0.85 0.06 75);}
+  .badge-resv{background:oklch(0.95 0.04 310);color:oklch(0.40 0.10 310);border:1px solid oklch(0.85 0.06 310);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  .sb{width:240px;background:var(--sidebar);border-right:1px solid var(--sidebar-border);height:100vh;position:fixed;top:0;left:0;display:flex;flex-direction:column;padding:12px 8px;overflow-y:auto;}
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--sidebar-border);margin-bottom:8px;}
+  .sb-brand .logo{width:24px;height:24px;border-radius:6px;background:var(--accent);position:relative;}
+  .sb-brand .logo::after{content:"";position:absolute;inset:5px;background:var(--accent-foreground);border-radius:2px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%);}
+  .sb-section{padding:10px 8px 4px;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--muted-foreground);text-transform:uppercase;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13.5px;color:var(--foreground);margin-bottom:1px;position:relative;}
+  .sb-link:hover{background:oklch(0.95 0.003 80);}
+  .sb-link.active{background:var(--sidebar-accent);font-weight:500;}
+  .sb-link.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:2px;}
+  .sb-link.new::after{content:"new";margin-left:auto;font-size:9px;padding:1px 5px;border:1px solid oklch(0.85 0.06 45);color:oklch(0.45 0.16 45);border-radius:9999px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;}
+  .tb{height:52px;border-bottom:1px solid var(--border);background:var(--background);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10;}
+  .main-wrap{margin-left:240px;min-height:100vh;display:flex;flex-direction:column;}
+  .content{flex:1;padding:24px;}
+
+  table.simple{width:100%;border-collapse:collapse;}
+  table.simple th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}
+  table.simple td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;}
+  table.simple tr:last-child td{border-bottom:0;}
+  .right{text-align:right;}
+
+  .swatch-l{width:48px;height:48px;border-radius:6px;border:1px solid oklch(0 0 0 / 0.18);}
+  .thread{display:flex;height:8px;background:oklch(0.96 0.003 80);border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+  .thread > span{display:block;height:100%;}
+  .seg-alloc{background:oklch(0.65 0.12 75);}
+  .seg-resv{background:oklch(0.55 0.13 310);}
+  .seg-free{background:oklch(0.55 0.12 140);}
+
+  .kpi{padding:14px 16px;}
+  .kpi-label{font-size:11px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:var(--muted-foreground);}
+  .kpi-value{font-size:22px;font-weight:600;margin-top:4px;letter-spacing:-0.01em;}
+  .kpi-sub{font-size:11.5px;color:var(--muted-foreground);margin-top:2px;}
+
+  .tab{padding:9px 14px;font-size:13px;color:var(--muted-foreground);border-bottom:2px solid transparent;cursor:pointer;}
+  .tab.active{color:var(--foreground);border-color:var(--foreground);font-weight:500;}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-brand"><div class="logo"></div><div><div class="text-[13.5px] font-semibold leading-none">Hyperballik</div><div class="text-[10px] text-muted mt-0.5 leading-none">v.proto · 2026-Q2</div></div></div>
+  <div class="sb-section">Main</div>
+  <a class="sb-link" href="index.html">Dashboard</a>
+  <a class="sb-link" href="phase-planning.html">Phase Planning</a>
+  <a class="sb-link" href="article-order-allocation.html">Article Orders</a>
+  <a class="sb-link" href="fabric-orders.html">Fabric Orders</a>
+  <a class="sb-link new" href="receive-fabric.html">Receive Fabric</a>
+  <a class="sb-link new" href="dispatch-to-garmenter.html">Dispatch</a>
+  <a class="sb-link new active" href="garmenter-view.html">Garmenters</a>
+  <a class="sb-link" href="#">Fabric Balance</a>
+  <a class="sb-link" href="#">Accessories</a>
+  <a class="sb-link" href="#">Expenses</a>
+  <div class="sb-section">Masters</div>
+  <a class="sb-link" href="#">Fabrics Master DB</a>
+  <a class="sb-link" href="#">Article Master DB</a>
+  <div class="sb-section">Lists</div>
+  <a class="sb-link" href="#">Vendors</a>
+  <a class="sb-link" href="#">Phases</a>
+  <a class="sb-link" href="#">Garmenting Locations</a>
+  <div class="mt-auto pt-4 border-t border-[var(--sidebar-border)] flex items-center gap-2 px-2 pb-1"><div class="w-7 h-7 rounded-full bg-[oklch(0.92_0.02_45)] text-[oklch(0.40_0.16_45)] text-[11px] font-semibold flex items-center justify-center">SN</div><div class="flex-1 min-w-0"><div class="text-[12.5px] font-medium truncate">admin</div><div class="text-[11px] text-muted truncate">admin@hyperballik.com</div></div></div>
+</aside>
+
+<div class="main-wrap">
+  <header class="tb">
+    <div class="flex items-center gap-3"><div class="text-[13.5px] font-medium">Phase 27 · 2026-Q2</div><div class="badge badge-secondary">current</div></div>
+    <div class="flex items-center gap-2"><button class="btn btn-ghost btn-sm">Alerts <span class="ml-1 num text-[11px] text-muted">3</span></button><button class="btn btn-outline btn-sm">Help</button></div>
+  </header>
+
+  <main class="content space-y-4">
+    <!-- Page header — multi-garmenter selector -->
+    <div class="flex items-end justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Garmenters</h1>
+        <p class="text-sm text-muted">3 garmenters holding fabric in Phase 27 · custody view</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm">Filter ▾</button>
+        <button class="btn btn-default btn-sm">Print sheet for garmenter ↓</button>
+      </div>
+    </div>
+
+    <!-- garmenter selector tabs -->
+    <div class="card flex items-center px-2 overflow-x-auto">
+      <div class="px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-muted">Garmenter</div>
+      <button class="px-3 py-2 text-[13.5px] font-medium border-b-2 border-[var(--accent)] text-[var(--foreground)]">Sai Garments <span class="num text-muted ml-1">330 kg</span></button>
+      <button class="px-3 py-2 text-[13.5px] text-muted hover:text-[var(--foreground)]">Lakshmi Tailors <span class="num ml-1">15 kg</span></button>
+      <button class="px-3 py-2 text-[13.5px] text-muted hover:text-[var(--foreground)]">Anand Stitching <span class="num ml-1">30 kg</span></button>
+    </div>
+
+    <!-- garmenter header card -->
+    <div class="card p-5">
+      <div class="flex items-start justify-between">
+        <div>
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Garmenter</div>
+          <div class="text-2xl font-bold mt-1">Sai Garments</div>
+          <div class="text-sm text-muted mt-1">Bhiwandi · 14 active article orders · contact: <span class="text-[var(--foreground)]">Mr. R. Iyer</span></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn btn-outline btn-xs">Vendor profile</button>
+          <button class="btn btn-outline btn-xs">Contact log</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="card grid grid-cols-4 divide-x divide-[var(--border)]">
+      <div class="kpi"><div class="kpi-label">total at garmenter</div><div class="kpi-value num">330 <span class="text-[13px] text-muted">kg</span></div><div class="kpi-sub">across 3 fabrics</div></div>
+      <div class="kpi"><div class="kpi-label">allocated</div><div class="kpi-value num">235 <span class="text-[13px] text-muted">kg</span></div><div class="kpi-sub">to 5 article orders</div></div>
+      <div class="kpi"><div class="kpi-label">reserved</div><div class="kpi-value num">30 <span class="text-[13px] text-muted">kg</span></div><div class="kpi-sub">sampling, next-phase</div></div>
+      <div class="kpi"><div class="kpi-label">free</div><div class="kpi-value num">65 <span class="text-[13px] text-muted">kg</span></div><div class="kpi-sub">unallocated, awaiting plan</div></div>
+    </div>
+
+    <!-- secondary tabs -->
+    <div class="flex border-b border-[var(--border)]">
+      <div class="tab active">Fabric on hand</div>
+      <div class="tab">Article orders <span class="num text-[11.5px] ml-1">14</span></div>
+      <div class="tab">Cutting reports</div>
+      <div class="tab">History</div>
+    </div>
+
+    <!-- per-fabric blocks -->
+    <section class="space-y-4">
+
+      <article class="card overflow-hidden">
+        <header class="grid grid-cols-12 gap-4 items-center px-5 py-4 border-b border-[var(--border)]">
+          <div class="col-span-5 flex items-center gap-3">
+            <span class="swatch-l" style="background:#F2EBDA"></span>
+            <div>
+              <div class="text-base font-semibold">Cotton poplin · ivory</div>
+              <div class="text-[12px] text-muted">120 gsm · Arvind Mills · FO-501</div>
+            </div>
+          </div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">dispatched</div><div class="num text-[16px] font-medium">95.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">allocated</div><div class="num text-[16px] font-medium">70.0 kg</div></div>
+          <div class="col-span-1"><div class="text-[11px] text-muted uppercase tracking-wider">reserved</div><div class="num text-[16px] font-medium">10.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">free</div><div class="num text-[16px] font-medium" style="color:oklch(0.50 0.10 140);">15.0 kg</div></div>
+        </header>
+        <div class="px-5 pt-4">
+          <div class="thread"><span class="seg-alloc" style="width:73.7%"></span><span class="seg-resv" style="width:10.5%"></span><span class="seg-free" style="width:15.8%"></span></div>
+          <div class="flex justify-between text-[10.5px] text-muted mt-1"><span>allocated 70 kg</span><span>reserved 10 kg</span><span>free 15 kg</span></div>
+        </div>
+        <div class="p-5">
+          <table class="simple">
+            <thead><tr><th>Type</th><th>Article / purpose</th><th>Style code</th><th class="right">Qty</th><th class="right">Consumed</th><th class="right">Remaining</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-alloc">allocation</span></td><td>AO-2401 · Women's tunic</td><td class="num text-muted">WT-IV-120</td><td class="right num">60.0 kg</td><td class="right num">38.4 kg</td><td class="right num">21.6 kg</td></tr>
+              <tr><td><span class="badge badge-alloc">allocation</span></td><td>AO-2410 · Tunic (sample run)</td><td class="num text-muted">WT-IV-120/S</td><td class="right num">10.0 kg</td><td class="right num">10.0 kg</td><td class="right num text-muted">— done</td></tr>
+              <tr><td><span class="badge badge-resv">reservation</span></td><td>Phase 2026-Q3 buffer</td><td class="num text-muted">—</td><td class="right num">10.0 kg</td><td></td><td class="right num">10.0 kg</td></tr>
+              <tr style="color:oklch(0.50 0.10 140);"><td><span class="badge badge-garm">free</span></td><td>unallocated</td><td></td><td class="right num">15.0 kg</td><td></td><td class="right num">15.0 kg</td></tr>
+            </tbody>
+          </table>
+          <div class="mt-3 flex gap-2">
+            <button class="btn btn-outline btn-xs">+ Allocate to article</button>
+            <button class="btn btn-outline btn-xs">+ Reserve</button>
+            <button class="btn btn-ghost btn-xs">Move to another garmenter</button>
+          </div>
+        </div>
+      </article>
+
+      <article class="card overflow-hidden">
+        <header class="grid grid-cols-12 gap-4 items-center px-5 py-4 border-b border-[var(--border)]">
+          <div class="col-span-5 flex items-center gap-3">
+            <span class="swatch-l" style="background:#9C4322"></span>
+            <div>
+              <div class="text-base font-semibold">Viscose crepe · rust 405</div>
+              <div class="text-[12px] text-muted">90 gsm · Birla Cellulose · FO-502</div>
+            </div>
+          </div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">dispatched</div><div class="num text-[16px] font-medium">150.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">allocated</div><div class="num text-[16px] font-medium">80.0 kg</div></div>
+          <div class="col-span-1"><div class="text-[11px] text-muted uppercase tracking-wider">reserved</div><div class="num text-[16px] font-medium">20.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">free</div><div class="num text-[16px] font-medium" style="color:oklch(0.50 0.10 140);">50.0 kg</div></div>
+        </header>
+        <div class="px-5 pt-4">
+          <div class="thread"><span class="seg-alloc" style="width:53%"></span><span class="seg-resv" style="width:13.5%"></span><span class="seg-free" style="width:33.5%"></span></div>
+          <div class="flex justify-between text-[10.5px] text-muted mt-1"><span>allocated 80 kg</span><span>reserved 20 kg</span><span>free 50 kg</span></div>
+        </div>
+        <div class="p-5">
+          <table class="simple">
+            <thead><tr><th>Type</th><th>Article / purpose</th><th>Style code</th><th class="right">Qty</th><th class="right">Consumed</th><th class="right">Remaining</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-alloc">allocation</span></td><td>AO-2405 · Women's wrap</td><td class="num text-muted">WW-RU-090</td><td class="right num">80.0 kg</td><td class="right num">12.0 kg</td><td class="right num">68.0 kg</td></tr>
+              <tr><td><span class="badge badge-resv">reservation</span></td><td>Sampling — kids capsule</td><td class="num text-muted">—</td><td class="right num">20.0 kg</td><td></td><td class="right num">20.0 kg</td></tr>
+              <tr style="color:oklch(0.50 0.10 140);"><td><span class="badge badge-garm">free</span></td><td>unallocated · client to advise</td><td></td><td class="right num">50.0 kg</td><td></td><td class="right num">50.0 kg</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="card overflow-hidden">
+        <header class="grid grid-cols-12 gap-4 items-center px-5 py-4 border-b border-[var(--border)]">
+          <div class="col-span-5 flex items-center gap-3">
+            <span class="swatch-l" style="background:#6E7449"></span>
+            <div>
+              <div class="text-base font-semibold">Modal jersey · olive 312</div>
+              <div class="text-[12px] text-muted">180 gsm · Raymond UCO · FO-503</div>
+            </div>
+          </div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">dispatched</div><div class="num text-[16px] font-medium">100.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">allocated</div><div class="num text-[16px] font-medium">95.0 kg</div></div>
+          <div class="col-span-1"><div class="text-[11px] text-muted uppercase tracking-wider">reserved</div><div class="num text-[16px] font-medium">0.0 kg</div></div>
+          <div class="col-span-2"><div class="text-[11px] text-muted uppercase tracking-wider">free</div><div class="num text-[16px] font-medium" style="color:oklch(0.50 0.10 140);">5.0 kg</div></div>
+        </header>
+        <div class="px-5 pt-4">
+          <div class="thread"><span class="seg-alloc" style="width:95%"></span><span class="seg-free" style="width:5%"></span></div>
+          <div class="flex justify-between text-[10.5px] text-muted mt-1"><span>allocated 95 kg</span><span></span><span>free 5 kg</span></div>
+        </div>
+        <div class="p-5">
+          <table class="simple">
+            <thead><tr><th>Type</th><th>Article / purpose</th><th>Style code</th><th class="right">Qty</th><th class="right">Consumed</th><th class="right">Remaining</th></tr></thead>
+            <tbody>
+              <tr><td><span class="badge badge-alloc">allocation</span></td><td>AO-2404 · Lounge tee</td><td class="num text-muted">LT-OL-180</td><td class="right num">95.0 kg</td><td class="right num">88.6 kg</td><td class="right num">6.4 kg</td></tr>
+              <tr style="color:oklch(0.50 0.10 140);"><td><span class="badge badge-garm">free</span></td><td>unallocated · likely scrap-bound</td><td></td><td class="right num">5.0 kg</td><td></td><td class="right num">5.0 kg</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+
+    <!-- Print preview note -->
+    <div class="card p-5">
+      <div class="grid grid-cols-12 gap-6">
+        <div class="col-span-7">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Garmenter sheet</div>
+          <h2 class="text-base font-semibold mt-1">Replaces the existing Garmenting Plan PDF</h2>
+          <p class="text-sm text-muted mt-2 leading-relaxed">"Print sheet for garmenter" generates a one-page PDF per garmenter from this view — same data the existing Garmenting Plan PDF has, plus the live remaining figure per allocation. Recommendation: collapse the two PDF endpoints. The dropdown of garmenters becomes the tab strip on this page.</p>
+        </div>
+        <div class="col-span-5">
+          <div class="card p-4 bg-[oklch(0.99_0.003_80)]">
+            <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Print preview</div>
+            <div class="text-[14px] font-semibold mt-1">Sai Garments · fabric in custody</div>
+            <div class="text-[12px] text-muted">28 Apr 2026</div>
+            <ul class="mt-3 space-y-1 num text-[12px]">
+              <li>· Cotton poplin ivory — 95 dispatched · 70 alloc · 10 resv · 15 free</li>
+              <li>· Viscose crepe rust 405 — 150 · 80 alloc · 20 resv · 50 free</li>
+              <li>· Modal jersey olive 312 — 100 · 95 alloc · 0 resv · 5 free</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body></html>

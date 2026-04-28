@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dispatch to garmenter · Hyperballik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --background:oklch(1 0 0); --foreground:oklch(0.20 0 0); --primary:oklch(0.20 0 0); --primary-foreground:oklch(0.985 0 0); --secondary:oklch(0.96 0.003 80); --muted:oklch(0.96 0.003 80); --muted-foreground:oklch(0.50 0 0); --accent:oklch(0.65 0.16 45); --accent-foreground:oklch(1 0 0); --border:oklch(0.91 0.003 80); --card:oklch(1 0 0); --sidebar:oklch(0.985 0 0); --sidebar-accent:oklch(0.95 0.02 45); --sidebar-border:oklch(0.91 0.003 80); }
+  html,body{background:var(--background);color:var(--foreground);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .num{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums;}
+  .text-muted{color:var(--muted-foreground);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:8px;}
+  .btn:active{transform:translateY(1px);}
+  .btn-default{background:var(--primary);color:var(--primary-foreground);}.btn-default:hover{opacity:.9;}
+  .btn-outline{background:var(--background);border:1px solid var(--border);color:var(--foreground);}.btn-outline:hover{background:var(--secondary);}
+  .btn-ghost{background:transparent;}.btn-ghost:hover{background:var(--secondary);}
+  .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:6px;}
+  .btn-xs{height:26px;padding:0 8px;font-size:12px;border-radius:6px;}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;font-size:11px;font-weight:500;border-radius:9999px;line-height:1;white-space:nowrap;}
+  .badge-secondary{background:var(--secondary);color:var(--foreground);}
+  .badge-accent{background:oklch(0.95 0.02 45);color:oklch(0.45 0.16 45);border:1px solid oklch(0.85 0.06 45);}
+  .badge-custody{background:oklch(0.95 0.02 250);color:oklch(0.40 0.10 250);border:1px solid oklch(0.85 0.05 250);}
+  .badge-garm{background:oklch(0.95 0.04 140);color:oklch(0.40 0.10 140);border:1px solid oklch(0.85 0.06 140);}
+  .badge-alloc{background:oklch(0.96 0.04 75);color:oklch(0.45 0.10 75);border:1px solid oklch(0.85 0.06 75);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  .sb{width:240px;background:var(--sidebar);border-right:1px solid var(--sidebar-border);height:100vh;position:fixed;top:0;left:0;display:flex;flex-direction:column;padding:12px 8px;overflow-y:auto;}
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--sidebar-border);margin-bottom:8px;}
+  .sb-brand .logo{width:24px;height:24px;border-radius:6px;background:var(--accent);position:relative;}
+  .sb-brand .logo::after{content:"";position:absolute;inset:5px;background:var(--accent-foreground);border-radius:2px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%);}
+  .sb-section{padding:10px 8px 4px;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--muted-foreground);text-transform:uppercase;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13.5px;color:var(--foreground);margin-bottom:1px;position:relative;}
+  .sb-link:hover{background:oklch(0.95 0.003 80);}
+  .sb-link.active{background:var(--sidebar-accent);font-weight:500;}
+  .sb-link.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:2px;}
+  .sb-link.new::after{content:"new";margin-left:auto;font-size:9px;padding:1px 5px;border:1px solid oklch(0.85 0.06 45);color:oklch(0.45 0.16 45);border-radius:9999px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;}
+  .tb{height:52px;border-bottom:1px solid var(--border);background:var(--background);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10;}
+  .main-wrap{margin-left:240px;min-height:100vh;display:flex;flex-direction:column;}
+  .content{flex:1;padding:24px;}
+  .field { display:flex; flex-direction:column; gap:6px; }
+  .field label { font-size: 12.5px; font-weight: 500; }
+  .field input, .field select, .field textarea { border:1px solid var(--border); background: var(--background); padding: 8px 12px; font-size: 14px; border-radius: 8px; outline: none; font-family: inherit; }
+  .field input:focus, .field select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px oklch(0.65 0.16 45 / 0.15); }
+  .field input:disabled { background: var(--muted); color: var(--muted-foreground); }
+  .thread{display:flex;height:8px;background:oklch(0.96 0.003 80);border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+  .thread > span{display:block;height:100%;}
+  .seg-custody{background:oklch(0.55 0.10 250);}
+  .seg-garm{background:oklch(0.55 0.12 140);}
+  .step-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:9999px;background:var(--primary);color:var(--primary-foreground);font-size:11.5px;font-weight:600;}
+  .branch{transition:all 140ms ease;cursor:pointer;}
+  .branch:hover{background:var(--secondary);}
+  .branch[aria-pressed="true"]{border-color:var(--foreground);background:oklch(0.96 0.003 80);}
+  table.simple{width:100%;border-collapse:collapse;}
+  table.simple th{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);}
+  table.simple td{padding:10px;border-bottom:1px solid var(--border);font-size:13px;}
+  table.simple tfoot td{border-bottom:0;background:oklch(0.97 0.003 80);font-weight:500;}
+  .right{text-align:right;}
+  .alloc-input{width:90px;text-align:right;border:1px solid var(--border);padding:4px 8px;border-radius:6px;font-family:'Roboto Mono',monospace;font-size:12.5px;}
+  .breadcrumb a:hover{color:var(--foreground);}
+  .breadcrumb a{color:var(--muted-foreground);}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-brand"><div class="logo"></div><div><div class="text-[13.5px] font-semibold leading-none">Hyperballik</div><div class="text-[10px] text-muted mt-0.5 leading-none">v.proto · 2026-Q2</div></div></div>
+  <div class="sb-section">Main</div>
+  <a class="sb-link" href="index.html">Dashboard</a>
+  <a class="sb-link" href="phase-planning.html">Phase Planning</a>
+  <a class="sb-link" href="article-order-allocation.html">Article Orders</a>
+  <a class="sb-link" href="fabric-orders.html">Fabric Orders</a>
+  <a class="sb-link new" href="receive-fabric.html">Receive Fabric</a>
+  <a class="sb-link new active" href="dispatch-to-garmenter.html">Dispatch</a>
+  <a class="sb-link new" href="garmenter-view.html">Garmenters</a>
+  <a class="sb-link" href="#">Fabric Balance</a>
+  <a class="sb-link" href="#">Accessories</a>
+  <a class="sb-link" href="#">Expenses</a>
+  <div class="sb-section">Masters</div>
+  <a class="sb-link" href="#">Fabrics Master DB</a>
+  <a class="sb-link" href="#">Article Master DB</a>
+  <div class="sb-section">Lists</div>
+  <a class="sb-link" href="#">Vendors</a>
+  <a class="sb-link" href="#">Phases</a>
+  <a class="sb-link" href="#">Garmenting Locations</a>
+  <div class="mt-auto pt-4 border-t border-[var(--sidebar-border)] flex items-center gap-2 px-2 pb-1"><div class="w-7 h-7 rounded-full bg-[oklch(0.92_0.02_45)] text-[oklch(0.40_0.16_45)] text-[11px] font-semibold flex items-center justify-center">SN</div><div class="flex-1 min-w-0"><div class="text-[12.5px] font-medium truncate">admin</div><div class="text-[11px] text-muted truncate">admin@hyperballik.com</div></div></div>
+</aside>
+
+<div class="main-wrap">
+  <header class="tb">
+    <div class="flex items-center gap-3"><div class="text-[13.5px] font-medium">Phase 27 · 2026-Q2</div><div class="badge badge-secondary">current</div></div>
+    <div class="flex items-center gap-2"><button class="btn btn-ghost btn-sm">Alerts <span class="ml-1 num text-[11px] text-muted">3</span></button><button class="btn btn-outline btn-sm">Help</button></div>
+  </header>
+
+  <main class="content space-y-4">
+    <div class="text-[12.5px] breadcrumb">
+      <a href="fabric-orders.html">Fabric orders</a>
+      <span class="mx-2 text-muted">/</span>
+      <a href="fabric-orders.html">FO-502 · Viscose crepe · rust 405</a>
+      <span class="mx-2 text-muted">/</span>
+      <span>Dispatch</span>
+    </div>
+
+    <div>
+      <h1 class="text-2xl font-bold">Dispatch fabric to a garmenter</h1>
+      <p class="text-sm text-muted">Records a <span class="num">GarmenterDispatch</span>. Fabric leaves <span class="badge badge-custody">in our hands</span> and arrives <span class="badge badge-garm">at garmenter</span> as a free balance until allocated.</p>
+    </div>
+
+    <div class="grid grid-cols-12 gap-5">
+      <section class="col-span-8 space-y-4">
+        <!-- step 1 -->
+        <div class="card p-5">
+          <div class="flex items-center gap-2.5 mb-4"><span class="step-num">1</span><span class="font-semibold text-[15px]">Dispatch details</span></div>
+          <div class="grid grid-cols-2 gap-3.5">
+            <div class="field"><label>From fabric balance</label><input value="FO-502  ·  Viscose crepe  ·  rust 405" disabled /></div>
+            <div class="field"><label>Dispatch date</label><input value="2026-04-28" /></div>
+            <div class="field"><label>To garmenter</label><select><option>Sai Garments</option><option>Lakshmi Tailors</option><option>Anand Stitching</option></select></div>
+            <div class="field"><label>Quantity (kg)</label><input value="100.0" /></div>
+            <div class="field col-span-2"><label>Vehicle / docket no <span class="text-muted font-normal">(optional)</span></label><input placeholder="e.g. MH-04-AB-2231 / docket #4421" /></div>
+            <div class="field col-span-2"><label>Notes</label><textarea rows="2" placeholder="anything to record about this dispatch"></textarea></div>
+          </div>
+          <div class="mt-5 pt-4 border-t border-[var(--border)]">
+            <div class="text-[11px] font-medium uppercase tracking-wider text-muted mb-2">After dispatch · custody movement</div>
+            <div class="grid grid-cols-2 gap-5">
+              <div>
+                <div class="text-[11.5px] text-muted mb-1">Before</div>
+                <div class="thread"><span class="seg-custody" style="width:40%"></span><span class="seg-garm" style="width:60%"></span></div>
+                <div class="text-[11.5px] num mt-1">100 kg in our hands · 150 kg at Sai</div>
+              </div>
+              <div>
+                <div class="text-[11.5px] text-muted mb-1">After</div>
+                <div class="thread"><span class="seg-garm" style="width:100%"></span></div>
+                <div class="text-[11.5px] num mt-1">0 kg in our hands · 250 kg at Sai</div>
+              </div>
+            </div>
+          </div>
+          <div class="mt-5 flex justify-end gap-2"><a href="fabric-orders.html" class="btn btn-outline btn-sm">Cancel</a><button class="btn btn-default btn-sm" onclick="document.getElementById('post').classList.remove('hidden'); window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});">Save dispatch</button></div>
+        </div>
+
+        <!-- step 2 -->
+        <div id="post" class="hidden card p-5">
+          <div class="flex items-center gap-2.5 mb-3"><span class="step-num">2</span><span class="font-semibold text-[15px]">Dispatch saved. Allocate now?</span></div>
+          <p class="text-sm text-muted mb-4">100 kg of viscose crepe rust 405 is now <span class="badge badge-garm">at Sai Garments</span> and unallocated.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="card branch p-4" id="b-alloc" aria-pressed="true" onclick="pick('alloc')">
+              <div class="flex items-center justify-between mb-2"><span class="badge badge-alloc">allocate now</span><span class="num text-[11px] text-muted">recommended</span></div>
+              <div class="font-semibold text-[14.5px]">Allocate to article orders at Sai Garments</div>
+              <p class="text-[12.5px] text-muted mt-1.5">Pick article orders that use rust 405 viscose crepe and earmark kg from the 100 kg pool.</p>
+            </div>
+            <div class="card branch p-4" id="b-later" aria-pressed="false" onclick="pick('later')">
+              <div class="flex items-center justify-between mb-2"><span class="badge badge-garm">leave free</span><span class="num text-[11px] text-muted">do later</span></div>
+              <div class="font-semibold text-[14.5px]">Leave as free balance at Sai Garments</div>
+              <p class="text-[12.5px] text-muted mt-1.5">Will appear as unallocated free balance in the garmenter view.</p>
+            </div>
+          </div>
+
+          <div id="branch-alloc" class="mt-5">
+            <div class="text-[11px] font-medium uppercase tracking-wider text-muted mb-2">At Sai Garments · article orders that use rust 405 viscose crepe</div>
+            <div class="card overflow-hidden">
+              <table class="simple">
+                <thead><tr><th>Article order</th><th>Demand</th><th>Already allocated</th><th class="right">Allocate now</th></tr></thead>
+                <tbody>
+                  <tr><td>AO-2405 · Women's wrap</td><td class="num text-muted">80 kg</td><td class="num">0 kg</td><td class="right"><input class="alloc-input" value="60.0" /> <span class="text-muted">kg</span></td></tr>
+                  <tr><td>AO-2412 · Slip dress</td><td class="num text-muted">35 kg</td><td class="num">0 kg</td><td class="right"><input class="alloc-input" value="20.0" /> <span class="text-muted">kg</span></td></tr>
+                  <tr><td class="text-muted">— sampling reservation</td><td></td><td></td><td class="right"><input class="alloc-input" value="20.0" /> <span class="text-muted">kg</span></td></tr>
+                </tbody>
+                <tfoot>
+                  <tr><td colspan="3" class="text-right text-muted text-[11px] uppercase tracking-wider">balance after allocations</td><td class="right num">0.0 kg</td></tr>
+                </tfoot>
+              </table>
+            </div>
+            <div class="mt-3 flex justify-end gap-2"><a href="garmenter-view.html" class="btn btn-outline btn-sm">View at garmenter</a><button class="btn btn-default btn-sm">Confirm allocations</button></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="col-span-4">
+        <div class="card p-5 sticky top-[68px]">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Source balance</div>
+          <div class="font-semibold text-[15px] mt-1">Viscose crepe · rust 405</div>
+          <div class="text-[12.5px] text-muted">FO-502 · Birla Cellulose</div>
+          <div class="thread mt-3"><span class="seg-custody" style="width:40%"></span><span class="seg-garm" style="width:60%"></span></div>
+          <div class="grid grid-cols-2 gap-3 mt-4">
+            <div><div class="text-[11px] text-muted">in our hands</div><div class="num font-medium mt-0.5">100.0 kg</div></div>
+            <div><div class="text-[11px] text-muted">already at garmenters</div><div class="num font-medium mt-0.5">150.0 kg</div></div>
+          </div>
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted mt-4 mb-2">Recent dispatches</div>
+          <ul class="text-[12.5px] divide-y divide-[var(--border)] border-t border-[var(--border)]">
+            <li class="flex justify-between py-2"><span><span class="num text-muted">15 Mar</span> &nbsp; → Sai Garments</span><span class="num">80.0 kg</span></li>
+            <li class="flex justify-between py-2"><span><span class="num text-muted">02 Apr</span> &nbsp; → Sai Garments</span><span class="num">70.0 kg</span></li>
+          </ul>
+          <p class="text-[11.5px] text-muted leading-relaxed mt-4">The dispatch reduces in-our-hands by qty and increases at-garmenter for the chosen garmenter. Allocations remain optional after that.</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+
+<script>
+function pick(which){
+  document.getElementById('b-alloc').setAttribute('aria-pressed', which==='alloc');
+  document.getElementById('b-later').setAttribute('aria-pressed', which==='later');
+  document.getElementById('branch-alloc').classList.toggle('hidden', which!=='alloc');
+}
+</script>
+</body></html>

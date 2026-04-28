@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Phase Planning · Hyperballik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --background:oklch(1 0 0); --foreground:oklch(0.20 0 0); --primary:oklch(0.20 0 0); --primary-foreground:oklch(0.985 0 0); --secondary:oklch(0.96 0.003 80); --muted:oklch(0.96 0.003 80); --muted-foreground:oklch(0.50 0 0); --accent:oklch(0.65 0.16 45); --accent-foreground:oklch(1 0 0); --border:oklch(0.91 0.003 80); --card:oklch(1 0 0); --sidebar:oklch(0.985 0 0); --sidebar-accent:oklch(0.95 0.02 45); --sidebar-border:oklch(0.91 0.003 80); }
+  html,body{background:var(--background);color:var(--foreground);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .num{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums;}
+  .text-muted{color:var(--muted-foreground);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:8px;}
+  .btn:active{transform:translateY(1px);}
+  .btn-default{background:var(--primary);color:var(--primary-foreground);}.btn-default:hover{opacity:.9;}
+  .btn-outline{background:var(--background);border:1px solid var(--border);color:var(--foreground);}.btn-outline:hover{background:var(--secondary);}
+  .btn-ghost{background:transparent;}.btn-ghost:hover{background:var(--secondary);}
+  .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:6px;}
+  .btn-xs{height:26px;padding:0 8px;font-size:12px;border-radius:6px;}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;font-size:11px;font-weight:500;border-radius:9999px;line-height:1;white-space:nowrap;}
+  .badge-secondary{background:var(--secondary);color:var(--foreground);}
+  .badge-accent{background:oklch(0.95 0.02 45);color:oklch(0.45 0.16 45);border:1px solid oklch(0.85 0.06 45);}
+  .badge-vendor{background:oklch(0.96 0.012 80);color:oklch(0.40 0.04 80);border:1px solid oklch(0.88 0.02 80);}
+  .badge-custody{background:oklch(0.95 0.02 250);color:oklch(0.40 0.10 250);border:1px solid oklch(0.85 0.05 250);}
+  .badge-garm{background:oklch(0.95 0.04 140);color:oklch(0.40 0.10 140);border:1px solid oklch(0.85 0.06 140);}
+  .badge-alloc{background:oklch(0.96 0.04 75);color:oklch(0.45 0.10 75);border:1px solid oklch(0.85 0.06 75);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  .sb{width:240px;background:var(--sidebar);border-right:1px solid var(--sidebar-border);height:100vh;position:fixed;top:0;left:0;display:flex;flex-direction:column;padding:12px 8px;overflow-y:auto;}
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--sidebar-border);margin-bottom:8px;}
+  .sb-brand .logo{width:24px;height:24px;border-radius:6px;background:var(--accent);position:relative;}
+  .sb-brand .logo::after{content:"";position:absolute;inset:5px;background:var(--accent-foreground);border-radius:2px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%);}
+  .sb-section{padding:10px 8px 4px;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--muted-foreground);text-transform:uppercase;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13.5px;color:var(--foreground);margin-bottom:1px;position:relative;}
+  .sb-link:hover{background:oklch(0.95 0.003 80);}
+  .sb-link.active{background:var(--sidebar-accent);font-weight:500;}
+  .sb-link.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:2px;}
+  .sb-link.new::after{content:"new";margin-left:auto;font-size:9px;padding:1px 5px;border:1px solid oklch(0.85 0.06 45);color:oklch(0.45 0.16 45);border-radius:9999px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;}
+  .tb{height:52px;border-bottom:1px solid var(--border);background:var(--background);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10;}
+  .main-wrap{margin-left:240px;min-height:100vh;display:flex;flex-direction:column;}
+  .content{flex:1;padding:24px;}
+
+  .field{display:flex;flex-direction:column;gap:6px;}
+  .field label{font-size:12.5px;font-weight:500;}
+  .field input,.field select,.field textarea{border:1px solid var(--border);background:var(--background);padding:8px 12px;font-size:14px;border-radius:8px;outline:none;font-family:inherit;}
+  .field input:focus,.field select:focus{border-color:var(--accent);box-shadow:0 0 0 3px oklch(0.65 0.16 45 / 0.15);}
+
+  .mode{display:inline-flex;align-items:center;background:var(--secondary);border:1px solid var(--border);border-radius:8px;padding:3px;}
+  .mode button{padding:6px 12px;font-size:13px;font-weight:500;border-radius:6px;color:var(--muted-foreground);}
+  .mode button.active{background:var(--background);color:var(--foreground);box-shadow:0 1px 2px oklch(0 0 0 / 0.06);}
+
+  .swatch{width:14px;height:14px;border-radius:3px;border:1px solid oklch(0 0 0 / 0.18);display:inline-block;vertical-align:-2px;margin-right:6px;}
+
+  /* Allocation row in form */
+  .row-art{display:grid;grid-template-columns: 1.4fr 0.8fr 0.8fr 1.2fr 0.7fr 30px;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--border);}
+  .row-art:last-child{border-bottom:0;}
+
+  /* Commits panel */
+  .commits{background:oklch(0.985 0.003 80);border:1px solid var(--border);border-radius:8px;}
+  table.commit{width:100%;border-collapse:collapse;}
+  table.commit td{padding:6px 12px;font-size:12.5px;border-bottom:1px solid var(--border);}
+  table.commit td:first-child{font-family:'Roboto Mono',monospace;color:var(--muted-foreground);font-size:11.5px;width:120px;}
+  table.commit tr:last-child td{border-bottom:0;}
+  .commit-h{padding:8px 12px;background:oklch(0.97 0.003 80);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted-foreground);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-brand"><div class="logo"></div><div><div class="text-[13.5px] font-semibold leading-none">Hyperballik</div><div class="text-[10px] text-muted mt-0.5 leading-none">v.proto · 2026-Q2</div></div></div>
+  <div class="sb-section">Main</div>
+  <a class="sb-link" href="index.html">Dashboard</a>
+  <a class="sb-link active" href="phase-planning.html">Phase Planning</a>
+  <a class="sb-link" href="article-order-allocation.html">Article Orders</a>
+  <a class="sb-link" href="fabric-orders.html">Fabric Orders</a>
+  <a class="sb-link new" href="receive-fabric.html">Receive Fabric</a>
+  <a class="sb-link new" href="dispatch-to-garmenter.html">Dispatch</a>
+  <a class="sb-link new" href="garmenter-view.html">Garmenters</a>
+  <a class="sb-link" href="#">Fabric Balance</a>
+  <a class="sb-link" href="#">Accessories</a>
+  <a class="sb-link" href="#">Expenses</a>
+  <div class="sb-section">Masters</div>
+  <a class="sb-link" href="#">Fabrics Master DB</a>
+  <a class="sb-link" href="#">Article Master DB</a>
+  <div class="sb-section">Lists</div>
+  <a class="sb-link" href="#">Vendors</a>
+  <a class="sb-link" href="#">Phases</a>
+  <a class="sb-link" href="#">Garmenting Locations</a>
+  <div class="mt-auto pt-4 border-t border-[var(--sidebar-border)] flex items-center gap-2 px-2 pb-1"><div class="w-7 h-7 rounded-full bg-[oklch(0.92_0.02_45)] text-[oklch(0.40_0.16_45)] text-[11px] font-semibold flex items-center justify-center">SN</div><div class="flex-1 min-w-0"><div class="text-[12.5px] font-medium truncate">admin</div><div class="text-[11px] text-muted truncate">admin@hyperballik.com</div></div></div>
+</aside>
+
+<div class="main-wrap">
+  <header class="tb">
+    <div class="flex items-center gap-3"><div class="text-[13.5px] font-medium">Phase 27 · 2026-Q2</div><div class="badge badge-secondary">current</div></div>
+    <div class="flex items-center gap-2"><button class="btn btn-ghost btn-sm">Alerts <span class="ml-1 num text-[11px] text-muted">3</span></button><button class="btn btn-outline btn-sm">Help</button></div>
+  </header>
+
+  <main class="content space-y-4">
+    <div class="flex items-end justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Phase Planning</h1>
+        <p class="text-sm text-muted">Plan article and fabric orders for Phase 27 · existing modes preserved · new commits panel below</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm">Load draft</button>
+        <button class="btn btn-outline btn-sm">Save draft</button>
+        <button class="btn btn-default btn-sm">Create orders</button>
+      </div>
+    </div>
+
+    <!-- mode toggle -->
+    <div class="card p-4 flex items-center gap-4">
+      <div class="text-[12.5px] font-medium">Mode</div>
+      <div class="mode">
+        <button class="active" onclick="setMode('quantity')" id="m-q">Quantity (demand-first)</button>
+        <button onclick="setMode('fabric')" id="m-f">Fabric (allocate-fabric-to-articles)</button>
+      </div>
+      <div class="text-[12px] text-muted ml-auto">Both modes write to the new <span class="num">Allocation</span> table under the hood.</div>
+    </div>
+
+    <!-- QUANTITY MODE -->
+    <section id="quantity-mode" class="grid grid-cols-12 gap-5">
+      <div class="col-span-7">
+        <div class="card p-5">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Quantity mode</div>
+          <h2 class="text-base font-semibold mt-1">Pick articles, set quantities. Fabric demand is derived.</h2>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="field"><label>Phase</label><select><option>Phase 27 · 2026-Q2</option></select></div>
+            <div class="field"><label>Default garmenter</label><select><option>Sai Garments</option><option>Lakshmi Tailors</option></select></div>
+            <div class="field col-span-2"><label>Add article from master</label><select><option>Search article master… (WT-IV-120 · Women's Tunic)</option></select></div>
+          </div>
+
+          <div class="mt-5 border-t border-[var(--border)] pt-4">
+            <div class="text-[11px] font-medium uppercase tracking-wider text-muted mb-2">Selected articles</div>
+            <div class="row-art font-semibold text-[11px] uppercase tracking-wider text-muted">
+              <div>Article</div><div>Colour</div><div>Quantity (pcs)</div><div>Garmenter</div><div class="text-right">Demand</div><div></div>
+            </div>
+            <div class="row-art">
+              <div><div class="font-medium">Women's tunic</div><div class="text-[12px] text-muted">WT-IV-120</div></div>
+              <div><span class="swatch" style="background:#F2EBDA"></span>ivory</div>
+              <div><input value="120" /></div>
+              <div><select><option>Sai Garments</option></select></div>
+              <div class="text-right num">60.0 kg</div>
+              <div class="text-muted text-center">×</div>
+            </div>
+            <div class="row-art">
+              <div><div class="font-medium">Men's shirt</div><div class="text-[12px] text-muted">MS-IN-120</div></div>
+              <div><span class="swatch" style="background:#314463"></span>indigo 7-2</div>
+              <div><input value="80" /></div>
+              <div><select><option>Lakshmi Tailors</option></select></div>
+              <div class="text-right num">48.0 kg</div>
+              <div class="text-muted text-center">×</div>
+            </div>
+            <button class="btn btn-outline btn-xs mt-3">+ Add another article</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Commits panel -->
+      <aside class="col-span-5">
+        <div class="commits sticky top-[68px]">
+          <div class="commit-h"><span>What this commits</span><span class="badge badge-accent ml-auto">new</span></div>
+          <div class="p-4 text-[12.5px] text-muted">Clicking <em>Create orders</em> writes the following rows in one transaction:</div>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">Product</span> · article orders <span class="ml-auto num">2</span></div>
+          <table class="commit"><tbody>
+            <tr><td>AO-2401</td><td>Women's tunic · ivory · 120 pcs · Sai Garments</td></tr>
+            <tr><td>AO-2402</td><td>Men's shirt · indigo 7-2 · 80 pcs · Lakshmi Tailors</td></tr>
+          </tbody></table>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">FabricOrder</span> · fabric orders <span class="ml-auto num">2</span></div>
+          <table class="commit"><tbody>
+            <tr><td>FO-?</td><td>Cotton poplin · ivory · 60 kg · Arvind Mills <span class="text-muted">(rounded up to 70 kg)</span></td></tr>
+            <tr><td>FO-?</td><td>Cotton poplin · indigo 7-2 · 48 kg · Arvind Mills <span class="text-muted">(rounded up to 60 kg)</span></td></tr>
+          </tbody></table>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">Allocation</span> · pre-wired <span class="badge badge-alloc ml-auto">new</span></div>
+          <table class="commit"><tbody>
+            <tr><td>ALC-?</td><td>AO-2401 → FO-? <span class="num">60.0 kg</span> · expected</td></tr>
+            <tr><td>ALC-?</td><td>AO-2402 → FO-? <span class="num">48.0 kg</span> · expected</td></tr>
+          </tbody></table>
+
+          <div class="p-4 text-[11.5px] text-muted leading-relaxed border-t border-[var(--border)]">All allocations start as <span class="badge badge-vendor">at vendor</span>. They become <span class="badge badge-custody">in our hands</span> when receipts are logged, then <span class="badge badge-garm">at garmenter</span> after dispatch.</div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- FABRIC MODE -->
+    <section id="fabric-mode" class="grid grid-cols-12 gap-5 hidden">
+      <div class="col-span-7">
+        <div class="card p-5">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Fabric mode</div>
+          <h2 class="text-base font-semibold mt-1">Pick a fabric pool, allocate kg across articles.</h2>
+
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="field"><label>Fabric · colour</label><select><option>Viscose crepe · rust 405 · Birla Cellulose</option></select></div>
+            <div class="field"><label>Source pool</label><select><option>FO-502 · 100 kg in our hands + 50 kg surplus</option><option>Order new (FO-?)</option></select></div>
+          </div>
+
+          <div class="mt-5 border-t border-[var(--border)] pt-4">
+            <div class="flex items-center justify-between mb-2">
+              <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Articles using this fabric</div>
+              <div class="text-[11px] text-muted">pool: <span class="num">150.0 kg</span> available</div>
+            </div>
+            <div class="row-art font-semibold text-[11px] uppercase tracking-wider text-muted">
+              <div>Article</div><div>Colour</div><div>Quantity (pcs)</div><div>Garmenter</div><div class="text-right">Allocate (kg)</div><div></div>
+            </div>
+            <div class="row-art">
+              <div><div class="font-medium">Women's wrap</div><div class="text-[12px] text-muted">WW-RU-090</div></div>
+              <div><span class="swatch" style="background:#9C4322"></span>rust 405</div>
+              <div><input value="60" /></div>
+              <div><select><option>Sai Garments</option></select></div>
+              <div class="text-right"><input class="num text-right" style="width:80px" value="80.0" /></div>
+              <div class="text-muted text-center">×</div>
+            </div>
+            <div class="row-art">
+              <div><div class="font-medium">Slip dress</div><div class="text-[12px] text-muted">SD-RU-090</div></div>
+              <div><span class="swatch" style="background:#9C4322"></span>rust 405</div>
+              <div><input value="40" /></div>
+              <div><select><option>Sai Garments</option></select></div>
+              <div class="text-right"><input class="num text-right" style="width:80px" value="28.0" /></div>
+              <div class="text-muted text-center">×</div>
+            </div>
+            <div class="row-art">
+              <div class="text-muted">— sampling reservation</div>
+              <div></div>
+              <div></div>
+              <div><select><option>Sai Garments</option></select></div>
+              <div class="text-right"><input class="num text-right" style="width:80px" value="20.0" /></div>
+              <div class="text-muted text-center">×</div>
+            </div>
+            <div class="mt-3 flex items-center justify-between text-[12.5px]">
+              <button class="btn btn-outline btn-xs">+ Add another article</button>
+              <div class="num"><span class="text-muted">total allocated</span> 128.0 / 150.0 kg <span class="text-muted">· 22.0 kg free</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <aside class="col-span-5">
+        <div class="commits sticky top-[68px]">
+          <div class="commit-h"><span>What this commits</span><span class="badge badge-accent ml-auto">new</span></div>
+          <div class="p-4 text-[12.5px] text-muted">Same model. Quantity mode and Fabric mode both produce the rows below.</div>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">Product</span> · article orders <span class="ml-auto num">2</span></div>
+          <table class="commit"><tbody>
+            <tr><td>AO-2405</td><td>Women's wrap · rust 405 · 60 pcs · Sai Garments</td></tr>
+            <tr><td>AO-2412</td><td>Slip dress · rust 405 · 40 pcs · Sai Garments</td></tr>
+          </tbody></table>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">FabricOrder</span> <span class="ml-auto num text-muted">existing</span></div>
+          <table class="commit"><tbody>
+            <tr><td>FO-502</td><td>Already exists · 100 kg in our hands · 50 kg surplus</td></tr>
+          </tbody></table>
+
+          <div class="commit-h" style="border-top:1px solid var(--border);"><span class="num">Allocation</span> · 3 records <span class="badge badge-alloc ml-auto">new</span></div>
+          <table class="commit"><tbody>
+            <tr><td>ALC-?</td><td>AO-2405 → FO-502 <span class="num">80.0 kg</span> · in our hands</td></tr>
+            <tr><td>ALC-?</td><td>AO-2412 → FO-502 <span class="num">28.0 kg</span> · in our hands</td></tr>
+            <tr><td>ALC-?</td><td>Reservation: sampling · FO-502 <span class="num">20.0 kg</span></td></tr>
+          </tbody></table>
+
+          <div class="p-4 text-[11.5px] text-muted leading-relaxed border-t border-[var(--border)]">Allocations start at <span class="badge badge-custody">in our hands</span> stage because the fabric is already received. They move to <span class="badge badge-garm">at garmenter</span> when dispatched.</div>
+        </div>
+      </aside>
+    </section>
+
+    <!-- shared explainer -->
+    <div class="card p-5">
+      <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Why both modes survive</div>
+      <p class="text-sm text-muted mt-2 leading-relaxed">The two existing planning modes solve different real workflows: <strong class="text-[var(--foreground)]">Quantity mode</strong> for new phases where demand drives fabric procurement; <strong class="text-[var(--foreground)]">Fabric mode</strong> for allocating fabric that already exists (received, surplus, or carried over). The rework keeps both forms exactly as they are; under the hood, both write the same <span class="num">Product + FabricOrder + Allocation</span> rows. The commits panel makes that visible.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+function setMode(m){
+  document.getElementById('quantity-mode').classList.toggle('hidden', m!=='quantity');
+  document.getElementById('fabric-mode').classList.toggle('hidden', m!=='fabric');
+  document.getElementById('m-q').classList.toggle('active', m==='quantity');
+  document.getElementById('m-f').classList.toggle('active', m==='fabric');
+}
+</script>
+</body></html>

@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Fabric Custody Prototypes · Hyperballik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.20 0 0);
+    --primary: oklch(0.20 0 0);
+    --primary-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.96 0.003 80);
+    --secondary-foreground: oklch(0.20 0 0);
+    --muted: oklch(0.96 0.003 80);
+    --muted-foreground: oklch(0.50 0 0);
+    --accent: oklch(0.65 0.16 45);
+    --accent-foreground: oklch(1 0 0);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.91 0.003 80);
+    --input: oklch(0.91 0.003 80);
+    --ring: oklch(0.65 0.16 45);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.20 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.20 0 0);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.20 0 0);
+    --sidebar-primary: oklch(0.65 0.16 45);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.95 0.02 45);
+    --sidebar-accent-foreground: oklch(0.20 0 0);
+    --sidebar-border: oklch(0.91 0.003 80);
+    --radius: 0px;
+  }
+  html, body { background: var(--background); color: var(--foreground); font-family: 'Inter', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .num { font-family: 'Roboto Mono', monospace; font-variant-numeric: tabular-nums; }
+  /* shadcn-ish */
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:36px; padding:0 14px; font-size:14px; font-weight:500; border-radius:8px; transition:background 120ms ease, opacity 120ms ease; }
+  .btn:active { transform: translateY(1px); }
+  .btn-default { background: var(--primary); color: var(--primary-foreground); }
+  .btn-default:hover { opacity:0.9; }
+  .btn-outline { background: var(--background); border:1px solid var(--border); color: var(--foreground); }
+  .btn-outline:hover { background: var(--secondary); }
+  .btn-ghost { background:transparent; color: var(--foreground); }
+  .btn-ghost:hover { background: var(--secondary); }
+  .btn-sm { height:30px; padding:0 10px; font-size:13px; border-radius:6px; }
+  .btn-xs { height:26px; padding:0 8px; font-size:12px; border-radius:6px; }
+  .btn-accent { background: var(--accent); color: var(--accent-foreground); }
+  .btn-accent:hover { opacity:0.92; }
+
+  .badge { display:inline-flex; align-items:center; gap:4px; height:20px; padding:0 8px; font-size:11px; font-weight:500; border-radius:9999px; line-height:1; }
+  .badge-default { background: var(--primary); color: var(--primary-foreground); }
+  .badge-secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  .badge-outline { background: transparent; border:1px solid var(--border); color: var(--foreground); }
+  .badge-accent { background: oklch(0.95 0.02 45); color: oklch(0.45 0.16 45); border:1px solid oklch(0.85 0.06 45); }
+
+  .card { background: var(--card); border:1px solid var(--border); border-radius:8px; }
+  .text-muted { color: var(--muted-foreground); }
+  .border-b-soft { border-bottom: 1px solid var(--border); }
+  .hover-row:hover { background: oklch(0.96 0.003 80 / 0.5); }
+
+  /* sidebar */
+  .sb { width:240px; background: var(--sidebar); border-right:1px solid var(--sidebar-border); height:100vh; position:fixed; top:0; left:0; display:flex; flex-direction:column; padding: 12px 8px; }
+  .sb-brand { display:flex; align-items:center; gap:10px; padding:10px 8px; border-bottom:1px solid var(--sidebar-border); margin-bottom:8px; }
+  .sb-brand .logo { width:24px; height:24px; border-radius:6px; background:var(--accent); position:relative; }
+  .sb-brand .logo::after { content:""; position:absolute; inset:5px; background: var(--accent-foreground); border-radius:2px; clip-path: polygon(0 50%, 50% 0, 100% 50%, 50% 100%); }
+  .sb-section { padding: 10px 8px 4px; font-size: 11px; font-weight: 500; letter-spacing: 0.04em; color: var(--muted-foreground); text-transform:uppercase; }
+  .sb-link { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:6px; font-size:13.5px; color:var(--sidebar-foreground); margin-bottom:1px; position:relative; }
+  .sb-link:hover { background: oklch(0.95 0.003 80); }
+  .sb-link.active { background: var(--sidebar-accent); color: var(--sidebar-accent-foreground); font-weight:500; }
+  .sb-link.active::before { content:""; position:absolute; left:-8px; top:6px; bottom:6px; width:2px; background: var(--accent); border-radius:2px; }
+  .sb-link svg { width:15px; height:15px; flex-shrink:0; opacity:0.75; }
+  .sb-link.new { font-style:normal; }
+  .sb-link.new::after { content:"new"; margin-left:auto; font-size:9px; padding:1px 5px; border:1px solid oklch(0.85 0.06 45); color:oklch(0.45 0.16 45); border-radius:9999px; text-transform:uppercase; letter-spacing:0.05em; font-weight:500; }
+  /* topbar */
+  .tb { height:52px; border-bottom:1px solid var(--border); background:var(--background); display:flex; align-items:center; justify-content:space-between; padding: 0 24px; position:sticky; top:0; z-index:10; }
+  .main-wrap { margin-left:240px; min-height:100vh; display:flex; flex-direction:column; }
+  .content { flex:1; padding: 24px; }
+
+  /* prototype-only landing card */
+  .proto-card { border:1px solid var(--border); border-radius:8px; background:var(--card); transition: box-shadow 140ms ease, border-color 140ms ease; display:block; }
+  .proto-card:hover { border-color: oklch(0.80 0.04 60); box-shadow: 0 1px 0 oklch(0 0 0 / 0.02), 0 8px 24px -16px oklch(0 0 0 / 0.12); }
+</style>
+</head>
+<body>
+
+<!-- Sidebar (matches AppSidebar in src/components/app-sidebar.tsx pattern) -->
+<aside class="sb">
+  <div class="sb-brand">
+    <div class="logo"></div>
+    <div>
+      <div class="text-[13.5px] font-semibold leading-none">Hyperballik</div>
+      <div class="text-[10px] text-muted mt-0.5 leading-none">v.proto · 2026-Q2</div>
+    </div>
+  </div>
+
+  <div class="sb-section">Main</div>
+  <a class="sb-link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>Dashboard</a>
+  <a class="sb-link" href="phase-planning.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h12"/></svg>Phase Planning</a>
+  <a class="sb-link" href="article-order-allocation.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12l8.73-5.04"/></svg>Article Orders</a>
+  <a class="sb-link" href="fabric-orders.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>Fabric Orders</a>
+  <a class="sb-link new" href="receive-fabric.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>Receive Fabric</a>
+  <a class="sb-link new" href="dispatch-to-garmenter.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>Dispatch</a>
+  <a class="sb-link new" href="garmenter-view.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Garmenters</a>
+  <a class="sb-link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>Fabric Balance</a>
+  <a class="sb-link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Accessories</a>
+  <a class="sb-link" href="#"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>Expenses</a>
+
+  <div class="sb-section">Masters</div>
+  <a class="sb-link" href="#">Fabrics Master DB</a>
+  <a class="sb-link" href="#">Article Master DB</a>
+  <a class="sb-link" href="#">Accessories Master DB</a>
+
+  <div class="sb-section">Lists</div>
+  <a class="sb-link" href="#">Vendors</a>
+  <a class="sb-link" href="#">Phases</a>
+  <a class="sb-link" href="#">Garmenting Locations</a>
+
+  <div class="mt-auto pt-4 border-t border-[var(--sidebar-border)] flex items-center gap-2 px-2 pb-1">
+    <div class="w-7 h-7 rounded-full bg-[oklch(0.92_0.02_45)] text-[oklch(0.40_0.16_45)] text-[11px] font-semibold flex items-center justify-center">SN</div>
+    <div class="flex-1 min-w-0">
+      <div class="text-[12.5px] font-medium truncate">admin</div>
+      <div class="text-[11px] text-muted truncate">admin@hyperballik.com</div>
+    </div>
+  </div>
+</aside>
+
+<div class="main-wrap">
+  <!-- TopBar -->
+  <header class="tb">
+    <div class="flex items-center gap-3">
+      <div class="text-[13.5px] font-medium">Phase 27 · 2026-Q2</div>
+      <div class="badge badge-secondary">current</div>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn btn-ghost btn-sm">Alerts <span class="ml-1 num text-[11px] text-muted">3</span></button>
+      <button class="btn btn-outline btn-sm">Help</button>
+    </div>
+  </header>
+
+  <main class="content space-y-6">
+    <!-- Page header -->
+    <div>
+      <h1 class="text-2xl font-bold">Fabric Custody Prototypes</h1>
+      <p class="text-sm text-muted mt-1">Visualization-only walkthrough of the proposed custody rework. Mock data; no DB writes.</p>
+    </div>
+
+    <!-- Banner -->
+    <div class="card p-4 flex items-start gap-3" style="background:oklch(0.98 0.015 45); border-color: oklch(0.85 0.06 45);">
+      <div class="badge badge-accent mt-0.5">prototype</div>
+      <div class="text-[13.5px] leading-relaxed">
+        Each screen below shows the same fabric, vendors and garmenters at a different stage of custody. Open them in order to see how the model holds together. Side-nav items marked <span class="badge badge-accent" style="height:16px;font-size:9.5px;padding:0 6px;">new</span> are screens this rework adds.
+      </div>
+    </div>
+
+    <!-- Stage legend -->
+    <div class="card p-5">
+      <div class="text-[11px] font-medium uppercase tracking-wider text-muted mb-3">Stage legend</div>
+      <div class="grid grid-cols-5 gap-4 text-[13px]">
+        <div><span class="badge" style="background:oklch(0.96 0.012 80);color:oklch(0.40 0.04 80);border:1px solid oklch(0.88 0.02 80);">at vendor</span><div class="text-muted text-[11.5px] mt-1.5">ordered, not yet shipped</div></div>
+        <div><span class="badge" style="background:oklch(0.95 0.02 250);color:oklch(0.40 0.10 250);border:1px solid oklch(0.85 0.05 250);">in our hands</span><div class="text-muted text-[11.5px] mt-1.5">received, not yet dispatched</div></div>
+        <div><span class="badge" style="background:oklch(0.95 0.04 140);color:oklch(0.40 0.10 140);border:1px solid oklch(0.85 0.06 140);">at garmenter</span><div class="text-muted text-[11.5px] mt-1.5">dispatched, not yet allocated</div></div>
+        <div><span class="badge" style="background:oklch(0.96 0.04 75);color:oklch(0.45 0.10 75);border:1px solid oklch(0.85 0.06 75);">allocated</span><div class="text-muted text-[11.5px] mt-1.5">earmarked to article order</div></div>
+        <div><span class="badge badge-accent">surplus</span><div class="text-muted text-[11.5px] mt-1.5">over-receipt or unallocated free</div></div>
+      </div>
+    </div>
+
+    <!-- Prototype index -->
+    <div>
+      <div class="flex items-baseline justify-between mb-3">
+        <h2 class="text-base font-semibold">The seven views</h2>
+        <div class="text-[12px] text-muted">click to open</div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <a class="proto-card p-5" href="fabric-orders.html">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">01</span><span class="badge badge-secondary">existing · enhanced</span></div>
+          <div class="text-base font-semibold mt-2">Fabric orders</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Orders table with inline expandable receipts timeline. Adds On-order, In our hands, At-garmenter columns. One row over-receives 250/200kg with a surplus banner.</p>
+        </a>
+        <a class="proto-card p-5" href="receive-fabric.html">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">02</span><span class="badge badge-accent">new</span></div>
+          <div class="text-base font-semibold mt-2">Receive fabric</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Sheet for logging a <span class="num text-[12px]">FabricReceipt</span> against an order, then a post-save branch: allocate to articles, or dispatch to a garmenter.</p>
+        </a>
+        <a class="proto-card p-5" href="dispatch-to-garmenter.html">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">03</span><span class="badge badge-accent">new</span></div>
+          <div class="text-base font-semibold mt-2">Dispatch to garmenter</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Send fabric out of our custody to a specific garmenter as a <span class="num text-[12px]">GarmenterDispatch</span>. After save, prompt to allocate at that garmenter.</p>
+        </a>
+        <a class="proto-card p-5" href="garmenter-view.html" style="border-color: oklch(0.85 0.06 45);">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">04</span><span class="badge badge-accent">new · headline</span></div>
+          <div class="text-base font-semibold mt-2">Garmenter view</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Per-garmenter screen showing every fabric currently with them: dispatched, allocated, reserved, remaining. Replaces the existing Garmenting Plan PDF.</p>
+        </a>
+        <a class="proto-card p-5" href="article-order-allocation.html">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">05</span><span class="badge badge-secondary">existing · enhanced</span></div>
+          <div class="text-base font-semibold mt-2">Article orders & allocation</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Article orders grid with a stacked allocation cell: from-received + from-expected + shortfall. Mixed-source backing visible at a glance.</p>
+        </a>
+        <a class="proto-card p-5" href="phase-planning.html">
+          <div class="flex items-center gap-2"><span class="num text-[11.5px] text-muted">06</span><span class="badge badge-secondary">existing · enhanced</span></div>
+          <div class="text-base font-semibold mt-2">Phase planning · both modes</div>
+          <p class="text-[13px] text-muted mt-1 leading-relaxed">Existing Quantity and Fabric modes are kept; underneath each, a "What this commits" panel shows the Product, FabricOrder and new Allocation rows the click will write.</p>
+        </a>
+      </div>
+    </div>
+
+    <p class="text-[11.5px] text-muted">Layout, tokens and components mirror the live app at <span class="num">localhost:3002</span>. Numbers are static.</p>
+  </main>
+</div>
+
+</body></html>

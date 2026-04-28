@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Article Orders · Hyperballik</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --background:oklch(1 0 0); --foreground:oklch(0.20 0 0); --primary:oklch(0.20 0 0); --primary-foreground:oklch(0.985 0 0); --secondary:oklch(0.96 0.003 80); --muted:oklch(0.96 0.003 80); --muted-foreground:oklch(0.50 0 0); --accent:oklch(0.65 0.16 45); --accent-foreground:oklch(1 0 0); --border:oklch(0.91 0.003 80); --card:oklch(1 0 0); --sidebar:oklch(0.985 0 0); --sidebar-accent:oklch(0.95 0.02 45); --sidebar-border:oklch(0.91 0.003 80); }
+  html,body{background:var(--background);color:var(--foreground);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
+  .num{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums;}
+  .text-muted{color:var(--muted-foreground);}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;font-size:14px;font-weight:500;border-radius:8px;}
+  .btn:active{transform:translateY(1px);}
+  .btn-default{background:var(--primary);color:var(--primary-foreground);}.btn-default:hover{opacity:.9;}
+  .btn-outline{background:var(--background);border:1px solid var(--border);color:var(--foreground);}.btn-outline:hover{background:var(--secondary);}
+  .btn-ghost{background:transparent;}.btn-ghost:hover{background:var(--secondary);}
+  .btn-sm{height:30px;padding:0 10px;font-size:13px;border-radius:6px;}
+  .btn-xs{height:26px;padding:0 8px;font-size:12px;border-radius:6px;}
+  .badge{display:inline-flex;align-items:center;gap:4px;height:20px;padding:0 8px;font-size:11px;font-weight:500;border-radius:9999px;line-height:1;white-space:nowrap;}
+  .badge-secondary{background:var(--secondary);color:var(--foreground);}
+  .badge-accent{background:oklch(0.95 0.02 45);color:oklch(0.45 0.16 45);border:1px solid oklch(0.85 0.06 45);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:8px;}
+  .sb{width:240px;background:var(--sidebar);border-right:1px solid var(--sidebar-border);height:100vh;position:fixed;top:0;left:0;display:flex;flex-direction:column;padding:12px 8px;overflow-y:auto;}
+  .sb-brand{display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid var(--sidebar-border);margin-bottom:8px;}
+  .sb-brand .logo{width:24px;height:24px;border-radius:6px;background:var(--accent);position:relative;}
+  .sb-brand .logo::after{content:"";position:absolute;inset:5px;background:var(--accent-foreground);border-radius:2px;clip-path:polygon(0 50%,50% 0,100% 50%,50% 100%);}
+  .sb-section{padding:10px 8px 4px;font-size:11px;font-weight:500;letter-spacing:.04em;color:var(--muted-foreground);text-transform:uppercase;}
+  .sb-link{display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;font-size:13.5px;color:var(--foreground);margin-bottom:1px;position:relative;}
+  .sb-link:hover{background:oklch(0.95 0.003 80);}
+  .sb-link.active{background:var(--sidebar-accent);font-weight:500;}
+  .sb-link.active::before{content:"";position:absolute;left:-8px;top:6px;bottom:6px;width:2px;background:var(--accent);border-radius:2px;}
+  .sb-link.new::after{content:"new";margin-left:auto;font-size:9px;padding:1px 5px;border:1px solid oklch(0.85 0.06 45);color:oklch(0.45 0.16 45);border-radius:9999px;text-transform:uppercase;letter-spacing:.05em;font-weight:500;}
+  .tb{height:52px;border-bottom:1px solid var(--border);background:var(--background);display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10;}
+  .main-wrap{margin-left:240px;min-height:100vh;display:flex;flex-direction:column;}
+  .content{flex:1;padding:24px;}
+
+  /* AG-Grid-ish */
+  table.ag { width:100%; border-collapse:collapse; }
+  table.ag thead th { background: oklch(0.97 0.003 80); border-bottom:1px solid var(--border); border-right:1px solid var(--border); font-size:12px; font-weight:600; text-align:left; padding:8px 12px; white-space:nowrap; }
+  table.ag thead th:last-child{border-right:0;}
+  table.ag tbody td { border-bottom:1px solid var(--border); border-right:1px solid var(--border); padding:9px 12px; font-size:13px; vertical-align:middle; }
+  table.ag tbody td:last-child{border-right:0;}
+  table.ag tbody tr:hover{background:oklch(0.97 0.003 80 / 0.6);}
+  .right{text-align:right;}
+  .swatch{width:12px;height:12px;border-radius:3px;border:1px solid oklch(0 0 0 / 0.18);display:inline-block;vertical-align:-1px;margin-right:6px;}
+
+  /* allocation stacked bar */
+  .stack{display:flex;height:10px;background:oklch(0.96 0.003 80);border:1px solid var(--border);border-radius:3px;overflow:hidden;}
+  .stack > span{display:block;height:100%;}
+  .seg-received{background:oklch(0.55 0.12 140);}
+  .seg-expected{background:oklch(0.65 0.12 75);}
+  .seg-short{background:repeating-linear-gradient(45deg, oklch(0.92 0.04 45) 0 4px, oklch(0.86 0.06 45) 4px 8px);}
+  .seg-over{background:var(--accent);}
+
+  .legend{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted-foreground);}
+  .legend i{width:10px;height:10px;display:inline-block;border:1px solid var(--border);border-radius:2px;}
+
+  .tab{padding:9px 14px;font-size:13px;color:var(--muted-foreground);border-bottom:2px solid transparent;cursor:pointer;}
+  .tab.active{color:var(--foreground);border-color:var(--foreground);font-weight:500;}
+</style>
+</head>
+<body>
+
+<aside class="sb">
+  <div class="sb-brand"><div class="logo"></div><div><div class="text-[13.5px] font-semibold leading-none">Hyperballik</div><div class="text-[10px] text-muted mt-0.5 leading-none">v.proto · 2026-Q2</div></div></div>
+  <div class="sb-section">Main</div>
+  <a class="sb-link" href="index.html">Dashboard</a>
+  <a class="sb-link" href="phase-planning.html">Phase Planning</a>
+  <a class="sb-link active" href="article-order-allocation.html">Article Orders</a>
+  <a class="sb-link" href="fabric-orders.html">Fabric Orders</a>
+  <a class="sb-link new" href="receive-fabric.html">Receive Fabric</a>
+  <a class="sb-link new" href="dispatch-to-garmenter.html">Dispatch</a>
+  <a class="sb-link new" href="garmenter-view.html">Garmenters</a>
+  <a class="sb-link" href="#">Fabric Balance</a>
+  <a class="sb-link" href="#">Accessories</a>
+  <a class="sb-link" href="#">Expenses</a>
+  <div class="sb-section">Masters</div>
+  <a class="sb-link" href="#">Fabrics Master DB</a>
+  <a class="sb-link" href="#">Article Master DB</a>
+  <div class="sb-section">Lists</div>
+  <a class="sb-link" href="#">Vendors</a>
+  <a class="sb-link" href="#">Phases</a>
+  <a class="sb-link" href="#">Garmenting Locations</a>
+  <div class="mt-auto pt-4 border-t border-[var(--sidebar-border)] flex items-center gap-2 px-2 pb-1"><div class="w-7 h-7 rounded-full bg-[oklch(0.92_0.02_45)] text-[oklch(0.40_0.16_45)] text-[11px] font-semibold flex items-center justify-center">SN</div><div class="flex-1 min-w-0"><div class="text-[12.5px] font-medium truncate">admin</div><div class="text-[11px] text-muted truncate">admin@hyperballik.com</div></div></div>
+</aside>
+
+<div class="main-wrap">
+  <header class="tb">
+    <div class="flex items-center gap-3"><div class="text-[13.5px] font-medium">Phase 27 · 2026-Q2</div><div class="badge badge-secondary">current</div></div>
+    <div class="flex items-center gap-2"><button class="btn btn-ghost btn-sm">Alerts <span class="ml-1 num text-[11px] text-muted">3</span></button><button class="btn btn-outline btn-sm">Help</button></div>
+  </header>
+
+  <main class="content space-y-4">
+
+    <div class="flex items-end justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Article Orders</h1>
+        <p class="text-sm text-muted">7 products in Phase 27 · allocation view</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn btn-outline btn-sm">Filters</button>
+        <button class="btn btn-outline btn-sm">Columns</button>
+        <button class="btn btn-outline btn-sm">Export</button>
+        <button class="btn btn-default btn-sm">+ New article order</button>
+      </div>
+    </div>
+
+    <!-- tabs (matches isRepeat filter pattern from real app) -->
+    <div class="flex items-center gap-1 border-b border-[var(--border)]">
+      <button class="px-3 py-2 text-[13px] font-medium border-b-2 border-[var(--foreground)]">All <span class="num text-muted ml-1">7</span></button>
+      <button class="px-3 py-2 text-[13px] text-muted hover:text-[var(--foreground)]">New <span class="num ml-1">5</span></button>
+      <button class="px-3 py-2 text-[13px] text-muted hover:text-[var(--foreground)]">Repeat <span class="num ml-1">2</span></button>
+    </div>
+
+    <!-- legend strip -->
+    <div class="card px-4 py-3 flex items-center gap-6 text-[12px]">
+      <span class="legend"><i style="background:oklch(0.55 0.12 140);"></i> from received fabric</span>
+      <span class="legend"><i style="background:oklch(0.65 0.12 75);"></i> from expected (on-order) fabric</span>
+      <span class="legend"><i style="background:repeating-linear-gradient(45deg,oklch(0.92 0.04 45) 0 4px,oklch(0.86 0.06 45) 4px 8px);"></i> shortfall</span>
+      <span class="legend"><i style="background:var(--accent);"></i> over-allocated</span>
+      <span class="ml-auto text-muted">The allocation cell reads left → right as a stack against demand.</span>
+    </div>
+
+    <!-- Grid -->
+    <div class="card overflow-hidden">
+      <table class="ag">
+        <colgroup>
+          <col style="width:90px"><col><col style="width:200px"><col style="width:90px"><col style="width:100px"><col style="width:130px"><col style="width:280px"><col style="width:90px"><col style="width:120px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Article</th>
+            <th>Fabric · colour</th>
+            <th class="right">Qty</th>
+            <th class="right">Demand</th>
+            <th>Garmenter</th>
+            <th>Allocation against demand</th>
+            <th class="right">Coverage</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><div class="num font-medium">AO-2401</div><div class="text-[11.5px] text-muted">12 Mar</div></td>
+            <td><div class="font-medium">Women's tunic</div><div class="text-[12px] text-muted">style WT-IV-120</div></td>
+            <td><span class="swatch" style="background:#F2EBDA"></span>Cotton poplin · ivory</td>
+            <td class="right num">120 pcs</td>
+            <td class="right num">60.0 kg</td>
+            <td>Sai Garments</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:100%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">60.0 / 60.0 kg</span><span>from received · FO-501</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.50 0.10 140);">100%</td>
+            <td><span class="badge badge-secondary">FABRIC_RECEIVED</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2402</div><div class="text-[11.5px] text-muted">14 Mar</div></td>
+            <td><div class="font-medium">Men's shirt</div><div class="text-[12px] text-muted">style MS-IN-120</div></td>
+            <td><span class="swatch" style="background:#314463"></span>Cotton poplin · indigo 7-2</td>
+            <td class="right num">80 pcs</td>
+            <td class="right num">48.0 kg</td>
+            <td>Lakshmi Tailors</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:25%"></span><span class="seg-expected" style="width:62.5%"></span><span class="seg-short" style="width:12.5%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">12 received + 30 expected · 6 short</span><span>FO-501 + FO-504</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.55 0.12 75);">87.5%</td>
+            <td><span class="badge badge-secondary">FABRIC_ORDERED</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2403</div><div class="text-[11.5px] text-muted">02 Apr</div></td>
+            <td><div class="font-medium">Kids dress</div><div class="text-[12px] text-muted">style KD-BL-090</div></td>
+            <td><span class="swatch" style="background:#E7B5B0"></span>Viscose crepe · blush 88</td>
+            <td class="right num">200 pcs</td>
+            <td class="right num">90.0 kg</td>
+            <td>Anand Stitching</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:33%"></span><span class="seg-expected" style="width:67%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">30 received + 60 expected · 0 short</span><span>FO-505</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.50 0.10 140);">100%</td>
+            <td><span class="badge badge-secondary">FABRIC_ORDERED</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2404</div><div class="text-[11.5px] text-muted">22 Feb</div></td>
+            <td><div class="font-medium">Lounge tee</div><div class="text-[12px] text-muted">style LT-OL-180</div></td>
+            <td><span class="swatch" style="background:#6E7449"></span>Modal jersey · olive 312</td>
+            <td class="right num">150 pcs</td>
+            <td class="right num">95.0 kg</td>
+            <td>Sai Garments</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:100%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">95.0 / 95.0 kg · 88.6 consumed</span><span>FO-503 · cutting in progress</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.50 0.10 140);">100%</td>
+            <td><span class="badge badge-secondary">CUTTING_IN_PROGRESS</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2405</div><div class="text-[11.5px] text-muted">04 Apr</div></td>
+            <td><div class="font-medium">Women's wrap</div><div class="text-[12px] text-muted">style WW-RU-090</div></td>
+            <td><span class="swatch" style="background:#9C4322"></span>Viscose crepe · rust 405</td>
+            <td class="right num">60 pcs</td>
+            <td class="right num">75.0 kg</td>
+            <td>Sai Garments</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:100%"></span><span class="seg-over" style="width:6.7%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">80 allocated · demand 75 (+5 over)</span><span>FO-502 surplus absorbed</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.55 0.16 45);">107%</td>
+            <td><span class="badge badge-accent">OVER_ALLOC</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2406</div><div class="text-[11.5px] text-muted">22 Apr</div></td>
+            <td><div class="font-medium">Boys polo</div><div class="text-[12px] text-muted">style BP-IN-120</div></td>
+            <td><span class="swatch" style="background:#314463"></span>Cotton poplin · indigo 7-2</td>
+            <td class="right num">90 pcs</td>
+            <td class="right num">48.0 kg</td>
+            <td class="text-muted">— not assigned</td>
+            <td>
+              <div class="stack"><span class="seg-expected" style="width:75%"></span><span class="seg-short" style="width:25%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">36 expected · 12 short</span><span>FO-504 (none in yet)</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.55 0.12 75);">75%</td>
+            <td><span class="badge badge-secondary">PLANNED</span></td>
+          </tr>
+
+          <tr>
+            <td><div class="num font-medium">AO-2412</div><div class="text-[11.5px] text-muted">25 Apr</div></td>
+            <td><div class="font-medium">Slip dress</div><div class="text-[12px] text-muted">style SD-RU-090</div></td>
+            <td><span class="swatch" style="background:#9C4322"></span>Viscose crepe · rust 405</td>
+            <td class="right num">40 pcs</td>
+            <td class="right num">28.0 kg</td>
+            <td>Sai Garments</td>
+            <td>
+              <div class="stack"><span class="seg-received" style="width:71%"></span><span class="seg-short" style="width:29%"></span></div>
+              <div class="flex justify-between text-[10.5px] text-muted mt-1"><span class="num">20 received · 8 short</span><span>can pull from FO-502 surplus</span></div>
+            </td>
+            <td class="right num" style="color:oklch(0.55 0.12 75);">71%</td>
+            <td><span class="badge badge-secondary">FABRIC_ORDERED</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- explainer -->
+    <div class="grid grid-cols-12 gap-4">
+      <div class="col-span-7">
+        <div class="card p-5">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Reading the allocation cell</div>
+          <h2 class="text-base font-semibold mt-1">A row tells you, at a glance, how the demand is being met.</h2>
+          <p class="text-sm text-muted mt-2 leading-relaxed">Green: kg drawn from <span class="num">FabricReceipt</span>s already in our hands or at the garmenter. Ochre: kg pre-allocated against a <span class="num">FabricOrder</span> not yet received. Hatched: shortfall — demand the system can't yet back from any source. Solid terracotta: an over-allocation, possible when an order intentionally absorbs surplus.</p>
+          <p class="text-[12.5px] text-muted mt-3">Coverage % on the right is the same data summarized. A row reading 100% green means cutting can start immediately.</p>
+        </div>
+      </div>
+      <div class="col-span-5">
+        <div class="card p-5">
+          <div class="text-[11px] font-medium uppercase tracking-wider text-muted">Worked example · AO-2402</div>
+          <div class="font-semibold mt-1">Men's shirt · indigo 7-2</div>
+          <ul class="mt-3 text-[12.5px] space-y-1.5 num">
+            <li>demand <span class="float-right">48.0 kg</span></li>
+            <li>· from FO-501 receipts <span class="float-right" style="color:oklch(0.50 0.10 140);">12.0 kg</span></li>
+            <li>· from FO-504 (not yet received) <span class="float-right" style="color:oklch(0.55 0.12 75);">30.0 kg</span></li>
+            <li>· shortfall <span class="float-right" style="color:oklch(0.55 0.16 45);">6.0 kg</span></li>
+          </ul>
+          <div class="mt-3 pt-3 border-t border-[var(--border)] text-[11.5px] text-muted leading-relaxed">To close the shortfall: bump FO-504 by 6 kg, or pull from FO-502 surplus (different colour, needs client approval).</div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body></html>
