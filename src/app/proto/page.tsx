@@ -47,7 +47,7 @@ const screens = [
     href: "/proto/phase-planning",
     title: "Phase planning · both modes",
     n: "06",
-    status: "static · same as /fabric-prototypes",
+    status: "live · real DB data",
     blurb:
       "Existing modes preserved; commits panel shows the new Allocation rows each click writes.",
   },
