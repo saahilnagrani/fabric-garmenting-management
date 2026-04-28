@@ -2,7 +2,8 @@ import { db } from "@/lib/db";
 import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
-  pickOverReceiptDemoId,
+  applyDemoState,
+  pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
 } from "@/lib/proto/synthesize";
@@ -39,6 +40,7 @@ export default async function ProtoFabricOrdersPage() {
           product: {
             select: {
               id: true,
+              articleNumber: true,
               styleNumber: true,
               productName: true,
               fabricOrderedQuantityKg: true,
@@ -50,12 +52,15 @@ export default async function ProtoFabricOrdersPage() {
   });
 
   const adapted = orders.map(adaptFabricOrder);
-  const overReceiptId = pickOverReceiptDemoId(adapted);
+  const demoStates = pickDemoStates(adapted);
+  const overReceiptId = [...demoStates.entries()].find(([, s]) => s === "over")?.[0] ?? null;
 
   const synthesized = orders.map((row) => {
-    const fo = adaptFabricOrder(row);
+    const baseFo = adaptFabricOrder(row);
+    const fo = applyDemoState(baseFo, demoStates.get(baseFo.id));
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
+      articleNumber: link.product.articleNumber,
       styleNumber: link.product.styleNumber,
       productName: link.product.productName,
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
@@ -77,14 +82,26 @@ export default async function ProtoFabricOrdersPage() {
     { onOrder: 0, inOurHands: 0, atGarmenter: 0, surplus: 0 }
   );
 
-  // Strip Decimal/Date types for the client component boundary.
-  const serialized = synthesized.map((s) => ({
+  // Sort: demo orders first (so the screen tells its story without scrolling),
+  // then the rest. Strip Decimal/Date types for the client boundary. Assign
+  // FO-0001..FO-NNNN display numbers AFTER sort so demo rows are first.
+  const demoOrder: Record<string, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
+  const sortedSynth = [...synthesized].sort((a, b) => {
+    const aState = demoStates.get(a.fabricOrder.id);
+    const bState = demoStates.get(b.fabricOrder.id);
+    const ai = aState ? demoOrder[aState] : 99;
+    const bi = bState ? demoOrder[bState] : 99;
+    return ai - bi;
+  });
+  const serialized = sortedSynth.map((s, idx) => ({
     fabricOrder: s.fabricOrder,
+    displayNumber: `FO-${String(idx + 1).padStart(4, "0")}`,
     receipts: s.receipts.map((r) => ({ ...r, date: r.date.toISOString() })),
     dispatches: s.dispatches.map((d) => ({ ...d, date: d.date.toISOString() })),
     allocations: s.allocations,
     custody: s.custody,
     orderDateIso: s.fabricOrder.orderDate?.toISOString() ?? null,
+    demoState: demoStates.get(s.fabricOrder.id) ?? null,
   }));
 
   return (
@@ -97,7 +114,14 @@ export default async function ProtoFabricOrdersPage() {
         </p>
       </div>
 
-      <FabricOrdersProtoGrid rows={serialized} totals={totals} overReceiptId={overReceiptId} />
+      {demoStates.size > 0 && (
+        <div className="text-[12.5px] rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[oklch(0.40_0.16_45)]">
+          Phase {phase.number} has no live shipping data, so the top {demoStates.size} orders are seeded with demo states (full · partial · over · vendor) so the screen reads as a worked example.
+          Real orders below behave normally.
+        </div>
+      )}
+
+      <FabricOrdersProtoGrid rows={serialized} totals={totals} overReceiptId={overReceiptId} demoIds={new Set(demoStates.keys())} />
     </div>
   );
 }

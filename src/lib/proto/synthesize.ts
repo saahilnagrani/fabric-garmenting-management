@@ -182,27 +182,36 @@ export function synthesizeDispatches(
  * Synthesize Allocation rows for a FabricOrder.
  *
  * Pulls real Product↔FabricOrder links and treats each as an allocation of
- * the article's `fabricOrderedQuantityKg` against the FO. Adds a synthetic
- * Reservation for one out of every ~5 FOs to demo the reservation case.
+ * the article's `fabricOrderedQuantityKg` against the FO. Uses the real
+ * articleNumber from Product when present (falls back to styleNumber).
+ * Adds a synthetic Reservation for one out of every ~5 FOs to demo that case.
  */
 export function synthesizeAllocations(
   fo: SynthFabricOrder,
-  linkedProducts: { productId: string; styleNumber: string; productName: string | null; demandKg: number }[],
+  linkedProducts: {
+    productId: string;
+    articleNumber: string | null;
+    styleNumber: string;
+    productName: string | null;
+    demandKg: number;
+  }[],
   dispatches: SynthDispatch[]
 ): SynthAllocation[] {
   const garmenter = dispatches[0]?.garmenterName ?? fo.garmentingAtName ?? "—";
-  const allocations: SynthAllocation[] = linkedProducts.map((p, i) => ({
-    id: `ALC-${stableHash(fo.id + p.productId, 90000) + 10000}`,
-    fabricOrderId: fo.id,
-    productId: p.productId,
-    productLabel: p.productName
-      ? `${shortId(p.productId)} · ${p.productName}`
-      : `${shortId(p.productId)} · ${p.styleNumber}`,
-    garmenterName: garmenter,
-    qtyKg: round1(p.demandKg),
-    consumedKg: round1(p.demandKg * ((stableHash(p.productId, 70) + 10) / 100)), // 10–80% consumed
-    isReservation: false,
-  }));
+  const allocations: SynthAllocation[] = linkedProducts.map((p) => {
+    const ref = p.articleNumber ?? p.styleNumber;
+    const productLabel = p.productName ? `${ref} · ${p.productName}` : ref;
+    return {
+      id: `ALC-${stableHash(fo.id + p.productId, 90000) + 10000}`,
+      fabricOrderId: fo.id,
+      productId: p.productId,
+      productLabel,
+      garmenterName: garmenter,
+      qtyKg: round1(p.demandKg),
+      consumedKg: round1(p.demandKg * ((stableHash(p.productId, 70) + 10) / 100)), // 10–80% consumed
+      isReservation: false,
+    };
+  });
 
   if (stableHash(fo.id, 5) === 0 && dispatches.length > 0) {
     const reserveQty = round1(Math.min(20, dispatches[0].qtyKg * 0.1));
@@ -266,7 +275,13 @@ export function computeCustody(
  */
 export function synthesizeFabricOrder(
   fo: SynthFabricOrder,
-  linkedProducts: { productId: string; styleNumber: string; productName: string | null; demandKg: number }[],
+  linkedProducts: {
+    productId: string;
+    articleNumber: string | null;
+    styleNumber: string;
+    productName: string | null;
+    demandKg: number;
+  }[],
   opts?: { forceOverReceipt?: boolean }
 ) {
   const receipts = synthesizeReceipts(fo, opts);
@@ -286,6 +301,51 @@ export function pickOverReceiptDemoId(orders: { id: string; shippedKg: number; o
   const candidates = orders.filter((o) => o.shippedKg > 0 && o.shippedKg <= o.orderedKg);
   if (candidates.length === 0) return null;
   return candidates[stableHash("over", candidates.length)].id;
+}
+
+export type DemoState = "vendor" | "partial" | "full" | "over";
+
+/**
+ * Distribute a small number of FabricOrders across the four demo states so
+ * the proto screen reads as a worked example even when the live DB has no
+ * shipping data yet.
+ *
+ * Returns a Map keyed by FO id. Orders not in the map should be left at
+ * their natural state (whatever shippedKg already says).
+ *
+ * Picks the first 4 orders with orderedKg > 0 and assigns them in order
+ * full → partial → over → vendor. Stable across renders.
+ */
+export function pickDemoStates(
+  orders: { id: string; orderedKg: number; shippedKg: number }[]
+): Map<string, DemoState> {
+  const states: DemoState[] = ["full", "partial", "over", "vendor"];
+  const candidates = orders.filter((o) => o.orderedKg > 0).slice(0, states.length);
+  const out = new Map<string, DemoState>();
+  candidates.forEach((o, i) => out.set(o.id, states[i]));
+  return out;
+}
+
+/**
+ * Apply a demo state override to a FabricOrder before synthesizing — the
+ * synthesizer is then driven by the overridden shippedKg.
+ *   full    → shippedKg = orderedKg
+ *   partial → shippedKg = orderedKg * 0.6
+ *   over    → shippedKg = orderedKg (then synth adds the +25% as surplus)
+ *   vendor  → shippedKg = 0
+ */
+export function applyDemoState(fo: SynthFabricOrder, state: DemoState | undefined): SynthFabricOrder {
+  if (!state) return fo;
+  switch (state) {
+    case "full":
+      return { ...fo, shippedKg: round1(fo.orderedKg) };
+    case "partial":
+      return { ...fo, shippedKg: round1(fo.orderedKg * 0.6) };
+    case "over":
+      return { ...fo, shippedKg: round1(fo.orderedKg) };
+    case "vendor":
+      return { ...fo, shippedKg: 0 };
+  }
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────
