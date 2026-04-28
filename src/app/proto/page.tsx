@@ -12,20 +12,20 @@ const screens = [
       "Orders grid with expandable receipts timeline. Adds On-order / In-our-hands / At-garmenter columns. One row force-demos an over-receipt with the surplus banner.",
   },
   {
-    href: "/proto/receive-fabric",
+    href: "/proto/fabric-orders",
     title: "Receive fabric",
     n: "02",
-    status: "static · same as /fabric-prototypes",
+    status: "live · sheet on fabric-orders",
     blurb:
-      "Sheet for logging a FabricReceipt against an order, then post-save branch to allocate or dispatch.",
+      "Click 'Log receipt' on any expanded fabric order row to open the receive sheet (form + post-save allocate/dispatch branch).",
   },
   {
-    href: "/proto/dispatch",
+    href: "/proto/fabric-orders",
     title: "Dispatch to garmenter",
     n: "03",
-    status: "static · same as /fabric-prototypes",
+    status: "live · sheet on fabric-orders",
     blurb:
-      "Form for GarmenterDispatch; post-save prompt to allocate at the garmenter.",
+      "Click 'Dispatch' on any expanded fabric order row (or 'Allocate surplus' on an over-receipt) to open the dispatch sheet.",
   },
   {
     href: "/proto/garmenters",
@@ -73,6 +73,8 @@ export default function ProtoIndexPage() {
                   <Badge className="bg-[oklch(0.95_0.04_140)] text-[oklch(0.40_0.10_140)] border border-[oklch(0.85_0.06_140)]">
                     {s.status}
                   </Badge>
+                ) : s.status.startsWith("static") ? (
+                  <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
                 ) : (
                   <Badge variant="outline" className="text-[10px]">{s.status}</Badge>
                 )}

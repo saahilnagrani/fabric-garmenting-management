@@ -1,14 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 import { ChevronRight, Plus, ArrowRight, ChevronDown } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { ReceiveSheet } from "./receive-sheet";
+import { DispatchSheet } from "./dispatch-sheet";
 
 type GroupBy = "none" | "vendor" | "garmenter" | "fabric";
+type SheetKind = "receive" | "dispatch" | null;
 
 type Row = {
   fabricOrder: {
@@ -61,6 +63,10 @@ export function FabricOrdersProtoGrid({
   });
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [activeSheet, setActiveSheet] = useState<{ kind: SheetKind; row: Row | null }>({ kind: null, row: null });
+
+  const openSheet = (kind: Exclude<SheetKind, null>, row: Row) => setActiveSheet({ kind, row });
+  const closeSheet = () => setActiveSheet({ kind: null, row: null });
 
   const toggle = (id: string) => {
     setOpenIds((prev) => {
@@ -214,6 +220,8 @@ export function FabricOrdersProtoGrid({
                           isGrouped={isGrouped}
                           isLastInGroup={isLastInGroup}
                           onToggle={() => toggle(row.fabricOrder.id)}
+                          onReceive={() => openSheet("receive", row)}
+                          onDispatch={() => openSheet("dispatch", row)}
                         />
                       );
                     })}
@@ -227,6 +235,9 @@ export function FabricOrdersProtoGrid({
       <p className="text-[11.5px] text-muted-foreground">
         Click ▸ on a row to expand. Numbers come from the live DB; receipts, dispatches, allocations and reservations are synthesized from existing fields (see <code className="text-[11px] bg-muted px-1 py-0.5 rounded">src/lib/proto/synthesize.ts</code>).
       </p>
+
+      <ReceiveSheet row={activeSheet.kind === "receive" ? activeSheet.row : null} open={activeSheet.kind === "receive"} onOpenChange={(v) => !v && closeSheet()} />
+      <DispatchSheet row={activeSheet.kind === "dispatch" ? activeSheet.row : null} open={activeSheet.kind === "dispatch"} onOpenChange={(v) => !v && closeSheet()} />
     </div>
   );
 }
@@ -239,6 +250,8 @@ function RowGroup({
   isGrouped,
   isLastInGroup,
   onToggle,
+  onReceive,
+  onDispatch,
 }: {
   row: Row;
   isOpen: boolean;
@@ -247,6 +260,8 @@ function RowGroup({
   isGrouped?: boolean;
   isLastInGroup?: boolean;
   onToggle: () => void;
+  onReceive: () => void;
+  onDispatch: () => void;
 }) {
   const fo = row.fabricOrder;
   const dispatchedTotal = Object.values(row.custody.atGarmenterKg).reduce((a, b) => a + b, 0);
@@ -317,12 +332,8 @@ function RowGroup({
                 <span className="font-mono font-medium">+{kgN(row.custody.surplusKg)} kg</span> over order on {row.displayNumber} — keep, allocate, or reserve.
               </span>
               <div className="ml-auto flex gap-2">
-                <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
-                  <Button size="xs" variant="outline">Allocate surplus</Button>
-                </Link>
-                <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
-                  <Button size="xs" variant="outline">Reserve for next phase</Button>
-                </Link>
+                <Button size="xs" variant="outline" onClick={onDispatch}>Allocate surplus</Button>
+                <Button size="xs" variant="outline" onClick={onDispatch}>Reserve for next phase</Button>
               </div>
             </div>
           </td>
@@ -352,12 +363,8 @@ function RowGroup({
                   </ul>
                 )}
                 <div className="flex gap-2 mt-3">
-                  <Link href="/fabric-prototypes/receive-fabric.html">
-                    <Button size="xs" variant="outline"><Plus className="h-3 w-3" /> Log receipt</Button>
-                  </Link>
-                  <Link href="/fabric-prototypes/dispatch-to-garmenter.html">
-                    <Button size="xs" variant="outline"><ArrowRight className="h-3 w-3" /> Dispatch</Button>
-                  </Link>
+                  <Button size="xs" variant="outline" onClick={onReceive}><Plus className="h-3 w-3" /> Log receipt</Button>
+                  <Button size="xs" variant="outline" onClick={onDispatch}><ArrowRight className="h-3 w-3" /> Dispatch</Button>
                 </div>
               </div>
 
