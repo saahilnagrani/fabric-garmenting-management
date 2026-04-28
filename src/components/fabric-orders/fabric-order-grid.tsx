@@ -12,7 +12,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger,
 } from "@/components/ui/select";
 import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
-import { formatCurrency } from "@/lib/formatters";
+import { formatCurrency, formatNumber } from "@/lib/formatters";
 import { Plus, Check, FileText } from "lucide-react";
 import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
@@ -70,6 +70,7 @@ function toRow(o: any): Record<string, unknown> {
  *  1. Awaiting Full Payment - any row is RECEIVED (goods in, not settled)
  *  2. Awaiting Advance Payment - any row is PI_RECEIVED with no advancePaidAt
  *  3. Awaiting PI - any row is PO_SENT with no piReceivedAt
+ *  4. Awaiting PO - any row is DRAFT_ORDER (PO not yet sent)
  */
 function awaitingTagForRows(rows: Array<Record<string, unknown>>): string {
   const hasReceived = rows.some((r) => r.orderStatus === "RECEIVED");
@@ -82,10 +83,12 @@ function awaitingTagForRows(rows: Array<Record<string, unknown>>): string {
     (r) => r.orderStatus === "PO_SENT" && !r.piReceivedAt,
   );
   if (hasPoPending) return "Awaiting PI";
+  const hasDraft = rows.some((r) => r.orderStatus === "DRAFT_ORDER");
+  if (hasDraft) return "Awaiting PO";
   return "";
 }
 
-const COL_STATE_KEY = "ag-grid-col-state-fabric-orders-v2";
+const COL_STATE_KEY = "ag-grid-col-state-fabric-orders-v4";
 
 export function FabricOrderGrid({
   orders,
@@ -107,6 +110,7 @@ export function FabricOrderGrid({
   const router = useRouter();
   const searchParams = useSearchParams();
   const gridApiRef = useRef<GridApi | null>(null);
+  const colStateReadyRef = useRef(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRows, setEditingRows] = useState<Record<string, unknown>[]>([]);
   const [selectedRows, setSelectedRows] = useState<Record<string, unknown>[]>([]);
@@ -120,6 +124,7 @@ export function FabricOrderGrid({
 
   const saveColumnState = useCallback(() => {
     if (!gridApiRef.current) return;
+    if (!colStateReadyRef.current) return;
     const state = gridApiRef.current.getColumnState();
     localStorage.setItem(COL_STATE_KEY, JSON.stringify(state));
   }, []);
@@ -216,6 +221,7 @@ export function FabricOrderGrid({
 
   const numCol = (field: string, headerName: string, w = 80): ColDef => ({
     field, headerName, minWidth: w, type: "numericColumn", editable: false,
+    valueFormatter: (p) => (p.value === null || p.value === undefined || p.value === "" ? "" : formatNumber(p.value as number | string)),
   });
 
   // Span maps stored in refs so they can be recalculated imperatively on sort changes
@@ -266,6 +272,7 @@ export function FabricOrderGrid({
   }, [recalcGroupSpans]);
 
   const baseColumnDefs = useMemo<ColDef[]>(() => [
+    // Pinned identity columns
     {
       colId: "__select",
       headerName: "",
@@ -283,27 +290,10 @@ export function FabricOrderGrid({
       suppressMovable: true,
     },
     {
-      field: "fabricName",
-      headerName: "Fabric",
-      minWidth: 160,
-      pinned: "left",
-      editable: false,
-      rowSpan: (params) => {
-        const idx = params.node?.rowIndex;
-        if (idx == null) return 1;
-        return groupStartsRef.current.has(idx) ? (groupSpanMapRef.current.get(idx) || 1) : 1;
-      },
-      cellClassRules: {
-        "row-span-cell": (params) => {
-          const idx = params.node?.rowIndex;
-          return idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1;
-        },
-      },
-    },
-    {
       field: "fabricVendorId",
       headerName: "Vendor",
-      minWidth: 80,
+      pinned: "left",
+      minWidth: 100,
       editable: false,
       sortable: true,
       unSortIcon: true,
@@ -321,50 +311,24 @@ export function FabricOrderGrid({
       },
     },
     {
-      field: "orderDate", headerName: "Order Date", minWidth: 90, maxWidth: 140, editable: false,
-      valueFormatter: (p) => {
-        if (!p.value) return "";
-        // Handle concatenated dates (from aggregation)
-        const dates = String(p.value).split(",").map((d) => d.trim());
-        return dates.map((d) => {
-          const parsed = new Date(d);
-          if (isNaN(parsed.getTime())) return d;
-          return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-        }).join(", ");
+      field: "fabricName",
+      headerName: "Fabric",
+      pinned: "left",
+      minWidth: 160,
+      editable: false,
+      rowSpan: (params) => {
+        const idx = params.node?.rowIndex;
+        if (idx == null) return 1;
+        return groupStartsRef.current.has(idx) ? (groupSpanMapRef.current.get(idx) || 1) : 1;
+      },
+      cellClassRules: {
+        "row-span-cell": (params) => {
+          const idx = params.node?.rowIndex;
+          return idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1;
+        },
       },
     },
-    { field: "articleNumbers", headerName: "Articles", minWidth: 80, editable: false },
-    { field: "colour", headerName: "Colour", minWidth: 70, editable: false },
-    { field: "gender", headerName: "Gender", minWidth: 65, editable: false },
-    { field: "invoiceNumber", headerName: "Invoice #", minWidth: 70, editable: false },
-    { field: "receivedAt", headerName: "Received At", minWidth: 90, editable: false },
-    numCol("costPerUnit", "Cost/Unit", 70),
-    numCol("fabricOrderedQuantityKg", "Ordered (kg)", 80),
-    numCol("fabricShippedQuantityKg", "Shipped (kg)", 80),
-    // Computed: Expected Fabric Cost = Cost/Unit * Ordered Qty
-    {
-      headerName: "Expected Cost", minWidth: 90, editable: false, cellClass: "computed-cell",
-      valueGetter: (p) => {
-        if (!p.data) return 0;
-        const cost = toNum(p.data.costPerUnit) || 0;
-        const qty = toNum(p.data.fabricOrderedQuantityKg) || 0;
-        return cost * qty;
-      },
-      valueFormatter: (p) => formatCurrency(p.value),
-    },
-    // Computed: Actual Fabric Cost = Cost/Unit * Shipped Qty
-    {
-      headerName: "Actual Cost", minWidth: 90, editable: false, cellClass: "computed-cell",
-      valueGetter: (p) => {
-        if (!p.data) return 0;
-        const cost = toNum(p.data.costPerUnit) || 0;
-        const qty = toNum(p.data.fabricShippedQuantityKg) || 0;
-        return cost * qty;
-      },
-      valueFormatter: (p) => formatCurrency(p.value),
-    },
-    { field: "poNumber", headerName: "PO Number", minWidth: 140, editable: false },
-    { field: "orderStatus", headerName: "Status", minWidth: 100, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    { field: "colour", headerName: "Colour", pinned: "left", minWidth: 90, editable: false },
     {
       field: "awaitingTag",
       headerName: "Awaiting",
@@ -381,7 +345,10 @@ export function FabricOrderGrid({
         );
       },
     },
-    { field: "garmentingAt", headerName: "Garmenting", minWidth: 90, editable: false },
+    // Quantities & cost-per-kg cluster
+    numCol("fabricOrderedQuantityKg", "Ordered Quantity (Kg)", 110),
+    numCol("fabricShippedQuantityKg", "Shipped Quantity (Kg)", 110),
+    numCol("costPerUnit", "Fabric Cost/Kg", 105),
     {
       field: "isRepeat", headerName: "Repeat Order?", minWidth: 85, maxWidth: 85, editable: false,
       cellRenderer: (params: { data: Record<string, unknown> }) => {
@@ -396,6 +363,47 @@ export function FabricOrderGrid({
         );
       },
     },
+    { field: "articleNumbers", headerName: "Article Numbers", minWidth: 110, editable: false },
+    { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false },
+    {
+      field: "orderDate", headerName: "Order Date", minWidth: 90, maxWidth: 140, editable: false,
+      valueFormatter: (p) => {
+        if (!p.value) return "";
+        // Handle concatenated dates (from aggregation)
+        const dates = String(p.value).split(",").map((d) => d.trim());
+        return dates.map((d) => {
+          const parsed = new Date(d);
+          if (isNaN(parsed.getTime())) return d;
+          return parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+        }).join(", ");
+      },
+    },
+    { field: "orderStatus", headerName: "Order Status", minWidth: 100, editable: false, valueFormatter: (p) => FABRIC_ORDER_STATUS_LABELS[p.value] || p.value || "" },
+    { field: "poNumber", headerName: "PO Number", minWidth: 140, editable: false },
+    {
+      headerName: "Expected Fabric Cost", minWidth: 120, editable: false, cellClass: "computed-cell",
+      valueGetter: (p) => {
+        if (!p.data) return 0;
+        const cost = toNum(p.data.costPerUnit) || 0;
+        const qty = toNum(p.data.fabricOrderedQuantityKg) || 0;
+        return cost * qty;
+      },
+      valueFormatter: (p) => formatCurrency(p.value),
+    },
+    {
+      headerName: "Actual Fabric Cost", minWidth: 120, editable: false, cellClass: "computed-cell",
+      valueGetter: (p) => {
+        if (!p.data) return 0;
+        const cost = toNum(p.data.costPerUnit) || 0;
+        const qty = toNum(p.data.fabricShippedQuantityKg) || 0;
+        return cost * qty;
+      },
+      valueFormatter: (p) => formatCurrency(p.value),
+    },
+    { field: "receivedAt", headerName: "Received At", minWidth: 90, editable: false },
+    // Hidden by default (kept available via Manage Columns)
+    { field: "gender", headerName: "Gender", minWidth: 80, editable: false, hide: true },
+    { field: "invoiceNumber", headerName: "Invoice Number", minWidth: 110, editable: false, hide: true },
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ], []);
 
@@ -599,16 +607,22 @@ export function FabricOrderGrid({
             if (saved) {
               try {
                 const parsed: ColumnState[] = JSON.parse(saved);
-                // Preserve pinned settings from column defs
-                const pinnedMap: Record<string, ColumnPinnedType> = {};
-                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedMap[col.field] = col.pinned as ColumnPinnedType; });
+                const savedColIds = new Set(parsed.map((cs) => cs.colId).filter(Boolean) as string[]);
+                // Default pinned settings from column defs (used only as fallback for colIds with no saved pin)
+                const pinnedFallback: Record<string, ColumnPinnedType> = {};
+                columnDefs.forEach((col) => { if (col.field && col.pinned) pinnedFallback[col.field] = col.pinned as ColumnPinnedType; });
                 // Columns that use rowSpan must never be sorted (breaks merged cell display)
                 const noSortCols = new Set(["fabricName", "fabricVendorId"]);
                 const merged = parsed.map((cs) => {
                   const patched = { ...cs };
-                  if (cs.colId && pinnedMap[cs.colId] !== undefined) patched.pinned = pinnedMap[cs.colId];
+                  if (cs.colId && patched.pinned === undefined && pinnedFallback[cs.colId] !== undefined) {
+                    patched.pinned = pinnedFallback[cs.colId];
+                  }
                   if (cs.colId && noSortCols.has(cs.colId)) { patched.sort = null; patched.sortIndex = null; }
                   return patched;
+                });
+                Object.keys(pinnedFallback).forEach((colId) => {
+                  if (!savedColIds.has(colId)) merged.push({ colId, pinned: pinnedFallback[colId] });
                 });
                 // Ensure __select column is always first and pinned left, even for users
                 // whose saved column state predates it.
@@ -626,17 +640,25 @@ export function FabricOrderGrid({
             // so no grid-level default sort is needed (avoids "Fabric 2" / "Vendor 1" labels).
             // Recalculate spans based on actual grid display order
             recalcGroupSpans();
+            // Allow persistence only after init completes, so AG-Grid's
+            // own startup events don't lock in a stale order.
+            setTimeout(() => { colStateReadyRef.current = true; }, 0);
           }}
           rowSelection="multiple"
           suppressRowClickSelection
           onSelectionChanged={handleSelectionChanged}
           onRowClicked={handleRowClicked}
           onColumnMoved={saveColumnState}
+          onColumnPinned={saveColumnState}
           onColumnResized={saveColumnStateDebounced}
           onSortChanged={handleSortChanged}
           onRowDataUpdated={() => {
             recalcGroupSpans();
-            gridApiRef.current?.refreshCells({ columns: ["fabricName", "fabricVendorId"], force: true });
+            // rowSpan is determined per-row at row creation, not per-cell. To
+            // make AG-Grid pick up new span values after rowData changes
+            // (e.g. a new fabric order is added), the rows themselves must be
+            // redrawn — refreshCells alone leaves the old DOM rowSpan in place.
+            gridApiRef.current?.redrawRows();
           }}
           suppressRowTransform
           getRowId={(params) => String(params.data.id)}

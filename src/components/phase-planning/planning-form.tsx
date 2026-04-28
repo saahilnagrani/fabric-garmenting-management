@@ -430,8 +430,12 @@ export function PlanningForm({
 
   function isRepeatArticle(articleNumber: string): boolean {
     if (previousArticleSet.has(articleNumber)) return true;
-    const num = Number(articleNumber);
-    if (!isNaN(num) && num < phaseNumber * 1000) return true;
+    // Strip a "-N" sub-article suffix (e.g. "1007-1" -> "1007") so phase-4
+    // variants of an older base article still resolve as repeats.
+    const baseStr = articleNumber.split("-")[0];
+    if (previousArticleSet.has(baseStr)) return true;
+    const baseNum = parseInt(baseStr, 10);
+    if (!isNaN(baseNum) && baseNum < phaseNumber * 1000) return true;
     return false;
   }
 

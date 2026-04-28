@@ -12,6 +12,7 @@ import { autoCreateDispatchesForProduct, type AutoDispatchResult } from "./acces
 import type { ProductAlertFilter } from "@/lib/alert-filters";
 import { getAlertRulesMerged } from "./alert-rules";
 import { createLookupResolver } from "@/lib/lookups";
+import { computeProfitMargin } from "@/lib/computations";
 
 /**
  * Bundle 1 dual-write: derive Product FK columns from string fields in `data`.
@@ -182,6 +183,59 @@ export async function getProducts(phaseId: string, filters?: ProductFilters) {
 export async function getProductsCountForPhase(phaseId: string): Promise<number> {
   await requirePermission("inventory:products:view");
   return db.product.count({ where: { phaseId } });
+}
+
+/**
+ * Returns a map of articleNumber to profit margin (decimal, e.g. 0.42)
+ * from the phase immediately before the given phase (by phase.number - 1).
+ * If multiple products in the previous phase share an articleNumber, the
+ * one with the highest profit margin wins (so a representative SKU is used).
+ */
+export async function getPreviousPhaseProfitMarginsByArticle(
+  currentPhaseId: string,
+): Promise<Record<string, number>> {
+  await requirePermission("inventory:products:view");
+  const current = await db.phase.findUnique({ where: { id: currentPhaseId } });
+  if (!current) return {};
+  const prev = await db.phase.findFirst({ where: { number: current.number - 1 } });
+  if (!prev) return {};
+  const products = await db.product.findMany({
+    where: { phaseId: prev.id, articleNumber: { not: null } },
+    select: {
+      articleNumber: true,
+      stitchingCost: true, brandLogoCost: true, neckTwillCost: true,
+      reflectorsCost: true, fusingCost: true, accessoriesCost: true,
+      brandTagCost: true, sizeTagCost: true, packagingCost: true,
+      fabricCostPerKg: true, assumedFabricGarmentsPerKg: true,
+      fabric2CostPerKg: true, assumedFabric2GarmentsPerKg: true,
+      outwardShippingCost: true, proposedMrp: true,
+    },
+  });
+  const map: Record<string, number> = {};
+  for (const p of products) {
+    if (!p.articleNumber) continue;
+    const margin = computeProfitMargin({
+      stitchingCost: p.stitchingCost as never,
+      brandLogoCost: p.brandLogoCost as never,
+      neckTwillCost: p.neckTwillCost as never,
+      reflectorsCost: p.reflectorsCost as never,
+      fusingCost: p.fusingCost as never,
+      accessoriesCost: p.accessoriesCost as never,
+      brandTagCost: p.brandTagCost as never,
+      sizeTagCost: p.sizeTagCost as never,
+      packagingCost: p.packagingCost as never,
+      fabricCostPerKg: p.fabricCostPerKg as never,
+      assumedFabricGarmentsPerKg: p.assumedFabricGarmentsPerKg as never,
+      fabric2CostPerKg: p.fabric2CostPerKg as never,
+      assumedFabric2GarmentsPerKg: p.assumedFabric2GarmentsPerKg as never,
+      outwardShippingCost: p.outwardShippingCost as never,
+      proposedMrp: p.proposedMrp as never,
+    });
+    if (map[p.articleNumber] === undefined || margin > map[p.articleNumber]) {
+      map[p.articleNumber] = margin;
+    }
+  }
+  return map;
 }
 
 export async function getProduct(id: string) {

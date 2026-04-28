@@ -1,5 +1,5 @@
 import { getCurrentPhase } from "@/actions/phases";
-import { getProducts, getProductsCountForPhase } from "@/actions/products";
+import { getProducts, getProductsCountForPhase, getPreviousPhaseProfitMarginsByArticle } from "@/actions/products";
 import { getVendors } from "@/actions/vendors";
 import { getProductMasters } from "@/actions/product-masters";
 import { getFabricMasters } from "@/actions/fabric-masters";
@@ -34,7 +34,7 @@ export default async function ProductsPage({
 
   const alertFilter = isProductAlertFilter(params.alertFilter) ? params.alertFilter : undefined;
 
-  const [products, vendors, productMasters, fabricMasters, sizeDistributions, totalCount] = await Promise.all([
+  const [products, vendors, productMasters, fabricMasters, sizeDistributions, totalCount, lastPhaseMargins] = await Promise.all([
     getProducts(phase.id, {
       isRepeat,
       search: params.search || undefined,
@@ -48,6 +48,7 @@ export default async function ProductsPage({
     getFabricMasters(),
     getSizeDistributions(),
     alertFilter ? getProductsCountForPhase(phase.id) : Promise.resolve(0),
+    getPreviousPhaseProfitMarginsByArticle(phase.id),
   ]);
 
   return (
@@ -73,6 +74,7 @@ export default async function ProductsPage({
         productMasters={JSON.parse(JSON.stringify(productMasters))}
         fabricMasters={JSON.parse(JSON.stringify(fabricMasters))}
         sizeDistributions={sizeDistributions.map((d) => ({ size: d.size, percentage: d.percentage }))}
+        lastPhaseMargins={lastPhaseMargins}
       />
     </div>
   );

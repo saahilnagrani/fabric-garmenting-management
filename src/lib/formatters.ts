@@ -11,10 +11,14 @@ export function formatCurrency(value: number | string | null | undefined): strin
   return currencyFormatter.format(num);
 }
 
+const numberFormatter = new Intl.NumberFormat("en-IN", {
+  maximumFractionDigits: 2,
+});
+
 export function formatNumber(value: number | string | null | undefined): string {
   const num = Number(value);
   if (isNaN(num)) return "-";
-  return new Intl.NumberFormat("en-IN").format(num);
+  return numberFormatter.format(num);
 }
 
 export function formatPercent(value: number | string | null | undefined): string {

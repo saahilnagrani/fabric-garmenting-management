@@ -95,10 +95,33 @@ export async function getFabricOrders(
     where.productLinks = { none: {} };
   }
 
-  return db.fabricOrder.findMany({
+  const orders = await db.fabricOrder.findMany({
     where,
-    include: { fabricVendor: true },
+    include: {
+      fabricVendor: true,
+      productLinks: {
+        include: { product: { select: { garmentingAt: true } } },
+      },
+    },
     orderBy: [{ createdAt: "desc" }],
+  });
+
+  // Derive garmentingAt from linked products when the fabric order doesn't
+  // have its own value (older orders created before phase planning wrote it).
+  // Multiple linked articles can resolve to different locations, so we
+  // de-duplicate and join with " / ".
+  return orders.map((o) => {
+    if (o.garmentingAt && o.garmentingAt.trim() !== "") return o;
+    const fromLinks = Array.from(
+      new Set(
+        o.productLinks
+          .map((l) => l.product?.garmentingAt?.trim() || "")
+          .filter(Boolean),
+      ),
+    );
+    return fromLinks.length > 0
+      ? { ...o, garmentingAt: fromLinks.join(" / ") }
+      : o;
   });
 }
 

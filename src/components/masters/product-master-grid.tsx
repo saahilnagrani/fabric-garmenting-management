@@ -14,7 +14,7 @@ import {
   computeDealerPrice,
   computeProfitMargin,
 } from "@/lib/computations";
-import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { formatCurrency, formatPercent, formatNumber } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
 import { Plus, Eye, EyeOff } from "lucide-react";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
@@ -37,6 +37,7 @@ export function ProductMasterGrid({
   accessories = [],
   garmentingLocations = [],
   showArchived = false,
+  fabricVendorByName = {},
 }: {
   groupedMasters: GroupedStyleRow[];
   productTypes?: string[];
@@ -48,40 +49,44 @@ export function ProductMasterGrid({
   accessories?: AccessoryOption[];
   garmentingLocations?: string[];
   showArchived?: boolean;
+  fabricVendorByName?: Record<string, string>;
 }) {
   const router = useRouter();
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<GroupedStyleRow | null>(null);
   const gridApiRef = useRef<import("ag-grid-community").GridApi | null>(null);
+  // Hold fabric→vendor map in a ref so the column defs don't rebuild
+  // when the parent re-renders with a new (but content-equivalent) object.
+  const fabricVendorByNameRef = useRef(fabricVendorByName);
+  fabricVendorByNameRef.current = fabricVendorByName;
 
   const genderLabels = GENDER_LABELS;
 
+  const numCol = (field: keyof GroupedStyleRow, headerName: string, w = 90): ColDef<GroupedStyleRow> => ({
+    field, headerName, minWidth: w, editable: false, type: "numericColumn",
+    valueFormatter: (p) => (p.value === null || p.value === undefined || p.value === "" ? "" : formatNumber(p.value as number | string)),
+  });
+
   const columnDefs = useMemo<ColDef<GroupedStyleRow>[]>(
     () => [
-      { field: "articleNumber", headerName: "Article #", pinned: "left", minWidth: 100, editable: false },
+      // Pinned identity columns (mirrors Article Orders pin convention)
+      { field: "articleNumber", headerName: "Article Number", pinned: "left", minWidth: 100, editable: false },
+      { field: "fabricName", headerName: "Fabric 1", pinned: "left", minWidth: 110, editable: false },
+      { field: "productName", headerName: "Product Name", pinned: "left", minWidth: 110, editable: false },
+      // Visible columns aligned with Article Orders order
       {
-        field: "manuallyCleanedAt",
-        headerName: "Cleaned",
-        minWidth: 70,
-        maxWidth: 100,
+        colId: "fabric1Vendor",
+        headerName: "Fabric 1 Vendor",
+        minWidth: 110,
         editable: false,
-        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" } as Record<string, string>,
-        valueFormatter: (p) => (p.value ? "✓" : ""),
-        cellClass: (p) => (p.value ? "text-emerald-600 font-bold" : ""),
-        tooltipValueGetter: (p) => (p.value ? `Manually cleaned on ${new Date(p.value as string).toLocaleString()}` : ""),
+        valueGetter: (p) => {
+          const name = p.data?.fabricName;
+          if (!name) return "";
+          return fabricVendorByNameRef.current[name] || "";
+        },
       },
-      { field: "styleNumber", headerName: "Style # (legacy)", minWidth: 80, editable: false },
-      { field: "fabricName", headerName: "Fabric", minWidth: 100, editable: false },
-      { field: "type", headerName: "Product Type", minWidth: 70, editable: false },
-      {
-        field: "gender",
-        headerName: "Gender",
-        minWidth: 60,
-        editable: false,
-        valueFormatter: (p) => genderLabels[p.value] || p.value || "",
-      },
-      { field: "productName", headerName: "Product Name", minWidth: 100, editable: false },
-      { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false, valueFormatter: (p) => p.value || "—" },
+      { field: "fabric2Name", headerName: "Fabric 2", minWidth: 110, editable: false },
+      { field: "type", headerName: "Type", minWidth: 90, editable: false },
       {
         field: "colours",
         headerName: "Colours",
@@ -90,31 +95,29 @@ export function ProductMasterGrid({
         cellRenderer: MultiTagRenderer,
         cellStyle: { display: "flex", alignItems: "center" },
       },
+      { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false, valueFormatter: (p) => p.value || "—" },
+      numCol("garmentsPerKg", "Fabric 1 Garments/Kg", 130),
+      numCol("fabricCostPerKg", "Fabric Cost/kg", 95),
+      numCol("stitchingCost", "Stitching Cost", 110),
+      numCol("brandLogoCost", "Logo Cost", 95),
+      numCol("neckTwillCost", "Neck Twill", 100),
+      numCol("reflectorsCost", "Reflectors", 100),
+      numCol("fusingCost", "Fusing", 90),
+      numCol("accessoriesCost", "Accessories", 105),
+      numCol("brandTagCost", "Brand Tag Cost", 110),
+      numCol("sizeTagCost", "Size Tag/hyperballik", 130),
+      numCol("packagingCost", "Packaging", 100),
       {
-        field: "skuCount",
-        headerName: "Variants",
-        minWidth: 50,
-        editable: false,
-        type: "numericColumn",
-      },
-      {
-        headerName: "Total Garmenting (Rs)",
-        minWidth: 70,
+        headerName: "Total Garmenting",
+        minWidth: 120,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeTotalGarmenting(p.data) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        field: "fabricCostPerKg",
-        headerName: "Fabric Cost/kg",
-        minWidth: 70,
-        editable: false,
-        type: "numericColumn",
-      },
-      {
-        headerName: "Fabric Cost/Piece (Rs)",
-        minWidth: 70,
+        headerName: "Fabric Cost/Piece",
+        minWidth: 115,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) =>
@@ -128,8 +131,8 @@ export function ProductMasterGrid({
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        headerName: "Total Cost/Piece (Rs)",
-        minWidth: 70,
+        headerName: "Total Cost Per Piece",
+        minWidth: 120,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) =>
@@ -142,9 +145,10 @@ export function ProductMasterGrid({
             : 0,
         valueFormatter: (p) => formatCurrency(p.value),
       },
+      numCol("inwardShipping", "Inward Shipping", 110),
       {
-        headerName: "Landed Cost/Piece (Rs)",
-        minWidth: 70,
+        headerName: "Total Landed Cost Per Piece",
+        minWidth: 140,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) =>
@@ -159,23 +163,20 @@ export function ProductMasterGrid({
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        field: "proposedMrp",
-        headerName: "MRP (Rs)",
-        minWidth: 60,
-        editable: false,
-        type: "numericColumn",
+        field: "proposedMrp", headerName: "Proposed MRP", minWidth: 100, editable: false, type: "numericColumn",
+        valueFormatter: (p) => (p.value === null || p.value === undefined || p.value === "" ? "" : formatNumber(p.value as number | string)),
       },
       {
-        headerName: "Dealer Price (50%)",
-        minWidth: 70,
+        headerName: "Dealer Price (50% off)",
+        minWidth: 115,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => (p.data ? computeDealerPrice(p.data.proposedMrp) : 0),
         valueFormatter: (p) => formatCurrency(p.value),
       },
       {
-        headerName: "Profit Margin (%)",
-        minWidth: 60,
+        headerName: "Profit Margin",
+        minWidth: 100,
         editable: false,
         cellClass: "computed-cell",
         valueGetter: (p) => {
@@ -189,6 +190,33 @@ export function ProductMasterGrid({
         },
         valueFormatter: (p) => formatPercent(p.value),
       },
+      // Master-only fields at the end
+      {
+        field: "skuCount",
+        headerName: "Variants",
+        minWidth: 70,
+        editable: false,
+        type: "numericColumn",
+      },
+      {
+        field: "manuallyCleanedAt",
+        headerName: "Cleaned",
+        minWidth: 70,
+        maxWidth: 100,
+        editable: false,
+        cellStyle: { display: "flex", alignItems: "center", justifyContent: "center" } as Record<string, string>,
+        valueFormatter: (p) => (p.value ? "✓" : ""),
+        cellClass: (p) => (p.value ? "text-emerald-600 font-bold" : ""),
+        tooltipValueGetter: (p) => (p.value ? `Manually cleaned on ${new Date(p.value as string).toLocaleString()}` : ""),
+      },
+      {
+        field: "gender",
+        headerName: "Gender",
+        minWidth: 80,
+        editable: false,
+        valueFormatter: (p) => genderLabels[p.value] || p.value || "",
+      },
+      { field: "styleNumber", headerName: "Style # (legacy)", minWidth: 100, editable: false },
     ],
     // eslint-disable-next-line react-hooks/exhaustive-deps
     []

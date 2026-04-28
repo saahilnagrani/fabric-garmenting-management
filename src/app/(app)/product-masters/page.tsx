@@ -1,6 +1,6 @@
 import { getProductMastersGrouped } from "@/actions/product-masters";
 import { getProductTypes } from "@/actions/product-types";
-import { getFabricNamesMrp } from "@/actions/fabric-masters";
+import { getFabricNamesMrp, getFabricVendorByName } from "@/actions/fabric-masters";
 import { getColours } from "@/actions/colours";
 import { getPhases } from "@/actions/phases";
 import { getAccessoryMasters } from "@/actions/accessories";
@@ -16,7 +16,7 @@ export default async function ProductMastersPage({
 }) {
   const params = await searchParams;
   const showArchived = params.showArchived === "true";
-  const [groupedMasters, types, fabricData, colourRecords, phases, accessoryRows, garmentingLocationRecords] = await Promise.all([
+  const [groupedMasters, types, fabricData, colourRecords, phases, accessoryRows, garmentingLocationRecords, fabricVendorByName] = await Promise.all([
     getProductMastersGrouped(showArchived),
     getProductTypes(),
     getFabricNamesMrp(),
@@ -24,6 +24,7 @@ export default async function ProductMastersPage({
     getPhases(),
     FEATURES.accessories ? getAccessoryMasters() : Promise.resolve([]),
     getGarmentingLocations(),
+    getFabricVendorByName(),
   ]);
   const garmentingLocations = garmentingLocationRecords.map((l) => l.name);
   const accessoryOptions = accessoryRows.map((a) => ({
@@ -57,6 +58,7 @@ export default async function ProductMastersPage({
         accessories={accessoryOptions}
         garmentingLocations={garmentingLocations}
         showArchived={showArchived}
+        fabricVendorByName={fabricVendorByName}
       />
     </div>
   );

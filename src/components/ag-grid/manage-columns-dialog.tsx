@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, type RefObject } from "react";
 import type { GridApi, ColumnState } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Columns3, ChevronUp, ChevronDown, Pin, PinOff } from "lucide-react";
+import { Columns3, ChevronUp, ChevronDown, Pin, PinOff, GripVertical, Eye, EyeOff } from "lucide-react";
 
 type ColumnInfo = {
   colId: string;
@@ -25,6 +25,8 @@ export function ManageColumnsDialog({
   const [columns, setColumns] = useState<ColumnInfo[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Header name overrides stored in localStorage
   const renameKey = `${colStateKey}-renames`;
@@ -73,18 +75,47 @@ export function ManageColumnsDialog({
     localStorage.setItem(colStateKey, JSON.stringify(state));
   }
 
-  function handleMove(index: number, direction: "up" | "down") {
+  function moveColumn(fromIndex: number, toIndex: number) {
     if (!gridApiRef.current) return;
-    const targetIndex = direction === "up" ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= columns.length) return;
-
+    if (fromIndex === toIndex) return;
+    if (toIndex < 0 || toIndex >= columns.length) return;
     const state = gridApiRef.current.getColumnState();
     const newState = [...state];
-    const [moved] = newState.splice(index, 1);
-    newState.splice(targetIndex, 0, moved);
+    const [moved] = newState.splice(fromIndex, 1);
+    newState.splice(toIndex, 0, moved);
     gridApiRef.current.applyColumnState({ state: newState, applyOrder: true });
     saveColumnState();
     loadColumns();
+  }
+
+  function handleMove(index: number, direction: "up" | "down") {
+    moveColumn(index, direction === "up" ? index - 1 : index + 1);
+  }
+
+  function handleDragStart(e: React.DragEvent<HTMLDivElement>, index: number) {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+    // Some browsers require setData to start a drag
+    try { e.dataTransfer.setData("text/plain", String(index)); } catch { /* ignore */ }
+  }
+
+  function handleDragOver(e: React.DragEvent<HTMLDivElement>, index: number) {
+    if (dragIndex === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverIndex !== index) setDragOverIndex(index);
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>, index: number) {
+    e.preventDefault();
+    if (dragIndex !== null) moveColumn(dragIndex, index);
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }
+
+  function handleDragEnd() {
+    setDragIndex(null);
+    setDragOverIndex(null);
   }
 
   function handlePin(colId: string, pinned: "left" | null) {
@@ -92,6 +123,13 @@ export function ManageColumnsDialog({
     const col = gridApiRef.current.getColumn(colId);
     if (!col) return;
     gridApiRef.current.setColumnsPinned([colId], pinned);
+    saveColumnState();
+    loadColumns();
+  }
+
+  function handleToggleVisibility(colId: string, makeVisible: boolean) {
+    if (!gridApiRef.current) return;
+    gridApiRef.current.setColumnsVisible([colId], makeVisible);
     saveColumnState();
     loadColumns();
   }
@@ -141,8 +179,26 @@ export function ManageColumnsDialog({
               {columns.map((col, index) => (
                 <div
                   key={col.colId}
-                  className="flex items-center gap-1 py-1 px-1.5 rounded hover:bg-muted/50 group"
+                  draggable={editingId !== col.colId}
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`flex items-center gap-1 py-1 px-1.5 rounded hover:bg-muted/50 group ${
+                    dragIndex === index ? "opacity-40" : ""
+                  } ${
+                    dragOverIndex === index && dragIndex !== null && dragIndex !== index
+                      ? dragIndex < index ? "border-b-2 border-primary" : "border-t-2 border-primary"
+                      : ""
+                  }`}
                 >
+                  {/* Drag handle */}
+                  <span
+                    className="text-muted-foreground/60 group-hover:text-muted-foreground cursor-grab active:cursor-grabbing select-none shrink-0"
+                    title="Drag to reorder"
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </span>
                   {/* Name (editable) */}
                   {editingId === col.colId ? (
                     <Input
@@ -158,7 +214,7 @@ export function ManageColumnsDialog({
                     />
                   ) : (
                     <div
-                      className="flex-1 min-w-0 cursor-pointer hover:underline"
+                      className={`flex-1 min-w-0 cursor-pointer ${col.visible ? "" : "opacity-50"}`}
                       onClick={() => startRename(col)}
                       title="Click to rename"
                     >
@@ -190,6 +246,13 @@ export function ManageColumnsDialog({
                     title={col.pinned ? "Unpin column" : "Pin to left"}
                   >
                     {col.pinned ? <Pin className="h-3 w-3" /> : <PinOff className="h-3 w-3" />}
+                  </button>
+                  <button
+                    className={`p-1 rounded transition-colors ${col.visible ? "text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100" : "text-muted-foreground hover:text-foreground"}`}
+                    onClick={() => handleToggleVisibility(col.colId, !col.visible)}
+                    title={col.visible ? "Hide column" : "Show column"}
+                  >
+                    {col.visible ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                   </button>
                 </div>
               ))}

@@ -98,6 +98,7 @@ const emptyForm: FormData = {
 };
 
 function awaitingTag(orderStatus: string, piReceivedAt: string, advancePaidAt: string): string {
+  if (orderStatus === "DRAFT_ORDER") return "Awaiting PO";
   if (orderStatus === "PO_SENT" && !piReceivedAt) return "Awaiting PI";
   if (orderStatus === "PI_RECEIVED" && !advancePaidAt) return "Awaiting Advance Payment";
   if (orderStatus === "RECEIVED") return "Awaiting Full Payment";

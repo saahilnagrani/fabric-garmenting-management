@@ -80,6 +80,27 @@ export async function getFabricNames(): Promise<string[]> {
   return fabrics.map((f) => f.fabricName);
 }
 
+/**
+ * Returns a map of fabric name → vendor name. When the same fabric name
+ * is associated with multiple vendors (data dedup quirk), the first one
+ * encountered (alphabetical by fabric name) wins, matching getFabricNamesMrp.
+ */
+export async function getFabricVendorByName(): Promise<Record<string, string>> {
+  await requirePermission("inventory:masters:view");
+  const fabrics = await db.fabricMaster.findMany({
+    where: { isStrikedThrough: false },
+    select: { fabricName: true, vendor: { select: { name: true } } },
+    orderBy: { fabricName: "asc" },
+  });
+  const map: Record<string, string> = {};
+  for (const f of fabrics) {
+    if (!(f.fabricName in map) && f.vendor?.name) {
+      map[f.fabricName] = f.vendor.name;
+    }
+  }
+  return map;
+}
+
 export async function getFabricNamesMrp(): Promise<{ name: string; mrp: number | null }[]> {
   await requirePermission("inventory:masters:view");
   const fabrics = await db.fabricMaster.findMany({
