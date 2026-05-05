@@ -104,31 +104,49 @@ function fabricSlots(pm: PMOption): { slot: 1 | 2 | 3 | 4; name: string; vendorI
   return slots;
 }
 
-function buildInitialCombos(pm: PMOption): ColourCombo[] {
-  const c1 = pm.coloursAvailable;
-  const c2 = pm.colours2Available;
-  const c3 = pm.colours3Available;
-  const c4 = pm.colours4Available;
+/**
+ * Build combos from a *group* of ProductMaster rows that share an
+ * articleNumber. Each PM contributes its own colour variants; combos are
+ * deduped across PMs by their concatenated colour signature.
+ *
+ * Single-fabric article: one combo per colour string in coloursAvailable
+ *   across all variants.
+ * Multi-fabric article: one combo per positional colour set
+ *   (coloursAvailable[i], colours2Available[i], ...) across all variants.
+ */
+function buildInitialCombos(pms: PMOption[]): ColourCombo[] {
+  const combos: ColourCombo[] = [];
+  const seen = new Set<string>();
 
-  // For multi-fabric articles, the "combo" is the i-th colour from each slot
-  // (positional pairing) — matching how the app does it for clarity.
-  const slots = fabricSlots(pm);
-  const isMulti = slots.length > 1;
-  if (isMulti) {
-    const max = Math.max(c1.length, c2.length, c3.length, c4.length, 1);
-    const combos: ColourCombo[] = [];
-    for (let i = 0; i < max; i++) {
-      const a = c1[i] ?? c1[0] ?? "—";
-      const b = c2[i] ?? c2[0] ?? null;
-      const c = c3[i] ?? c3[0] ?? null;
-      const d = c4[i] ?? c4[0] ?? null;
-      combos.push({ comboKey: `${a}|${b ?? ""}|${c ?? ""}|${d ?? ""}`, colour: a, colour2: b, colour3: c, colour4: d, qty: 0 });
+  for (const pm of pms) {
+    const c1 = pm.coloursAvailable;
+    const c2 = pm.colours2Available;
+    const c3 = pm.colours3Available;
+    const c4 = pm.colours4Available;
+    const isMulti = (pm.fabric2Name || pm.fabric3Name || pm.fabric4Name) ? true : false;
+
+    if (isMulti) {
+      const max = Math.max(c1.length, c2.length, c3.length, c4.length, 1);
+      for (let i = 0; i < max; i++) {
+        const a = c1[i] ?? c1[0] ?? "—";
+        const b = c2[i] ?? c2[0] ?? null;
+        const c = c3[i] ?? c3[0] ?? null;
+        const d = c4[i] ?? c4[0] ?? null;
+        const sig = `${a}|${b ?? ""}|${c ?? ""}|${d ?? ""}`;
+        if (seen.has(sig)) continue;
+        seen.add(sig);
+        combos.push({ comboKey: sig, colour: a, colour2: b, colour3: c, colour4: d, qty: 0 });
+      }
+    } else {
+      const cols = c1.length > 0 ? c1 : ["(no colour set)"];
+      for (const c of cols) {
+        if (seen.has(c)) continue;
+        seen.add(c);
+        combos.push({ comboKey: c, colour: c, colour2: null, colour3: null, colour4: null, qty: 0 });
+      }
     }
-    return combos;
   }
-  // Single-fabric: one row per colour
-  const cols = c1.length > 0 ? c1 : ["(no colour set)"];
-  return cols.map((c) => ({ comboKey: c, colour: c, colour2: null, colour3: null, colour4: null, qty: 0 }));
+  return combos;
 }
 
 function colourLabel(c: ColourCombo): string {
@@ -171,10 +189,24 @@ export function PhasePlanningProto({
 
   const previousSet = useMemo(() => new Set(previousArticleNumbers), [previousArticleNumbers]);
 
+  // Group ProductMasters by articleNumber so the picker shows one entry per
+  // article (the live form does the same). Each group's first PM is the
+  // canonical metadata; combos are aggregated across all variants.
+  const articleGroups = useMemo(() => {
+    const m = new Map<string, PMOption[]>();
+    for (const pm of productMasterOptions) {
+      const an = (pm.articleNumber ?? pm.styleNumber ?? "").trim();
+      if (!an || an === "-") continue;
+      if (!m.has(an)) m.set(an, []);
+      m.get(an)!.push(pm);
+    }
+    return m;
+  }, [productMasterOptions]);
+
   // Quantity-mode state
   const [defaultGarmenterId, setDefaultGarmenterId] = useState(garmenters[0]?.id ?? "");
   const [selected, setSelected] = useState<SelectedArticle[]>([]);
-  const [pickPmId, setPickPmId] = useState("");
+  const [pickArticle, setPickArticle] = useState("");
   const scrollTargetRef = useRef<string | null>(null);
 
   // Fabric-mode state (kept simple from previous version)
@@ -186,6 +218,28 @@ export function PhasePlanningProto({
   const selectedFo = useMemo(() => existingFabricOrders.find((f) => f.id === foId) ?? null, [foId, existingFabricOrders]);
 
   // ── Combobox options ────────────────────────────────────────────
+  // One option per articleNumber. Label includes the article's product name
+  // and the unique set of fabrics across its variants.
+  const articleComboOptions = useMemo(() => {
+    const opts: { label: string; value: string; searchText: string }[] = [];
+    for (const [articleNumber, pms] of articleGroups) {
+      const first = pms[0];
+      const fabrics = new Set<string>();
+      for (const pm of pms) {
+        if (pm.fabricName) fabrics.add(pm.fabricName);
+        if (pm.fabric2Name) fabrics.add(pm.fabric2Name);
+        if (pm.fabric3Name) fabrics.add(pm.fabric3Name);
+        if (pm.fabric4Name) fabrics.add(pm.fabric4Name);
+      }
+      const fabricPart = [...fabrics].join(", ");
+      const parts = [articleNumber, first.productName, fabricPart].filter((p) => (p ?? "").toString().trim().length > 0);
+      const label = parts.join(" · ");
+      const searchText = [articleNumber, first.productName, first.styleNumber, first.fabricVendorName, fabricPart].filter(Boolean).join(" ");
+      opts.push({ label, value: articleNumber, searchText });
+    }
+    return opts.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  }, [articleGroups]);
+  // Kept for fabric-mode picker (still per-PM)
   const pmComboOptions = useMemo(
     () => productMasterOptions.map((pm) => ({
       label: pmLabel(pm),
@@ -212,20 +266,20 @@ export function PhasePlanningProto({
   }, [selected]);
 
   // ── Article actions ─────────────────────────────────────────────
-  const addArticle = (pmId: string) => {
-    const pm = productMasterOptions.find((p) => p.id === pmId);
-    if (!pm) return;
-    const articleNumber = (pm.articleNumber ?? pm.styleNumber ?? "").trim() || "—";
+  const addArticle = (articleNumber: string) => {
+    const pms = articleGroups.get(articleNumber);
+    if (!pms || pms.length === 0) return;
+    const canonical = pms[0]; // first variant carries the metadata (fabric slots, gpk, etc.)
     const rowKey = nextKey();
     setSelected((rows) => [...rows, {
       rowKey,
-      pm,
+      pm: canonical,
       garmenterId: defaultGarmenterId,
       isRepeat: isRepeatArticle(articleNumber, previousSet, phaseNumber),
-      combos: buildInitialCombos(pm),
+      combos: buildInitialCombos(pms),
     }]);
     scrollTargetRef.current = `art-${rowKey}`;
-    setPickPmId("");
+    setPickArticle("");
   };
   const updateCombo = (rowKey: string, comboKey: string, qty: number) =>
     setSelected((rows) => rows.map((r) => r.rowKey === rowKey ? { ...r, combos: r.combos.map((c) => c.comboKey === comboKey ? { ...c, qty } : c) } : r));
@@ -396,7 +450,7 @@ export function PhasePlanningProto({
                 <div className="grid grid-cols-[1fr_220px] gap-3 items-end">
                   <div className="space-y-1.5">
                     <Label>Add article from master</Label>
-                    <Combobox value={pickPmId} onValueChange={(v) => { setPickPmId(v); if (v) addArticle(v); }} options={pmComboOptions} placeholder="Search by article #, name, fabric, vendor…" />
+                    <Combobox value={pickArticle} onValueChange={(v) => { setPickArticle(v); if (v) addArticle(v); }} options={articleComboOptions} placeholder="Search by article #, name, fabric, vendor…" />
                   </div>
                   <div className="space-y-1.5">
                     <Label>Default garmenter</Label>
