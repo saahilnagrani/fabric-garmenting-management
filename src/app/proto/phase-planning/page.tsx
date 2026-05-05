@@ -36,7 +36,6 @@ export default async function ProtoPhasePlanningPage() {
     }),
     db.fabricOrder.findMany({
       where: { phaseId: phase.id, isStrikedThrough: false },
-      take: 5,
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -66,41 +65,6 @@ export default async function ProtoPhasePlanningPage() {
     }
   }
 
-  // Sample articles to pre-populate the Quantity-mode "selected articles" list
-  const sampleQuantityArticles = productMasters.slice(0, 2).map((pm, i) => ({
-    pmId: pm.id,
-    styleNumber: pm.styleNumber,
-    productName: pm.productName ?? pm.styleNumber,
-    fabricName: pm.fabricName ?? "—",
-    colour: i === 0 ? "Lime" : "Indigo",
-    qty: i === 0 ? 120 : 80,
-    demandKg: i === 0 ? 60.0 : 48.0,
-    garmenterName: "Mumtaz",
-  }));
-
-  // Pick one existing FO with the most plausible "available pool" feel for the
-  // Fabric-mode panel.
-  const sampleFo = fabricOrders[0]
-    ? {
-        id: fabricOrders[0].id,
-        fabricName: fabricOrders[0].fabricName,
-        colour: fabricOrders[0].colour,
-        vendorName: fabricOrders[0].fabricVendor?.name ?? "—",
-        orderedKg: protoNumberFmt.toNum(fabricOrders[0].fabricOrderedQuantityKg),
-        shippedKg: protoNumberFmt.toNum(fabricOrders[0].fabricShippedQuantityKg),
-      }
-    : null;
-
-  // Sample articles to allocate against that fabric in Fabric mode
-  const sampleFabricAllocations = productMasters.slice(2, 4).map((pm, i) => ({
-    pmId: pm.id,
-    styleNumber: pm.styleNumber,
-    productName: pm.productName ?? pm.styleNumber,
-    qty: i === 0 ? 60 : 40,
-    allocateKg: i === 0 ? 80.0 : 28.0,
-    garmenterName: "Mumtaz",
-  }));
-
   return (
     <div className="space-y-4">
       <div className="flex items-end justify-between">
@@ -117,21 +81,34 @@ export default async function ProtoPhasePlanningPage() {
         phaseId={phase.id}
         phaseNumber={phase.number}
         isTestPhase={phase.isTestPhase}
-        productMasterOptions={productMasters.map((pm) => {
-          const fv = pm.fabricName ? fabricNameToVendor.get(pm.fabricName) : null;
-          return {
-            id: pm.id,
-            styleNumber: pm.styleNumber,
-            productName: pm.productName ?? null,
-            fabricName: pm.fabricName ?? null,
-            fabricVendorId: fv?.vendorId ?? null,
-            fabricVendorName: fv?.vendorName ?? null,
-          };
-        })}
+        productMasterOptions={productMasters
+          .map((pm) => {
+            const fv = pm.fabricName ? fabricNameToVendor.get(pm.fabricName) : null;
+            return {
+              id: pm.id,
+              styleNumber: pm.styleNumber,
+              productName: pm.productName ?? null,
+              fabricName: pm.fabricName ?? null,
+              fabricVendorId: fv?.vendorId ?? null,
+              fabricVendorName: fv?.vendorName ?? null,
+            };
+          })
+          // Drop rows with no usable label (e.g. styleNumber="-" and no name/fabric)
+          .filter((pm) => {
+            const sn = (pm.styleNumber ?? "").trim();
+            const hasName = (pm.productName ?? "").trim().length > 0;
+            const hasFabric = (pm.fabricName ?? "").trim().length > 0;
+            return (sn !== "" && sn !== "-") || hasName || hasFabric;
+          })}
         garmenters={garmenters}
-        sampleQuantityArticles={sampleQuantityArticles}
-        sampleFo={sampleFo}
-        sampleFabricAllocations={sampleFabricAllocations}
+        existingFabricOrders={fabricOrders.map((fo) => ({
+          id: fo.id,
+          fabricName: fo.fabricName,
+          colour: fo.colour,
+          vendorName: fo.fabricVendor?.name ?? "—",
+          orderedKg: protoNumberFmt.toNum(fo.fabricOrderedQuantityKg),
+          shippedKg: protoNumberFmt.toNum(fo.fabricShippedQuantityKg),
+        }))}
       />
 
       <Card className="p-5">

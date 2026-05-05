@@ -265,6 +265,102 @@ export async function createPlannedOrders(input: {
   return { ok: true, ...result };
 }
 
+// ─── Fabric mode: allocate against an existing FabricOrder ───────
+
+export async function allocateAgainstFabricOrder(input: {
+  phaseId: string;
+  fabricOrderId: string;
+  articles: {
+    productMasterId: string;
+    styleNumber: string;
+    productName: string | null;
+    fabricVendorId: string;
+    fabricName: string;
+    colour: string;
+    qtyPcs: number;
+    allocateKg: number;
+    garmenterId: string | null;
+  }[];
+  reservation?: { qtyKg: number; purpose: string; garmenterId: string | null };
+}) {
+  if (input.articles.length === 0 && !input.reservation) {
+    throw new Error("No articles or reservation to allocate");
+  }
+  await requireAuthAndTestPhase(input.phaseId);
+
+  // Determine the stage of new allocations: if the FO has any receipts,
+  // assume IN_OUR_HANDS; otherwise AT_VENDOR. (Real-world would be more
+  // nuanced; this is a reasonable v0.)
+  const fo = await db.fabricOrder.findUnique({
+    where: { id: input.fabricOrderId },
+    select: { id: true, phaseId: true, _count: { select: { receipts: true } } },
+  });
+  if (!fo) throw new Error("Fabric order not found");
+  if (fo.phaseId !== input.phaseId) throw new Error("Fabric order is not in this phase");
+
+  const stage = fo._count.receipts > 0 ? "IN_OUR_HANDS" : "AT_VENDOR";
+
+  const result = await db.$transaction(async (tx) => {
+    const productIds: string[] = [];
+    const allocationIds: string[] = [];
+
+    for (const a of input.articles) {
+      const product = await tx.product.create({
+        data: {
+          phaseId: input.phaseId,
+          orderDate: new Date().toISOString().slice(0, 10),
+          styleNumber: a.styleNumber,
+          colourOrdered: a.colour,
+          type: "—",
+          gender: "MENS",
+          productName: a.productName ?? null,
+          status: "PLANNED",
+          fabricVendorId: a.fabricVendorId,
+          fabricName: a.fabricName,
+          fabricOrderedQuantityKg: dec(a.allocateKg),
+          garmentingAtId: a.garmenterId,
+        },
+      });
+      productIds.push(product.id);
+
+      await tx.productFabricOrder.create({
+        data: { productId: product.id, fabricOrderId: input.fabricOrderId, fabricSlot: 1 },
+      });
+
+      const alloc = await tx.allocation.create({
+        data: {
+          productId: product.id,
+          fabricOrderId: input.fabricOrderId,
+          garmenterId: a.garmenterId,
+          qtyKg: dec(a.allocateKg),
+          stage,
+        },
+      });
+      allocationIds.push(alloc.id);
+    }
+
+    if (input.reservation && input.reservation.qtyKg > 0) {
+      const r = await tx.allocation.create({
+        data: {
+          productId: null,
+          fabricOrderId: input.fabricOrderId,
+          garmenterId: input.reservation.garmenterId,
+          qtyKg: dec(input.reservation.qtyKg),
+          stage,
+          isReservation: true,
+          reservationPurpose: input.reservation.purpose || "reservation",
+        },
+      });
+      allocationIds.push(r.id);
+    }
+
+    return { productIds, allocationIds, stage };
+  });
+
+  revalidatePath("/proto");
+  return { ok: true, ...result };
+}
+
 // ─── Test phase toggle ───────────────────────────────────────────
 
 export async function setTestPhase(phaseId: string, isTestPhase: boolean) {
