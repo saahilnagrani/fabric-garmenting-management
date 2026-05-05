@@ -741,7 +741,7 @@ function CommitsPanel({ articles, buckets, mode }: {
           <tbody>
             {articles.map((a, i) => (
               <tr key={a.rowKey + a.colour + i} className="border-t first:border-t-0">
-                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">AO·{i + 1}</td>
+                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top whitespace-nowrap">AO·{i + 1}</td>
                 <td className="px-4 py-1.5 text-[12.5px]">{a.articleNumber} · {a.colour} · <span className="font-mono">{a.qty} pcs</span></td>
               </tr>
             ))}
@@ -755,7 +755,7 @@ function CommitsPanel({ articles, buckets, mode }: {
           <tbody>
             {buckets.map((b, i) => (
               <tr key={i} className="border-t first:border-t-0">
-                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">FO·{i + 1}</td>
+                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top whitespace-nowrap">FO·{i + 1}</td>
                 <td className="px-4 py-1.5 text-[12.5px]">{b.fabricName} · {b.colour} · <span className="font-mono">{b.totalKg.toFixed(1)} kg</span></td>
               </tr>
             ))}
@@ -777,7 +777,7 @@ function CommitsPanel({ articles, buckets, mode }: {
               const foRef = foIdx ? `FO·${foIdx}` : "FO";
               return (
                 <tr key={`${a.rowKey}-${ai}-${fi}`} className="border-t first:border-t-0">
-                  <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[80px] align-top">{allocId}</td>
+                  <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[88px] align-top whitespace-nowrap">{allocId}</td>
                   <td className="px-4 py-1.5 text-[12.5px]">
                     <span className="font-mono">AO·{aoNum} → {foRef}  {fk.kg.toFixed(1)} kg</span>
                     <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">at vendor</Badge>
