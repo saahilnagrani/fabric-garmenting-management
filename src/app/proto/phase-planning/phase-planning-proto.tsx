@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useState, useTransition, useMemo, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -14,15 +14,42 @@ import { createPlannedOrders, allocateAgainstFabricOrder } from "@/actions/proto
 
 type Mode = "quantity" | "fabric";
 
-type PMOption = {
+export type PMOption = {
   id: string;
   articleNumber: string | null;
   styleNumber: string;
+  skuCode: string;
   productName: string | null;
+  type: string;
+  gender: string;
+  // Fabric 1
   fabricName: string | null;
   fabricVendorId: string | null;
   fabricVendorName: string | null;
+  fabricCostPerKg: number | null;
+  garmentsPerKg: number | null;
+  coloursAvailable: string[];
+  // Fabric 2
+  fabric2Name: string | null;
+  fabric2VendorId: string | null;
+  fabric2VendorName: string | null;
+  fabric2CostPerKg: number | null;
+  garmentsPerKg2: number | null;
+  colours2Available: string[];
+  // Fabric 3
+  fabric3Name: string | null;
+  fabric3VendorId: string | null;
+  fabric3VendorName: string | null;
+  garmentsPerKg3: number | null;
+  colours3Available: string[];
+  // Fabric 4
+  fabric4Name: string | null;
+  fabric4VendorId: string | null;
+  fabric4VendorName: string | null;
+  garmentsPerKg4: number | null;
+  colours4Available: string[];
 };
+
 type Garmenter = { id: string; name: string };
 type ExistingFo = {
   id: string;
@@ -33,37 +60,30 @@ type ExistingFo = {
   shippedKg: number;
 };
 
-type PlanRow = {
-  rowKey: string;
-  pmId: string;
-  articleNumber: string | null;
-  styleNumber: string;
-  productName: string | null;
-  fabricName: string;
-  fabricVendorId: string | null;
+const SIZES = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+type Size = (typeof SIZES)[number];
+
+type ColourCombo = {
+  comboKey: string;
   colour: string;
+  colour2: string | null;
+  colour3: string | null;
+  colour4: string | null;
   qty: number;
-  demandKg: number;
-  garmenterId: string;
 };
 
-type FabricRow = {
+type SelectedArticle = {
   rowKey: string;
-  pmId: string;
-  articleNumber: string | null;
-  styleNumber: string;
-  productName: string | null;
-  qty: number;
-  allocateKg: number;
+  pm: PMOption;
   garmenterId: string;
+  isRepeat: boolean;
+  combos: ColourCombo[];
 };
 
 let _seq = 0;
 const nextKey = () => `r${++_seq}`;
 
 function pmLabel(pm: PMOption): string {
-  // Format: articleNumber · productName · fabricName
-  // Each part is omitted if empty/dash; we join the rest gracefully.
   const clean = (s: string | null | undefined) => {
     const t = (s ?? "").trim();
     return t && t !== "-" ? t : "";
@@ -75,12 +95,64 @@ function pmLabel(pm: PMOption): string {
   return parts.length > 0 ? parts.join(" · ") : "(unnamed)";
 }
 
+function fabricSlots(pm: PMOption): { slot: 1 | 2 | 3 | 4; name: string; vendorId: string | null; vendorName: string | null; gpk: number | null; cost: number | null; colours: string[] }[] {
+  const slots: ReturnType<typeof fabricSlots> = [];
+  if (pm.fabricName) slots.push({ slot: 1, name: pm.fabricName, vendorId: pm.fabricVendorId, vendorName: pm.fabricVendorName, gpk: pm.garmentsPerKg, cost: pm.fabricCostPerKg, colours: pm.coloursAvailable });
+  if (pm.fabric2Name) slots.push({ slot: 2, name: pm.fabric2Name, vendorId: pm.fabric2VendorId, vendorName: pm.fabric2VendorName, gpk: pm.garmentsPerKg2, cost: pm.fabric2CostPerKg, colours: pm.colours2Available });
+  if (pm.fabric3Name) slots.push({ slot: 3, name: pm.fabric3Name, vendorId: pm.fabric3VendorId, vendorName: pm.fabric3VendorName, gpk: pm.garmentsPerKg3, cost: null, colours: pm.colours3Available });
+  if (pm.fabric4Name) slots.push({ slot: 4, name: pm.fabric4Name, vendorId: pm.fabric4VendorId, vendorName: pm.fabric4VendorName, gpk: pm.garmentsPerKg4, cost: null, colours: pm.colours4Available });
+  return slots;
+}
+
+function buildInitialCombos(pm: PMOption): ColourCombo[] {
+  const c1 = pm.coloursAvailable;
+  const c2 = pm.colours2Available;
+  const c3 = pm.colours3Available;
+  const c4 = pm.colours4Available;
+
+  // For multi-fabric articles, the "combo" is the i-th colour from each slot
+  // (positional pairing) — matching how the app does it for clarity.
+  const slots = fabricSlots(pm);
+  const isMulti = slots.length > 1;
+  if (isMulti) {
+    const max = Math.max(c1.length, c2.length, c3.length, c4.length, 1);
+    const combos: ColourCombo[] = [];
+    for (let i = 0; i < max; i++) {
+      const a = c1[i] ?? c1[0] ?? "—";
+      const b = c2[i] ?? c2[0] ?? null;
+      const c = c3[i] ?? c3[0] ?? null;
+      const d = c4[i] ?? c4[0] ?? null;
+      combos.push({ comboKey: `${a}|${b ?? ""}|${c ?? ""}|${d ?? ""}`, colour: a, colour2: b, colour3: c, colour4: d, qty: 0 });
+    }
+    return combos;
+  }
+  // Single-fabric: one row per colour
+  const cols = c1.length > 0 ? c1 : ["(no colour set)"];
+  return cols.map((c) => ({ comboKey: c, colour: c, colour2: null, colour3: null, colour4: null, qty: 0 }));
+}
+
+function colourLabel(c: ColourCombo): string {
+  return [c.colour, c.colour2, c.colour3, c.colour4].filter(Boolean).join(" / ");
+}
+
+const isRepeatArticle = (articleNumber: string, previous: Set<string>, currentPhase: number): boolean => {
+  if (previous.has(articleNumber)) return true;
+  const base = articleNumber.split("-")[0];
+  if (previous.has(base)) return true;
+  // Heuristic: pre-current-phase-numbered articles are likely repeats
+  const baseNum = Number(base);
+  if (!Number.isNaN(baseNum) && baseNum > 0 && baseNum < currentPhase * 1000) return true;
+  return false;
+};
+
 export function PhasePlanningProto({
   phaseId,
   phaseNumber,
   isTestPhase,
   productMasterOptions,
   garmenters,
+  sizeDistMap,
+  previousArticleNumbers,
   existingFabricOrders,
 }: {
   phaseId: string;
@@ -88,95 +160,168 @@ export function PhasePlanningProto({
   isTestPhase: boolean;
   productMasterOptions: PMOption[];
   garmenters: Garmenter[];
+  sizeDistMap: Record<string, number>;
+  previousArticleNumbers: string[];
   existingFabricOrders: ExistingFo[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>("quantity");
+  const [step, setStep] = useState<"select" | "review">("select");
+
+  const previousSet = useMemo(() => new Set(previousArticleNumbers), [previousArticleNumbers]);
 
   // Quantity-mode state
   const [defaultGarmenterId, setDefaultGarmenterId] = useState(garmenters[0]?.id ?? "");
-  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
+  const [selected, setSelected] = useState<SelectedArticle[]>([]);
   const [pickPmId, setPickPmId] = useState("");
+  const scrollTargetRef = useRef<string | null>(null);
 
-  // Fabric-mode state
+  // Fabric-mode state (kept simple from previous version)
   const [foId, setFoId] = useState("");
-  const [fabricRows, setFabricRows] = useState<FabricRow[]>([]);
+  const [fabricRows, setFabricRows] = useState<{ rowKey: string; pmId: string; articleNumber: string | null; styleNumber: string; productName: string | null; qty: number; allocateKg: number; garmenterId: string }[]>([]);
   const [pickPmIdFab, setPickPmIdFab] = useState("");
   const [reservationKg, setReservationKg] = useState(0);
   const [reservationPurpose, setReservationPurpose] = useState("sampling");
-
   const selectedFo = useMemo(() => existingFabricOrders.find((f) => f.id === foId) ?? null, [foId, existingFabricOrders]);
 
-  // ── PM combobox options ─────────────────────────────────────────
-  const pmComboOptions = useMemo(() => {
-    return productMasterOptions.map((pm) => ({
+  // ── Combobox options ────────────────────────────────────────────
+  const pmComboOptions = useMemo(
+    () => productMasterOptions.map((pm) => ({
       label: pmLabel(pm),
       value: pm.id,
-      searchText: [pm.articleNumber, pm.styleNumber, pm.productName, pm.fabricName, pm.fabricVendorName].filter(Boolean).join(" "),
-    }));
-  }, [productMasterOptions]);
-
-  const foComboOptions = useMemo(() => {
-    return existingFabricOrders.map((fo) => ({
+      searchText: [pm.articleNumber, pm.styleNumber, pm.productName, pm.fabricName, pm.fabric2Name, pm.fabricVendorName].filter(Boolean).join(" "),
+    })),
+    [productMasterOptions]
+  );
+  const foComboOptions = useMemo(
+    () => existingFabricOrders.map((fo) => ({
       label: `${fo.fabricName} · ${fo.colour} · ${fo.vendorName} · ${fo.orderedKg.toFixed(0)}kg`,
       value: fo.id,
       searchText: `${fo.fabricName} ${fo.colour} ${fo.vendorName}`,
-    }));
-  }, [existingFabricOrders]);
+    })),
+    [existingFabricOrders]
+  );
 
-  // ── Quantity-mode actions ───────────────────────────────────────
+  // ── Scroll newly added card into view ───────────────────────────
+  useEffect(() => {
+    if (!scrollTargetRef.current) return;
+    const el = document.getElementById(scrollTargetRef.current);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    scrollTargetRef.current = null;
+  }, [selected]);
+
+  // ── Article actions ─────────────────────────────────────────────
   const addArticle = (pmId: string) => {
     const pm = productMasterOptions.find((p) => p.id === pmId);
     if (!pm) return;
-    setPlanRows((rows) => [
-      ...rows,
-      {
-        rowKey: nextKey(),
-        pmId: pm.id,
-        articleNumber: pm.articleNumber,
-        styleNumber: pm.styleNumber,
-        productName: pm.productName,
-        fabricName: pm.fabricName ?? "—",
-        fabricVendorId: pm.fabricVendorId,
-        colour: "",
-        qty: 100,
-        demandKg: 50,
-        garmenterId: defaultGarmenterId,
-      },
-    ]);
+    const articleNumber = (pm.articleNumber ?? pm.styleNumber ?? "").trim() || "—";
+    const rowKey = nextKey();
+    setSelected((rows) => [...rows, {
+      rowKey,
+      pm,
+      garmenterId: defaultGarmenterId,
+      isRepeat: isRepeatArticle(articleNumber, previousSet, phaseNumber),
+      combos: buildInitialCombos(pm),
+    }]);
+    scrollTargetRef.current = `art-${rowKey}`;
     setPickPmId("");
   };
+  const updateCombo = (rowKey: string, comboKey: string, qty: number) =>
+    setSelected((rows) => rows.map((r) => r.rowKey === rowKey ? { ...r, combos: r.combos.map((c) => c.comboKey === comboKey ? { ...c, qty } : c) } : r));
+  const updateGarmenter = (rowKey: string, garmenterId: string) =>
+    setSelected((rows) => rows.map((r) => r.rowKey === rowKey ? { ...r, garmenterId } : r));
+  const removeArticle = (rowKey: string) => setSelected((rows) => rows.filter((r) => r.rowKey !== rowKey));
 
-  const updateRow = (rowKey: string, patch: Partial<PlanRow>) =>
-    setPlanRows((rows) => rows.map((r) => (r.rowKey === rowKey ? { ...r, ...patch } : r)));
-  const removeRow = (rowKey: string) => setPlanRows((rows) => rows.filter((r) => r.rowKey !== rowKey));
+  // ── Computed: articleOrders + fabricOrders preview ──────────────
+  const planSummary = useMemo(() => {
+    type ArticleRow = { rowKey: string; articleNumber: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] };
+    type FabricBucket = { fabricVendorId: string; fabricName: string; colour: string; totalKg: number; vendorName: string };
+    const articles: ArticleRow[] = [];
+    const buckets = new Map<string, FabricBucket>();
 
+    for (const a of selected) {
+      const slots = fabricSlots(a.pm);
+      for (const c of a.combos) {
+        if (c.qty <= 0) continue;
+        const sizes: Record<Size, number> = { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
+        for (const s of SIZES) sizes[s] = Math.round((c.qty * (sizeDistMap[s] ?? 0)) / 100);
+        const fabricKgs: ArticleRow["fabricKgs"] = [];
+        for (const sl of slots) {
+          const colourForSlot = sl.slot === 1 ? c.colour : sl.slot === 2 ? c.colour2 : sl.slot === 3 ? c.colour3 : c.colour4;
+          if (!colourForSlot || !sl.gpk || sl.gpk <= 0 || !sl.vendorId) continue;
+          const kg = Math.round((c.qty / sl.gpk) * 100) / 100;
+          fabricKgs.push({ slot: sl.slot, fabricName: sl.name, colour: colourForSlot, kg });
+          const key = `${sl.vendorId}|${sl.name}|${colourForSlot}`;
+          const b = buckets.get(key) ?? { fabricVendorId: sl.vendorId, fabricName: sl.name, colour: colourForSlot, totalKg: 0, vendorName: sl.vendorName ?? "—" };
+          b.totalKg += kg;
+          buckets.set(key, b);
+        }
+        articles.push({
+          rowKey: a.rowKey,
+          articleNumber: (a.pm.articleNumber ?? a.pm.styleNumber ?? "").trim() || "—",
+          productName: a.pm.productName ?? a.pm.styleNumber,
+          colour: colourLabel(c),
+          qty: c.qty,
+          sizes,
+          fabricKgs,
+        });
+      }
+    }
+    return { articles, fabricBuckets: [...buckets.values()] };
+  }, [selected, sizeDistMap]);
+
+  // ── Submit ──────────────────────────────────────────────────────
   const handleCreate = () => {
     if (!isTestPhase) { toast.error(`Phase ${phaseNumber} is not a test phase`); return; }
-    if (planRows.length === 0) { toast.error("Add at least one article"); return; }
-    const missingVendor = planRows.find((r) => !r.fabricVendorId);
-    if (missingVendor) { toast.error(`No fabric vendor mapped for "${missingVendor.fabricName}". Add it via Fabrics Master DB first.`); return; }
-    const missingColour = planRows.find((r) => !r.colour.trim());
-    if (missingColour) { toast.error(`Pick a colour for ${missingColour.styleNumber || missingColour.productName}`); return; }
+    if (planSummary.articles.length === 0) { toast.error("No articles with quantity > 0"); return; }
     startTransition(async () => {
       try {
-        const res = await createPlannedOrders({
-          phaseId,
-          articles: planRows.map((r) => ({
-            productMasterId: r.pmId,
-            styleNumber: r.styleNumber,
-            productName: r.productName,
-            fabricVendorId: r.fabricVendorId!,
-            fabricName: r.fabricName,
-            colour: r.colour,
-            qtyPcs: r.qty,
-            demandKg: r.demandKg,
-            garmenterId: r.garmenterId || null,
-          })),
-        });
-        toast.success(`Created ${res.productIds.length} article order${res.productIds.length === 1 ? "" : "s"}, ${res.fabricOrderIds.length} fabric order${res.fabricOrderIds.length === 1 ? "" : "s"}, ${res.allocationIds.length} allocation${res.allocationIds.length === 1 ? "" : "s"}`);
-        setPlanRows([]);
+        const articles = selected
+          .filter((a) => a.combos.some((c) => c.qty > 0))
+          .map((a) => {
+            const slots = fabricSlots(a.pm);
+            return {
+              articleNumber: (a.pm.articleNumber ?? a.pm.styleNumber ?? "").trim() || "—",
+              styleNumber: a.pm.styleNumber,
+              productName: a.pm.productName,
+              type: a.pm.type || "—",
+              gender: (a.pm.gender as "MENS" | "WOMENS" | "KIDS") ?? "MENS",
+              isRepeat: a.isRepeat,
+              garmenterId: a.garmenterId || null,
+              combos: a.combos.filter((c) => c.qty > 0).map((c) => {
+                const sizes: Record<Size, number> = { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
+                for (const s of SIZES) sizes[s] = Math.round((c.qty * (sizeDistMap[s] ?? 0)) / 100);
+                const fabrics = slots
+                  .map((sl) => {
+                    const col = sl.slot === 1 ? c.colour : sl.slot === 2 ? c.colour2 : sl.slot === 3 ? c.colour3 : c.colour4;
+                    if (!col || !sl.vendorId || !sl.gpk || sl.gpk <= 0) return null;
+                    const kg = Math.round((c.qty / sl.gpk) * 100) / 100;
+                    return {
+                      slot: sl.slot,
+                      fabricName: sl.name,
+                      fabricVendorId: sl.vendorId,
+                      fabricCostPerKg: sl.cost,
+                      garmentsPerKg: sl.gpk,
+                      colour: col,
+                      derivedKg: kg,
+                    };
+                  })
+                  .filter(Boolean) as NonNullable<ReturnType<typeof slots[number] extends never ? never : (sl: typeof slots[number]) => unknown>>[];
+                return {
+                  colourLabel: colourLabel(c),
+                  skuCode: a.pm.skuCode,
+                  qty: c.qty,
+                  sizes,
+                  fabrics: fabrics as Parameters<typeof createPlannedOrders>[0]["articles"][number]["combos"][number]["fabrics"],
+                };
+              }),
+            };
+          });
+        const res = await createPlannedOrders({ phaseId, articles });
+        toast.success(`Created ${res.productIds.length} article order${res.productIds.length === 1 ? "" : "s"} · ${res.fabricOrderIds.length} fabric order${res.fabricOrderIds.length === 1 ? "" : "s"} · ${res.allocationIds.length} allocation${res.allocationIds.length === 1 ? "" : "s"}`);
+        setSelected([]);
+        setStep("select");
         router.refresh();
       } catch (err) {
         toast.error(err instanceof Error ? err.message : "Failed");
@@ -184,44 +329,23 @@ export function PhasePlanningProto({
     });
   };
 
-  // ── Fabric-mode actions ─────────────────────────────────────────
+  // ── Fabric mode handlers (unchanged from prior version) ─────────
   const addFabricArticle = (pmId: string) => {
     const pm = productMasterOptions.find((p) => p.id === pmId);
     if (!pm) return;
-    setFabricRows((rows) => [
-      ...rows,
-      {
-        rowKey: nextKey(),
-        pmId: pm.id,
-        articleNumber: pm.articleNumber,
-        styleNumber: pm.styleNumber,
-        productName: pm.productName,
-        qty: 50,
-        allocateKg: 25,
-        garmenterId: defaultGarmenterId,
-      },
-    ]);
+    setFabricRows((rows) => [...rows, { rowKey: nextKey(), pmId: pm.id, articleNumber: pm.articleNumber, styleNumber: pm.styleNumber, productName: pm.productName, qty: 50, allocateKg: 25, garmenterId: defaultGarmenterId }]);
     setPickPmIdFab("");
   };
-  const updateFabricRow = (rowKey: string, patch: Partial<FabricRow>) =>
-    setFabricRows((rows) => rows.map((r) => (r.rowKey === rowKey ? { ...r, ...patch } : r)));
+  const updateFabricRow = (rowKey: string, patch: Partial<typeof fabricRows[number]>) =>
+    setFabricRows((rows) => rows.map((r) => r.rowKey === rowKey ? { ...r, ...patch } : r));
   const removeFabricRow = (rowKey: string) => setFabricRows((rows) => rows.filter((r) => r.rowKey !== rowKey));
-
   const totalAllocated = fabricRows.reduce((s, r) => s + r.allocateKg, 0) + reservationKg;
-  const fabricPool = selectedFo?.orderedKg ?? 0;
-
   const handleAllocate = () => {
     if (!isTestPhase) { toast.error(`Phase ${phaseNumber} is not a test phase`); return; }
     if (!selectedFo) { toast.error("Pick a source fabric order"); return; }
     if (fabricRows.length === 0 && reservationKg <= 0) { toast.error("Add at least one article or a reservation"); return; }
-    const pm0 = productMasterOptions.find((p) => fabricRows[0] && p.id === fabricRows[0].pmId);
-    // Use the FO's own vendor as fabricVendorId for products created here
-    // (the proto creates a Product per row; vendor comes from the FO).
     const foVendorId = productMasterOptions.find((p) => p.fabricName === selectedFo.fabricName)?.fabricVendorId;
-    if (!foVendorId && fabricRows.length > 0) {
-      toast.error(`No FabricMaster row maps "${selectedFo.fabricName}" to a vendor. Add it first.`);
-      return;
-    }
+    if (!foVendorId && fabricRows.length > 0) { toast.error(`No FabricMaster row maps "${selectedFo.fabricName}" to a vendor.`); return; }
     startTransition(async () => {
       try {
         const res = await allocateAgainstFabricOrder({
@@ -257,95 +381,69 @@ export function PhasePlanningProto({
       <Card className="p-4 flex items-center gap-4 flex-wrap">
         <div className="text-[12.5px] font-medium">Mode</div>
         <div className="inline-flex items-center bg-muted border rounded-md p-0.5">
-          <button onClick={() => setMode("quantity")} className={cn("px-3 py-1.5 text-[13px] font-medium rounded-sm", mode === "quantity" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>Quantity (demand-first)</button>
-          <button onClick={() => setMode("fabric")} className={cn("px-3 py-1.5 text-[13px] font-medium rounded-sm", mode === "fabric" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>Fabric (allocate-fabric-to-articles)</button>
+          <button onClick={() => { setMode("quantity"); setStep("select"); }} className={cn("px-3 py-1.5 text-[13px] font-medium rounded-sm", mode === "quantity" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>By target quantity</button>
+          <button onClick={() => { setMode("fabric"); setStep("select"); }} className={cn("px-3 py-1.5 text-[13px] font-medium rounded-sm", mode === "fabric" ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>By fabric availability</button>
         </div>
-        <div className="text-[12px] text-muted-foreground ml-auto">Both modes write to the new <span className="font-mono text-[11.5px]">Allocation</span> table.</div>
+        <div className="text-[12px] text-muted-foreground ml-auto">Both modes write <span className="font-mono text-[11.5px]">Product + FabricOrder + Allocation</span>.</div>
       </Card>
 
       {mode === "quantity" ? (
-        <div className="grid grid-cols-12 gap-4">
-          <Card className="col-span-7 p-5">
-            <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Quantity mode</div>
-            <h2 className="text-base font-semibold mt-1">Pick articles, set quantities. Fabric demand is derived. New FabricOrders are created per (fabric, colour).</h2>
-
-            <div className="grid grid-cols-2 gap-3 mt-4">
-              <div className="space-y-1.5"><Label>Phase</Label><Input value={`Phase ${phaseNumber}`} disabled /></div>
-              <div className="space-y-1.5">
-                <Label>Default garmenter</Label>
-                <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background h-9" value={defaultGarmenterId} onChange={(e) => setDefaultGarmenterId(e.target.value)}>
-                  <option value="">—</option>
-                  {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </div>
-              <div className="col-span-2 space-y-1.5">
-                <Label>Add article from master</Label>
-                <Combobox value={pickPmId} onValueChange={(v) => { setPickPmId(v); if (v) addArticle(v); }} options={pmComboOptions} placeholder="Search article master… (style, name, fabric)" />
-              </div>
-            </div>
-
-            <div className="mt-5 border-t pt-4">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Selected articles</div>
-              <div className="grid grid-cols-[1.4fr_0.7fr_0.6fr_1.2fr_0.7fr_24px] gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium pb-2 border-b">
-                <div>Article · Fabric</div><div>Colour</div><div>Qty (pcs)</div><div>Garmenter</div><div className="text-right">Demand (kg)</div><div></div>
-              </div>
-              {planRows.length === 0 ? (
-                <div className="py-4 text-[12.5px] text-muted-foreground">Pick an article from the dropdown above to start.</div>
-              ) : (
-                planRows.map((r) => (
-                  <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.7fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
-                    <div className="min-w-0">
-                      <div className="font-medium leading-tight truncate font-mono">{r.articleNumber ?? r.styleNumber ?? "—"}</div>
-                      <div className="text-[11.5px] text-muted-foreground truncate">{r.productName ?? r.styleNumber} · {r.fabricName}{!r.fabricVendorId && <span className="text-[oklch(0.55_0.16_45)]"> · no vendor!</span>}</div>
-                    </div>
-                    <div><Input className="h-8" placeholder="Lime" value={r.colour} onChange={(e) => updateRow(r.rowKey, { colour: e.target.value })} /></div>
-                    <div><Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateRow(r.rowKey, { qty: Number(e.target.value) || 0 })} /></div>
-                    <div>
-                      <select className="w-full border rounded-md px-2 h-8 text-[13px] bg-background" value={r.garmenterId} onChange={(e) => updateRow(r.rowKey, { garmenterId: e.target.value })}>
-                        <option value="">—</option>
-                        {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                      </select>
-                    </div>
-                    <div><Input className="h-8 font-mono text-right" inputMode="decimal" value={r.demandKg} onChange={(e) => updateRow(r.rowKey, { demandKg: Number(e.target.value) || 0 })} /></div>
-                    <button onClick={() => removeRow(r.rowKey)} className="text-muted-foreground hover:text-foreground text-center" aria-label="Remove">×</button>
+        step === "select" ? (
+          <div className="grid grid-cols-12 gap-4">
+            <div className="col-span-8 space-y-4">
+              {/* Sticky picker + default garmenter */}
+              <Card className="p-4 sticky top-[68px] z-10">
+                <div className="grid grid-cols-[1fr_220px] gap-3 items-end">
+                  <div className="space-y-1.5">
+                    <Label>Add article from master</Label>
+                    <Combobox value={pickPmId} onValueChange={(v) => { setPickPmId(v); if (v) addArticle(v); }} options={pmComboOptions} placeholder="Search by article #, name, fabric, vendor…" />
                   </div>
-                ))
+                  <div className="space-y-1.5">
+                    <Label>Default garmenter</Label>
+                    <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background h-9" value={defaultGarmenterId} onChange={(e) => setDefaultGarmenterId(e.target.value)}>
+                      <option value="">—</option>
+                      {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </Card>
+
+              {selected.length === 0 ? (
+                <Card className="p-10 text-center text-sm text-muted-foreground">Pick an article from the dropdown above to start planning.</Card>
+              ) : (
+                selected.map((a) => <ArticleCard key={a.rowKey} a={a} sizeDistMap={sizeDistMap} garmenters={garmenters} onCombo={updateCombo} onGarmenter={updateGarmenter} onRemove={removeArticle} />)
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-[12.5px] text-muted-foreground">{planSummary.articles.length > 0 && <>Will create <span className="font-mono">{planSummary.articles.length}</span> article order{planSummary.articles.length === 1 ? "" : "s"} · <span className="font-mono">{planSummary.fabricBuckets.length}</span> fabric order{planSummary.fabricBuckets.length === 1 ? "" : "s"}</>}</div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setSelected([])} disabled={selected.length === 0 || pending}>Clear</Button>
+                  <Button size="sm" disabled={pending || planSummary.articles.length === 0} onClick={() => setStep("review")}>Review {planSummary.articles.length} article + {planSummary.fabricBuckets.length} fabric →</Button>
+                </div>
+              </div>
+              {!isTestPhase && (
+                <div className="rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[12.5px] text-[oklch(0.40_0.16_45)]">Phase {phaseNumber} is not a test phase. Toggle on <a href="/proto" className="underline">/proto</a> to enable proto writes.</div>
               )}
             </div>
 
-            <div className="mt-5 flex items-center justify-between gap-2 pt-4 border-t">
-              <div className="text-[12px] text-muted-foreground">{planRows.length > 0 && <>Total demand: <span className="font-mono tabular-nums">{planRows.reduce((s, r) => s + r.demandKg, 0).toFixed(1)} kg</span></>}</div>
-              <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={() => setPlanRows([])} disabled={pending || planRows.length === 0}>Clear</Button>
-                <Button size="sm" onClick={handleCreate} disabled={pending || planRows.length === 0 || !isTestPhase}>{pending ? "Creating…" : "Create orders"}</Button>
-              </div>
-            </div>
-            {!isTestPhase && (
-              <div className="mt-3 rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[12.5px] text-[oklch(0.40_0.16_45)]">
-                Phase {phaseNumber} is not flagged as a test phase. Toggle isTestPhase on <a href="/proto" className="underline">/proto</a> to enable proto writes.
-              </div>
-            )}
-          </Card>
-
-          <CommitsPanel
-            mode="quantity"
-            productRows={planRows.map((r, i) => ({ tempId: `AO-?·${i + 1}`, label: `${r.productName ?? r.styleNumber} · ${r.colour || "(no colour)"} · ${r.qty} pcs · ${garmenters.find((g) => g.id === r.garmenterId)?.name ?? "—"}` }))}
-            fabricOrderRows={Array.from(planRows.reduce((m, r) => { const k = `${r.fabricVendorId}|${r.fabricName}|${r.colour}`; m.set(k, (m.get(k) ?? 0) + r.demandKg); return m; }, new Map<string, number>())).map(([k, kg], i) => { const [, fabricName, colour] = k.split("|"); return { tempId: `FO-?·${i + 1}`, label: `${fabricName} · ${colour || "(no colour)"} · ${kg.toFixed(1)} kg` }; })}
-            allocationRows={planRows.map((r, i) => ({ tempId: `ALC-?·${i + 1}`, label: `AO·${i + 1} → FO  ${r.demandKg.toFixed(1)} kg`, stage: "at vendor" as const }))}
-            footnote={planRows.length === 0 ? "Pick an article above to see what would be written." : "All allocations start at 'at vendor' stage. They become 'in our hands' when receipts are logged, then 'at garmenter' after dispatch."}
-          />
-        </div>
+            {/* Commits panel — what would be written */}
+            <CommitsPanel articles={planSummary.articles} buckets={planSummary.fabricBuckets} mode="quantity" />
+          </div>
+        ) : (
+          <ReviewStep articles={planSummary.articles} buckets={planSummary.fabricBuckets} pending={pending} isTestPhase={isTestPhase} phaseNumber={phaseNumber} onBack={() => setStep("select")} onConfirm={handleCreate} />
+        )
       ) : (
+        // Fabric mode kept simple — flat row + reservation
         <div className="grid grid-cols-12 gap-4">
-          <Card className="col-span-7 p-5">
+          <Card className="col-span-8 p-5">
             <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Fabric mode</div>
-            <h2 className="text-base font-semibold mt-1">Pick an existing fabric order, allocate its kg across articles. No new FabricOrder is created.</h2>
+            <h2 className="text-base font-semibold mt-1">Pick an existing fabric order, allocate kg across articles. No new FabricOrder.</h2>
 
             <div className="grid grid-cols-2 gap-3 mt-4">
               <div className="col-span-2 space-y-1.5">
                 <Label>Source fabric order</Label>
                 {existingFabricOrders.length === 0 ? (
-                  <div className="text-[12.5px] text-muted-foreground border rounded-md px-3 py-2 bg-muted/40">No fabric orders in this phase yet. Use Quantity mode first to create some, or use the existing /fabric-orders page.</div>
+                  <div className="text-[12.5px] text-muted-foreground border rounded-md px-3 py-2 bg-muted/40">No fabric orders in this phase. Use Quantity mode first.</div>
                 ) : (
                   <Combobox value={foId} onValueChange={setFoId} options={foComboOptions} placeholder="Search by fabric, colour, or vendor…" />
                 )}
@@ -358,53 +456,43 @@ export function PhasePlanningProto({
                 </select>
               </div>
               <div className="space-y-1.5">
-                <Label>Add article from master</Label>
+                <Label>Add article</Label>
                 <Combobox value={pickPmIdFab} onValueChange={(v) => { setPickPmIdFab(v); if (v) addFabricArticle(v); }} options={pmComboOptions} placeholder="Search article master…" />
               </div>
             </div>
 
             <div className="mt-5 border-t pt-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Articles using this fabric</div>
-                <div className="text-[11px] text-muted-foreground font-mono">{selectedFo ? `pool: ${fabricPool.toFixed(1)} kg ordered` : "no fabric picked"}</div>
-              </div>
               <div className="grid grid-cols-[1.4fr_0.6fr_1.2fr_0.7fr_24px] gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium pb-2 border-b">
                 <div>Article</div><div>Qty (pcs)</div><div>Garmenter</div><div className="text-right">Allocate (kg)</div><div></div>
               </div>
               {fabricRows.length === 0 ? (
-                <div className="py-4 text-[12.5px] text-muted-foreground">Pick an article above to allocate against {selectedFo ? `${selectedFo.fabricName} · ${selectedFo.colour}` : "the chosen fabric"}.</div>
-              ) : (
-                fabricRows.map((r) => (
-                  <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
-                    <div className="min-w-0">
-                      <div className="font-medium leading-tight truncate font-mono">{r.articleNumber ?? r.styleNumber ?? "—"}</div>
-                      <div className="text-[11.5px] text-muted-foreground truncate">{r.productName ?? r.styleNumber}</div>
-                    </div>
-                    <div><Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateFabricRow(r.rowKey, { qty: Number(e.target.value) || 0 })} /></div>
-                    <div>
-                      <select className="w-full border rounded-md px-2 h-8 text-[13px] bg-background" value={r.garmenterId} onChange={(e) => updateFabricRow(r.rowKey, { garmenterId: e.target.value })}>
-                        <option value="">—</option>
-                        {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                      </select>
-                    </div>
-                    <div><Input className="h-8 font-mono text-right" inputMode="decimal" value={r.allocateKg} onChange={(e) => updateFabricRow(r.rowKey, { allocateKg: Number(e.target.value) || 0 })} /></div>
-                    <button onClick={() => removeFabricRow(r.rowKey)} className="text-muted-foreground hover:text-foreground text-center" aria-label="Remove">×</button>
+                <div className="py-4 text-[12.5px] text-muted-foreground">Pick an article above.</div>
+              ) : fabricRows.map((r) => (
+                <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
+                  <div className="min-w-0">
+                    <div className="font-medium truncate font-mono">{r.articleNumber ?? r.styleNumber ?? "—"}</div>
+                    <div className="text-[11.5px] text-muted-foreground truncate">{r.productName ?? r.styleNumber}</div>
                   </div>
-                ))
-              )}
-
+                  <div><Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateFabricRow(r.rowKey, { qty: Number(e.target.value) || 0 })} /></div>
+                  <div>
+                    <select className="w-full border rounded-md px-2 h-8 text-[13px] bg-background" value={r.garmenterId} onChange={(e) => updateFabricRow(r.rowKey, { garmenterId: e.target.value })}>
+                      <option value="">—</option>
+                      {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
+                  <div><Input className="h-8 font-mono text-right" inputMode="decimal" value={r.allocateKg} onChange={(e) => updateFabricRow(r.rowKey, { allocateKg: Number(e.target.value) || 0 })} /></div>
+                  <button onClick={() => removeFabricRow(r.rowKey)} className="text-muted-foreground hover:text-foreground" aria-label="Remove">×</button>
+                </div>
+              ))}
               <div className="mt-4 grid grid-cols-[1.4fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center text-[13px] italic text-muted-foreground">
                 <div>— sampling reservation</div>
                 <div></div>
-                <div>
-                  <Input className="h-8" placeholder="purpose" value={reservationPurpose} onChange={(e) => setReservationPurpose(e.target.value)} />
-                </div>
+                <div><Input className="h-8" placeholder="purpose" value={reservationPurpose} onChange={(e) => setReservationPurpose(e.target.value)} /></div>
                 <div><Input className="h-8 font-mono text-right" inputMode="decimal" value={reservationKg} onChange={(e) => setReservationKg(Number(e.target.value) || 0)} /></div>
                 <div></div>
               </div>
-
-              <div className="mt-3 flex items-center justify-between text-[12.5px]">
-                <div className="text-muted-foreground">total used: <span className="font-mono">{totalAllocated.toFixed(1)} / {fabricPool.toFixed(1)} kg</span></div>
+              <div className="mt-3 flex justify-between text-[12.5px]">
+                <div className="text-muted-foreground">total used: <span className="font-mono">{totalAllocated.toFixed(1)} kg</span></div>
               </div>
             </div>
 
@@ -412,22 +500,12 @@ export function PhasePlanningProto({
               <Button variant="outline" size="sm" onClick={() => { setFabricRows([]); setReservationKg(0); }} disabled={pending || (fabricRows.length === 0 && reservationKg === 0)}>Clear</Button>
               <Button size="sm" onClick={handleAllocate} disabled={pending || !isTestPhase || !selectedFo || (fabricRows.length === 0 && reservationKg <= 0)}>{pending ? "Allocating…" : "Allocate"}</Button>
             </div>
-            {!isTestPhase && (
-              <div className="mt-3 rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[12.5px] text-[oklch(0.40_0.16_45)]">
-                Phase {phaseNumber} is not a test phase. Toggle on <a href="/proto" className="underline">/proto</a> to enable.
-              </div>
-            )}
           </Card>
 
           <CommitsPanel
+            articles={fabricRows.filter((r) => r.allocateKg > 0).map((r, i) => ({ rowKey: r.rowKey, articleNumber: r.articleNumber ?? r.styleNumber ?? "—", productName: r.productName ?? r.styleNumber, colour: selectedFo?.colour ?? "—", qty: r.qty, sizes: { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 }, fabricKgs: [{ slot: 1, fabricName: selectedFo?.fabricName ?? "—", colour: selectedFo?.colour ?? "—", kg: r.allocateKg }] }))}
+            buckets={selectedFo ? [{ fabricVendorId: "", fabricName: selectedFo.fabricName, colour: selectedFo.colour, totalKg: 0, vendorName: selectedFo.vendorName }] : []}
             mode="fabric"
-            productRows={fabricRows.map((r, i) => ({ tempId: `AO-?·${i + 1}`, label: `${r.productName ?? r.styleNumber} · ${selectedFo?.colour ?? "—"} · ${r.qty} pcs · ${garmenters.find((g) => g.id === r.garmenterId)?.name ?? "—"}` }))}
-            fabricOrderRows={selectedFo ? [{ tempId: selectedFo.id.slice(-6), label: `${selectedFo.fabricName} · ${selectedFo.colour} · existing pool · ${selectedFo.vendorName}`, note: "no new FO created — pool reused" }] : []}
-            allocationRows={[
-              ...fabricRows.map((r, i) => ({ tempId: `ALC-?·${i + 1}`, label: `AO·${i + 1} → existing FO  ${r.allocateKg.toFixed(1)} kg`, stage: "in our hands" as const })),
-              ...(reservationKg > 0 ? [{ tempId: "RSV-?", label: `Reservation · ${reservationPurpose}  ${reservationKg.toFixed(1)} kg`, stage: "in our hands" as const, isReservation: true }] : []),
-            ]}
-            footnote={!selectedFo ? "Pick a source fabric order to see what would be written." : "Allocations stage = 'in our hands' if the FO has any receipts, else 'at vendor'. They move to 'at garmenter' when dispatched."}
           />
         </div>
       )}
@@ -435,54 +513,207 @@ export function PhasePlanningProto({
   );
 }
 
-function CommitsPanel({
-  mode,
-  productRows,
-  fabricOrderRows,
-  allocationRows,
-  footnote,
-}: {
-  mode: Mode;
-  productRows: { tempId: string; label: string }[];
-  fabricOrderRows: { tempId: string; label: string; note?: string }[];
-  allocationRows: { tempId: string; label: string; stage: "expected" | "at vendor" | "in our hands" | "at garmenter"; isReservation?: boolean }[];
-  footnote: string;
+// ─── Article card (Quantity mode) ──────────────────────────────────
+
+function ArticleCard({ a, sizeDistMap, garmenters, onCombo, onGarmenter, onRemove }: {
+  a: SelectedArticle;
+  sizeDistMap: Record<string, number>;
+  garmenters: Garmenter[];
+  onCombo: (rowKey: string, comboKey: string, qty: number) => void;
+  onGarmenter: (rowKey: string, garmenterId: string) => void;
+  onRemove: (rowKey: string) => void;
+}) {
+  const slots = fabricSlots(a.pm);
+  const articleNumber = (a.pm.articleNumber ?? a.pm.styleNumber ?? "").trim() || "—";
+
+  return (
+    <Card id={`art-${a.rowKey}`} className="p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-base font-semibold font-mono">{articleNumber}</h3>
+            <span className="text-muted-foreground">·</span>
+            <span className="text-[14px] font-medium">{a.pm.productName ?? a.pm.styleNumber}</span>
+            <span className="text-muted-foreground text-[13px]">· {a.pm.gender.toLowerCase()}</span>
+            {a.isRepeat && <Badge className="bg-[oklch(0.96_0.04_75)] text-[oklch(0.45_0.10_75)] border border-[oklch(0.85_0.06_75)] text-[10px]">Repeat</Badge>}
+          </div>
+          <div className="mt-1.5 space-y-0.5 text-[12.5px] text-muted-foreground">
+            {slots.map((sl) => (
+              <div key={sl.slot}><span className="font-medium text-foreground">Fabric {sl.slot}:</span> {sl.name}{sl.vendorName ? ` (${sl.vendorName})` : ""}{sl.gpk ? ` · ${sl.gpk}/kg` : <span className="text-[oklch(0.55_0.16_45)]"> · no garmentsPerKg!</span>}{!sl.vendorId ? <span className="text-[oklch(0.55_0.16_45)]"> · no vendor!</span> : null}</div>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <select className="border rounded-md px-2 h-8 text-[13px] bg-background" value={a.garmenterId} onChange={(e) => onGarmenter(a.rowKey, e.target.value)}>
+            <option value="">— garmenter —</option>
+            {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          <button onClick={() => onRemove(a.rowKey)} className="text-muted-foreground hover:text-foreground p-1" aria-label="Remove">×</button>
+        </div>
+      </div>
+
+      {/* Colour grid */}
+      <div className="mt-4 -mx-2 overflow-x-auto">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium">
+              <th className="text-left py-1.5 px-2 min-w-[180px]">Colour</th>
+              <th className="text-right py-1.5 px-2 w-[90px]">Target Qty</th>
+              {SIZES.map((s) => <th key={s} className="text-right py-1.5 px-2 w-[56px]">{s}</th>)}
+              {slots.map((sl) => <th key={sl.slot} className="text-right py-1.5 px-2 w-[80px]">F{sl.slot} (kg)</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {a.combos.map((c) => {
+              const sizeQty = (s: Size) => c.qty > 0 ? Math.round((c.qty * (sizeDistMap[s] ?? 0)) / 100) : 0;
+              return (
+                <tr key={c.comboKey} className="border-t">
+                  <td className="py-2 px-2">{colourLabel(c)}</td>
+                  <td className="py-2 px-2"><Input className="h-8 font-mono text-right" inputMode="numeric" value={c.qty || ""} placeholder="0" onChange={(e) => onCombo(a.rowKey, c.comboKey, Number(e.target.value) || 0)} /></td>
+                  {SIZES.map((s) => <td key={s} className="py-2 px-2 text-right font-mono tabular-nums text-muted-foreground">{c.qty > 0 ? sizeQty(s) : ""}</td>)}
+                  {slots.map((sl) => {
+                    const col = sl.slot === 1 ? c.colour : sl.slot === 2 ? c.colour2 : sl.slot === 3 ? c.colour3 : c.colour4;
+                    const kg = col && sl.gpk && c.qty > 0 ? (c.qty / sl.gpk).toFixed(1) : "—";
+                    return <td key={sl.slot} className="py-2 px-2 text-right font-mono tabular-nums">{kg}{kg !== "—" ? <span className="text-muted-foreground"> kg</span> : null}</td>;
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Review step ───────────────────────────────────────────────────
+
+function ReviewStep({ articles, buckets, pending, isTestPhase, phaseNumber, onBack, onConfirm }: {
+  articles: { rowKey: string; articleNumber: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] }[];
+  buckets: { fabricVendorId: string; fabricName: string; colour: string; totalKg: number; vendorName: string }[];
+  pending: boolean;
+  isTestPhase: boolean;
+  phaseNumber: number;
+  onBack: () => void;
+  onConfirm: () => void;
 }) {
   return (
-    <div className="col-span-5">
+    <Card className="p-6">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Review</div>
+          <h2 className="text-lg font-semibold mt-1">{articles.length} article order{articles.length === 1 ? "" : "s"} · {buckets.length} fabric order{buckets.length === 1 ? "" : "s"}</h2>
+        </div>
+        <Button variant="outline" size="sm" onClick={onBack}>← Back to plan</Button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Article orders</div>
+          <table className="w-full text-[12.5px]">
+            <thead className="text-muted-foreground"><tr><th className="text-left py-1.5 font-medium">Article</th><th className="text-left py-1.5 font-medium">Colour</th><th className="text-right py-1.5 font-medium">Qty</th></tr></thead>
+            <tbody>
+              {articles.map((a) => (
+                <tr key={a.rowKey + a.colour} className="border-t">
+                  <td className="py-2 font-mono">{a.articleNumber}<div className="text-[11px] text-muted-foreground font-sans truncate">{a.productName}</div></td>
+                  <td className="py-2">{a.colour}</td>
+                  <td className="py-2 text-right font-mono tabular-nums">{a.qty}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Fabric orders (deduped)</div>
+          <table className="w-full text-[12.5px]">
+            <thead className="text-muted-foreground"><tr><th className="text-left py-1.5 font-medium">Fabric · Colour</th><th className="text-left py-1.5 font-medium">Vendor</th><th className="text-right py-1.5 font-medium">Total kg</th></tr></thead>
+            <tbody>
+              {buckets.map((b, i) => (
+                <tr key={i} className="border-t">
+                  <td className="py-2">{b.fabricName} · <span className="text-muted-foreground">{b.colour}</span></td>
+                  <td className="py-2 text-muted-foreground">{b.vendorName}</td>
+                  <td className="py-2 text-right font-mono tabular-nums">{b.totalKg.toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-6 pt-4 border-t flex items-center justify-between">
+        <div className="text-[12px] text-muted-foreground">Each article order also writes one Allocation per fabric slot (stage = AT_VENDOR). Sizes are derived from SizeDistribution.</div>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={onBack}>Back</Button>
+          <Button size="sm" onClick={onConfirm} disabled={pending || !isTestPhase}>{pending ? "Creating…" : `Create ${articles.length} + ${buckets.length}`}</Button>
+        </div>
+      </div>
+      {!isTestPhase && (
+        <div className="mt-3 rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[12.5px] text-[oklch(0.40_0.16_45)]">Phase {phaseNumber} is not a test phase.</div>
+      )}
+    </Card>
+  );
+}
+
+// ─── Commits panel ─────────────────────────────────────────────────
+
+function CommitsPanel({ articles, buckets, mode }: {
+  articles: { rowKey: string; articleNumber: string; productName: string; colour: string; qty: number; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] }[];
+  buckets: { fabricVendorId: string; fabricName: string; colour: string; totalKg: number; vendorName: string }[];
+  mode: Mode;
+}) {
+  const allocCount = articles.reduce((s, a) => s + a.fabricKgs.length, 0);
+  return (
+    <div className="col-span-4">
       <div className="rounded-lg border bg-muted/30 sticky top-[68px]">
         <header className="px-4 py-2.5 border-b flex items-center justify-between">
           <span className="font-semibold text-[13px]">What this commits</span>
           <Badge className="bg-[oklch(0.95_0.04_45)] text-[oklch(0.45_0.16_45)] border border-[oklch(0.85_0.06_45)]">new</Badge>
         </header>
-        <div className="p-4 text-[12.5px] text-muted-foreground">Clicking <em>{mode === "quantity" ? "Create orders" : "Allocate"}</em> writes the following rows in one transaction:</div>
-        <Section title="Product · article orders" count={productRows.length}>{productRows.map((r) => <Row key={r.tempId} id={r.tempId} content={r.label} />)}</Section>
-        <Section title="FabricOrder" count={fabricOrderRows.length} muted={mode === "fabric"}>{fabricOrderRows.map((r) => <Row key={r.tempId} id={r.tempId} content={<>{r.label}{r.note && <span className="text-muted-foreground"> ({r.note})</span>}</>} />)}</Section>
-        <Section title="Allocation · pre-wired" count={allocationRows.length} accent>{allocationRows.map((r) => <Row key={r.tempId} id={r.tempId} content={<><span className="font-mono">{r.label}</span><Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">{r.stage}</Badge>{r.isReservation && <Badge variant="outline" className="ml-1 text-[10px] h-4 px-1.5">reservation</Badge>}</>} />)}</Section>
-        <div className="p-4 text-[11.5px] text-muted-foreground leading-relaxed border-t">{footnote}</div>
+        <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
+          <span>Product · article orders</span>
+          <span className="ml-auto font-mono">{articles.length}</span>
+        </div>
+        <table className="w-full">
+          <tbody>
+            {articles.map((a, i) => (
+              <tr key={a.rowKey + a.colour + i} className="border-t first:border-t-0">
+                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">AO·{i + 1}</td>
+                <td className="px-4 py-1.5 text-[12.5px]">{a.articleNumber} · {a.colour} · <span className="font-mono">{a.qty} pcs</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
+          <span>FabricOrder</span>
+          <span className="ml-auto font-mono">{mode === "fabric" ? "existing" : buckets.length}</span>
+        </div>
+        <table className="w-full">
+          <tbody>
+            {buckets.map((b, i) => (
+              <tr key={i} className="border-t first:border-t-0">
+                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">FO·{i + 1}</td>
+                <td className="px-4 py-1.5 text-[12.5px]">{b.fabricName} · {b.colour} · <span className="font-mono">{b.totalKg.toFixed(1)} kg</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
+          <span>Allocation · pre-wired</span>
+          <span className="ml-auto font-mono">{allocCount}</span>
+          <Badge className="bg-[oklch(0.96_0.04_75)] text-[oklch(0.45_0.10_75)] border border-[oklch(0.85_0.06_75)]">new</Badge>
+        </div>
+        <table className="w-full">
+          <tbody>
+            {articles.flatMap((a, ai) => a.fabricKgs.map((fk, fi) => (
+              <tr key={`${a.rowKey}-${ai}-${fi}`} className="border-t first:border-t-0">
+                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">ALC·{ai}.{fi + 1}</td>
+                <td className="px-4 py-1.5 text-[12.5px]"><span className="font-mono">AO·{ai + 1} → FO  {fk.kg.toFixed(1)} kg</span><Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">at vendor</Badge></td>
+              </tr>
+            )))}
+          </tbody>
+        </table>
+        <div className="p-4 text-[11.5px] text-muted-foreground leading-relaxed border-t">All allocations start at 'at vendor'. They become 'in our hands' on receipt, then 'at garmenter' on dispatch.</div>
       </div>
     </div>
-  );
-}
-
-function Section({ title, count, accent, muted, children }: { title: string; count: number; accent?: boolean; muted?: boolean; children: React.ReactNode }) {
-  return (
-    <div className="border-t">
-      <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        <span>{title}</span>
-        <span className="ml-auto font-mono">{muted ? "existing" : count}</span>
-        {accent && <Badge className="bg-[oklch(0.96_0.04_75)] text-[oklch(0.45_0.10_75)] border border-[oklch(0.85_0.06_75)]">new</Badge>}
-      </div>
-      <table className="w-full"><tbody>{children}</tbody></table>
-    </div>
-  );
-}
-
-function Row({ id, content }: { id: string; content: React.ReactNode }) {
-  return (
-    <tr className="border-t first:border-t-0">
-      <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[100px] align-top">{id}</td>
-      <td className="px-4 py-1.5 text-[12.5px]">{content}</td>
-    </tr>
   );
 }

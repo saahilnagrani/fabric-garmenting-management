@@ -160,105 +160,155 @@ export async function logGarmenterDispatch(input: {
 
 // ─── Plan a phase: create products, fabric orders, allocations ───
 
-export async function createPlannedOrders(input: {
-  phaseId: string;
-  articles: {
-    productMasterId: string;
-    styleNumber: string;
-    productName: string | null;
-    fabricVendorId: string;
-    fabricName: string;
-    colour: string;
-    qtyPcs: number;
-    demandKg: number;
-    garmenterId: string | null; // Vendor.id, optional
-  }[];
-}) {
+type PlannedFabricSlot = {
+  slot: 1 | 2 | 3 | 4;
+  fabricName: string;
+  fabricVendorId: string;
+  fabricCostPerKg: number | null;
+  garmentsPerKg: number | null;
+  colour: string; // colour for this slot (may differ across slots for multi-colour combos)
+  derivedKg: number; // qty / garmentsPerKg
+};
+
+type PlannedColourCombo = {
+  colourLabel: string; // concatenated colour label for Product.colourOrdered
+  skuCode: string | null; // resolved at the form layer if a matching PM variant exists
+  qty: number; // total pieces for this combo
+  sizes: { XS: number; S: number; M: number; L: number; XL: number; XXL: number };
+  fabrics: PlannedFabricSlot[];
+};
+
+type PlannedArticle = {
+  articleNumber: string;
+  styleNumber: string;
+  productName: string | null;
+  type: string;
+  gender: "MENS" | "WOMENS" | "KIDS";
+  isRepeat: boolean;
+  garmenterId: string | null;
+  combos: PlannedColourCombo[];
+};
+
+export async function createPlannedOrders(input: { phaseId: string; articles: PlannedArticle[] }) {
   if (input.articles.length === 0) throw new Error("No articles to plan");
   await requireAuthAndTestPhase(input.phaseId);
 
-  // Group articles by (fabric, colour, vendor) so we create one FabricOrder
-  // per unique demand bucket. Sum demand across articles in the same bucket.
+  // First pass: collect unique (fabric, colour, vendor) buckets across every
+  // article × combo × slot, summing kg. One FabricOrder per bucket.
   type Bucket = {
-    fabricVendorId: string;
     fabricName: string;
+    fabricVendorId: string;
+    fabricCostPerKg: number | null;
     colour: string;
-    totalDemandKg: number;
-    articles: typeof input.articles;
+    totalKg: number;
+    articleNumbers: Set<string>;
   };
+  const bucketKey = (s: PlannedFabricSlot) => `${s.fabricVendorId}|${s.fabricName}|${s.colour}`;
   const buckets = new Map<string, Bucket>();
-  for (const a of input.articles) {
-    const key = `${a.fabricVendorId}|${a.fabricName}|${a.colour}`;
-    const b = buckets.get(key) ?? {
-      fabricVendorId: a.fabricVendorId,
-      fabricName: a.fabricName,
-      colour: a.colour,
-      totalDemandKg: 0,
-      articles: [],
-    };
-    b.totalDemandKg += a.demandKg;
-    b.articles.push(a);
-    buckets.set(key, b);
+  for (const article of input.articles) {
+    for (const combo of article.combos) {
+      if (combo.qty <= 0) continue;
+      for (const slot of combo.fabrics) {
+        if (slot.derivedKg <= 0) continue;
+        const key = bucketKey(slot);
+        const b = buckets.get(key) ?? {
+          fabricName: slot.fabricName,
+          fabricVendorId: slot.fabricVendorId,
+          fabricCostPerKg: slot.fabricCostPerKg,
+          colour: slot.colour,
+          totalKg: 0,
+          articleNumbers: new Set<string>(),
+        };
+        b.totalKg += slot.derivedKg;
+        b.articleNumbers.add(article.articleNumber);
+        buckets.set(key, b);
+      }
+    }
   }
 
   const result = await db.$transaction(async (tx) => {
     const productIds: string[] = [];
-    const fabricOrderIds: string[] = [];
+    const fabricOrderIdByKey = new Map<string, string>();
     const allocationIds: string[] = [];
 
-    for (const b of buckets.values()) {
-      // 1. Create the fabric order for this bucket
+    // Create FabricOrders
+    for (const [key, b] of buckets) {
       const fo = await tx.fabricOrder.create({
         data: {
           phaseId: input.phaseId,
           fabricVendorId: b.fabricVendorId,
           fabricName: b.fabricName,
           colour: b.colour,
-          articleNumbers: b.articles.map((a) => a.styleNumber).join(", "),
-          fabricOrderedQuantityKg: dec(b.totalDemandKg),
+          articleNumbers: [...b.articleNumbers].join(", "),
+          costPerUnit: b.fabricCostPerKg ?? null,
+          fabricOrderedQuantityKg: dec(Math.round(b.totalKg * 100) / 100),
           orderStatus: "DRAFT_ORDER",
         },
       });
-      fabricOrderIds.push(fo.id);
+      fabricOrderIdByKey.set(key, fo.id);
+    }
 
-      // 2. For each article in this bucket, create the Product + link + Allocation
-      for (const a of b.articles) {
+    // Create Products + links + Allocations per (article, combo)
+    for (const article of input.articles) {
+      for (const combo of article.combos) {
+        if (combo.qty <= 0) continue;
         const product = await tx.product.create({
           data: {
             phaseId: input.phaseId,
             orderDate: new Date().toISOString().slice(0, 10),
-            styleNumber: a.styleNumber,
-            colourOrdered: a.colour,
-            type: "—",
-            gender: "MENS", // placeholder — real form would capture
-            productName: a.productName ?? null,
+            styleNumber: article.styleNumber,
+            articleNumber: article.articleNumber,
+            skuCode: combo.skuCode ?? null,
+            colourOrdered: combo.colourLabel,
+            type: article.type || "—",
+            gender: article.gender,
+            productName: article.productName ?? null,
             status: "PLANNED",
-            fabricVendorId: a.fabricVendorId,
-            fabricName: a.fabricName,
-            fabricOrderedQuantityKg: dec(a.demandKg),
-            garmentingAtId: a.garmenterId,
+            fabricVendorId: combo.fabrics[0]?.fabricVendorId ?? "",
+            fabricName: combo.fabrics[0]?.fabricName ?? "",
+            fabricGsm: null,
+            fabricCostPerKg: combo.fabrics[0]?.fabricCostPerKg ?? null,
+            fabricOrderedQuantityKg: dec(combo.fabrics[0]?.derivedKg ?? 0),
+            fabric2Name: combo.fabrics[1]?.fabricName ?? null,
+            fabric2VendorId: combo.fabrics[1]?.fabricVendorId ?? null,
+            fabric2CostPerKg: combo.fabrics[1]?.fabricCostPerKg ?? null,
+            garmentNumber: combo.qty,
+            actualStitchedXS: 0, actualStitchedS: 0, actualStitchedM: 0,
+            actualStitchedL: 0, actualStitchedXL: 0, actualStitchedXXL: 0,
+            actualInwardXS: 0, actualInwardS: 0, actualInwardM: 0,
+            actualInwardL: 0, actualInwardXL: 0, actualInwardXXL: 0,
+            actualInwardTotal: 0,
+            isRepeat: article.isRepeat,
+            garmentingAtId: article.garmenterId,
           },
         });
         productIds.push(product.id);
 
-        await tx.productFabricOrder.create({
-          data: { productId: product.id, fabricOrderId: fo.id, fabricSlot: 1 },
-        });
+        // Per slot: link + allocation
+        for (const slot of combo.fabrics) {
+          if (slot.derivedKg <= 0) continue;
+          const foId = fabricOrderIdByKey.get(bucketKey(slot));
+          if (!foId) continue;
 
-        const alloc = await tx.allocation.create({
-          data: {
-            productId: product.id,
-            fabricOrderId: fo.id,
-            garmenterId: a.garmenterId,
-            qtyKg: dec(a.demandKg),
-            stage: "AT_VENDOR",
-          },
-        });
-        allocationIds.push(alloc.id);
+          await tx.productFabricOrder.create({
+            data: { productId: product.id, fabricOrderId: foId, fabricSlot: slot.slot },
+          });
+
+          const alloc = await tx.allocation.create({
+            data: {
+              productId: product.id,
+              fabricOrderId: foId,
+              garmenterId: article.garmenterId,
+              qtyKg: dec(slot.derivedKg),
+              stage: "AT_VENDOR",
+            },
+          });
+          allocationIds.push(alloc.id);
+        }
       }
     }
 
-    return { productIds, fabricOrderIds, allocationIds };
+    return { productIds, fabricOrderIds: [...fabricOrderIdByKey.values()], allocationIds };
   });
 
   revalidatePath("/proto");
