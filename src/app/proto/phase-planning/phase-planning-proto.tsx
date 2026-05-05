@@ -768,23 +768,23 @@ function CommitsPanel({ articles, buckets, mode }: {
         </div>
         <table className="w-full">
           <tbody>
-            {(() => {
-              let allocSeq = 0;
-              return articles.flatMap((a, ai) => a.fabricKgs.map((fk, fi) => {
-                allocSeq += 1;
-                const foIdx = bucketIndexByKey.get(`${fk.fabricName}|${fk.colour}`);
-                const foRef = foIdx ? `FO·${foIdx}` : "FO";
-                return (
-                  <tr key={`${a.rowKey}-${ai}-${fi}`} className="border-t first:border-t-0">
-                    <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top">ALC·{allocSeq}</td>
-                    <td className="px-4 py-1.5 text-[12.5px]">
-                      <span className="font-mono">AO·{ai + 1} → {foRef}  {fk.kg.toFixed(1)} kg</span>
-                      <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">at vendor</Badge>
-                    </td>
-                  </tr>
-                );
-              }));
-            })()}
+            {articles.flatMap((a, ai) => a.fabricKgs.map((fk, fi) => {
+              const foIdx = bucketIndexByKey.get(`${fk.fabricName}|${fk.colour}`);
+              const aoNum = ai + 1;
+              // ALC id encodes the (FO, AO) pair: ALC·m-n where m = FO index,
+              // n = AO index. Reads as "fabric order m allocated to article order n".
+              const allocId = foIdx ? `ALC·${foIdx}-${aoNum}` : `ALC·?-${aoNum}`;
+              const foRef = foIdx ? `FO·${foIdx}` : "FO";
+              return (
+                <tr key={`${a.rowKey}-${ai}-${fi}`} className="border-t first:border-t-0">
+                  <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[80px] align-top">{allocId}</td>
+                  <td className="px-4 py-1.5 text-[12.5px]">
+                    <span className="font-mono">AO·{aoNum} → {foRef}  {fk.kg.toFixed(1)} kg</span>
+                    <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">at vendor</Badge>
+                  </td>
+                </tr>
+              );
+            }))}
           </tbody>
         </table>
         <div className="p-4 text-[11.5px] text-muted-foreground leading-relaxed border-t">All allocations start at 'at vendor'. They become 'in our hands' on receipt, then 'at garmenter' on dispatch.</div>
