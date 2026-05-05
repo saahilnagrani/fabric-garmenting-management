@@ -23,7 +23,7 @@ export default async function ProtoPhasePlanningPage() {
     );
   }
 
-  const [productMasters, fabricOrders, fabricMasters, garmenters, sizeDistributions, previousArticles] = await Promise.all([
+  const [productMasters, fabricOrders, fabricMasters, garmenters, sizeDistributions, previousArticles, priorProducts] = await Promise.all([
     db.productMaster.findMany({
       where: { isStrikedThrough: false },
       orderBy: { articleNumber: "asc" },
@@ -51,7 +51,34 @@ export default async function ProtoPhasePlanningPage() {
     }),
     db.sizeDistribution.findMany(),
     getArticlesInPreviousPhases(phase.id),
+    // Past Products per articleNumber → infer the historical garmenter
+    db.product.findMany({
+      where: { isStrikedThrough: false, articleNumber: { not: null } },
+      select: {
+        articleNumber: true,
+        garmentingAt: true,
+        garmentingAtRef: { select: { name: true } },
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
+
+  // Build articleNumber → most-recent-garmenter-name lookup
+  const articleNumberToGarmenter = new Map<string, string>();
+  for (const p of priorProducts) {
+    const an = (p.articleNumber ?? "").trim();
+    if (!an || articleNumberToGarmenter.has(an)) continue;
+    const name = p.garmentingAtRef?.name ?? p.garmentingAt ?? null;
+    if (name) articleNumberToGarmenter.set(an, name);
+  }
+  // Resolve to vendor IDs (Vendor type=GARMENTING with matching name)
+  const garmenterByName = new Map(garmenters.map((g) => [g.name, g.id]));
+  const articleDefaultGarmenter: Record<string, string> = {};
+  for (const [an, name] of articleNumberToGarmenter) {
+    const vid = garmenterByName.get(name);
+    if (vid) articleDefaultGarmenter[an] = vid;
+  }
 
   // fabricName → vendor info (first match wins; FabricMaster.fabricName is unique-ish)
   const fabricNameToVendor = new Map<string, { vendorId: string; vendorName: string; mrp: number | null }>();
@@ -136,6 +163,7 @@ export default async function ProtoPhasePlanningPage() {
         garmenters={garmenters}
         sizeDistMap={sizeDistMap}
         previousArticleNumbers={[...previousArticles]}
+        articleDefaultGarmenter={articleDefaultGarmenter}
         existingFabricOrders={fabricOrders.map((fo) => ({
           id: fo.id,
           fabricName: fo.fabricName,

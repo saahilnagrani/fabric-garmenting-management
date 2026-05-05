@@ -171,6 +171,7 @@ export function PhasePlanningProto({
   garmenters,
   sizeDistMap,
   previousArticleNumbers,
+  articleDefaultGarmenter,
   existingFabricOrders,
 }: {
   phaseId: string;
@@ -180,6 +181,7 @@ export function PhasePlanningProto({
   garmenters: Garmenter[];
   sizeDistMap: Record<string, number>;
   previousArticleNumbers: string[];
+  articleDefaultGarmenter: Record<string, string>;
   existingFabricOrders: ExistingFo[];
 }) {
   const router = useRouter();
@@ -269,12 +271,15 @@ export function PhasePlanningProto({
   const addArticle = (articleNumber: string) => {
     const pms = articleGroups.get(articleNumber);
     if (!pms || pms.length === 0) return;
-    const canonical = pms[0]; // first variant carries the metadata (fabric slots, gpk, etc.)
+    const canonical = pms[0];
+    // Prefer the article's historical garmenter (from past Product rows) if
+    // we know it, otherwise fall back to the form's default garmenter.
+    const garmenterId = articleDefaultGarmenter[articleNumber] ?? defaultGarmenterId;
     const rowKey = nextKey();
     setSelected((rows) => [...rows, {
       rowKey,
       pm: canonical,
-      garmenterId: defaultGarmenterId,
+      garmenterId,
       isRepeat: isRepeatArticle(articleNumber, previousSet, phaseNumber),
       combos: buildInitialCombos(pms),
     }]);
