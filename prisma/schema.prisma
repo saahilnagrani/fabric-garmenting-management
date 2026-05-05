@@ -49,6 +49,7 @@ model Phase {
   endDate              DateTime?
   isCurrent            Boolean             @default(false)
   isStrikedThrough     Boolean             @default(false)
+  isTestPhase          Boolean             @default(false)
   createdAt            DateTime            @default(now())
   updatedAt            DateTime            @updatedAt
   products             Product[]
@@ -90,6 +91,8 @@ model Vendor {
   accessoryPurchases      AccessoryPurchase[] @relation("AccessoryPurchaseVendor")
   accessoryPurchasesShipTo AccessoryPurchase[] @relation("AccessoryPurchaseShipTo")
   fabricBalances          FabricBalance[]     @relation("FabricBalanceVendor")
+  dispatches              GarmenterDispatch[] @relation("DispatchGarmenter")
+  allocations             Allocation[]        @relation("AllocationGarmenter")
 }
 
 enum VendorType {
@@ -215,6 +218,7 @@ model Product {
   updatedAt DateTime @updatedAt
 
   fabricOrderLinks    ProductFabricOrder[]
+  allocations         Allocation[]         @relation("ProductAllocations")
   accessoryDispatches AccessoryDispatch[]  @relation("ProductAccessoryDispatch")
 
   @@index([phaseId])
@@ -305,6 +309,9 @@ model FabricOrder {
   updatedAt DateTime @updatedAt
 
   productLinks ProductFabricOrder[]
+  receipts     FabricReceipt[]      @relation("FabricOrderReceipts")
+  dispatches   GarmenterDispatch[]  @relation("FabricOrderDispatches")
+  allocations  Allocation[]         @relation("FabricOrderAllocations")
 
   @@index([phaseId])
   @@index([fabricVendorId])
@@ -338,6 +345,76 @@ enum FabricOrderStatus {
   DISPATCHED
   RECEIVED
   FULLY_SETTLED
+}
+
+// ─── FABRIC CUSTODY (PROTO) ──────────────────────────────────────
+//
+// New tables introduced by the fabric custody rework. They model the
+// physical movement of fabric as discrete events (receipts, dispatches)
+// and the earmarks against article orders (allocations / reservations).
+//
+// Provisional v0 schema. Open questions:
+//   Q1 lot identity:  not modelled — lotRef is a free-text string.
+//   Q4 vendor-direct: two-stage assumed (receipt at us, then dispatch).
+//   Q5 reservations:  modelled as Allocation rows with isReservation=true,
+//                     not a separate table. Extract later if needed.
+
+enum AllocationStage {
+  AT_VENDOR
+  IN_OUR_HANDS
+  AT_GARMENTER
+}
+
+model FabricReceipt {
+  id            String      @id @default(cuid())
+  fabricOrderId String
+  fabricOrder   FabricOrder @relation("FabricOrderReceipts", fields: [fabricOrderId], references: [id], onDelete: Cascade)
+  qtyKg         Decimal     @db.Decimal(10, 2)
+  receivedAt    DateTime    @default(now())
+  lotRef        String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([fabricOrderId])
+}
+
+model GarmenterDispatch {
+  id            String      @id @default(cuid())
+  fabricOrderId String
+  fabricOrder   FabricOrder @relation("FabricOrderDispatches", fields: [fabricOrderId], references: [id], onDelete: Cascade)
+  garmenterId   String
+  garmenter     Vendor      @relation("DispatchGarmenter", fields: [garmenterId], references: [id])
+  qtyKg         Decimal     @db.Decimal(10, 2)
+  dispatchedAt  DateTime    @default(now())
+  vehicleRef    String?
+  notes         String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([fabricOrderId])
+  @@index([garmenterId])
+}
+
+model Allocation {
+  id                 String          @id @default(cuid())
+  productId          String?
+  product            Product?        @relation("ProductAllocations", fields: [productId], references: [id], onDelete: SetNull)
+  fabricOrderId      String
+  fabricOrder        FabricOrder     @relation("FabricOrderAllocations", fields: [fabricOrderId], references: [id], onDelete: Cascade)
+  garmenterId        String?
+  garmenter          Vendor?         @relation("AllocationGarmenter", fields: [garmenterId], references: [id])
+  qtyKg              Decimal         @db.Decimal(10, 2)
+  stage              AllocationStage @default(AT_VENDOR)
+  consumedKg         Decimal         @default(0) @db.Decimal(10, 2)
+  isReservation      Boolean         @default(false)
+  reservationPurpose String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@index([fabricOrderId])
+  @@index([productId])
+  @@index([garmenterId])
 }
 
 model PoCounter {

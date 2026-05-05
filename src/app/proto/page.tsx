@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { db } from "@/lib/db";
+import { TestPhaseToggleList } from "./test-phase-toggle";
+
+export const dynamic = "force-dynamic";
 
 const screens = [
   {
@@ -53,15 +57,22 @@ const screens = [
   },
 ];
 
-export default function ProtoIndexPage() {
+export default async function ProtoIndexPage() {
+  const phases = await db.phase.findMany({
+    where: { isStrikedThrough: false },
+    select: { id: true, number: true, name: true, isCurrent: true, isTestPhase: true },
+    orderBy: { number: "desc" },
+  });
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Fabric custody prototypes</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Two layers stacked. The first proto page below (<span className="font-medium text-foreground">Fabric orders</span>) is wired to live DB data through a synthesis layer. The remaining 5 are the standalone HTML mockups, served from <code className="text-[12px] bg-muted px-1.5 py-0.5 rounded">/fabric-prototypes/*.html</code>, until they're ported in.
+          All 6 screens live with real DB reads, plus write-enabled flows for <em>test phases only</em>. Toggle a phase as a test phase below to enable proto writes.
         </p>
       </div>
+
+      <TestPhaseToggleList phases={phases} />
 
       <div className="grid grid-cols-2 gap-3">
         {screens.map((s) => (

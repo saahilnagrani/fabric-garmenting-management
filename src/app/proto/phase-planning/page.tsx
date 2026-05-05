@@ -28,18 +28,10 @@ export default async function ProtoPhasePlanningPage() {
     );
   }
 
-  // Pull a few real article masters and a few existing FOs so the form panels
-  // feel grounded rather than purely faked.
-  const [productMasters, fabricOrders] = await Promise.all([
+  const [productMasters, fabricOrders, fabricMasters, garmenters] = await Promise.all([
     db.productMaster.findMany({
-      take: 8,
       where: { isStrikedThrough: false },
-      select: {
-        id: true,
-        styleNumber: true,
-        productName: true,
-        fabricName: true,
-      },
+      select: { id: true, styleNumber: true, productName: true, fabricName: true },
       orderBy: { styleNumber: "asc" },
     }),
     db.fabricOrder.findMany({
@@ -55,7 +47,24 @@ export default async function ProtoPhasePlanningPage() {
         fabricShippedQuantityKg: true,
       },
     }),
+    db.fabricMaster.findMany({
+      where: { isStrikedThrough: false },
+      select: { fabricName: true, vendorId: true, vendor: { select: { name: true } } },
+    }),
+    db.vendor.findMany({
+      where: { type: "GARMENTING", isStrikedThrough: false },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
+
+  // fabricName → fabricVendorId (first match wins; in practice fabricMasters are unique by name)
+  const fabricNameToVendor = new Map<string, { vendorId: string; vendorName: string }>();
+  for (const fm of fabricMasters) {
+    if (fm.fabricName && fm.vendorId && !fabricNameToVendor.has(fm.fabricName)) {
+      fabricNameToVendor.set(fm.fabricName, { vendorId: fm.vendorId, vendorName: fm.vendor?.name ?? "" });
+    }
+  }
 
   // Sample articles to pre-populate the Quantity-mode "selected articles" list
   const sampleQuantityArticles = productMasters.slice(0, 2).map((pm, i) => ({
@@ -105,8 +114,21 @@ export default async function ProtoPhasePlanningPage() {
       </div>
 
       <PhasePlanningProto
+        phaseId={phase.id}
         phaseNumber={phase.number}
-        productMasterOptions={productMasters.map((pm) => ({ id: pm.id, label: pm.styleNumber + (pm.productName ? ` · ${pm.productName}` : ""), fabricName: pm.fabricName ?? null }))}
+        isTestPhase={phase.isTestPhase}
+        productMasterOptions={productMasters.map((pm) => {
+          const fv = pm.fabricName ? fabricNameToVendor.get(pm.fabricName) : null;
+          return {
+            id: pm.id,
+            styleNumber: pm.styleNumber,
+            productName: pm.productName ?? null,
+            fabricName: pm.fabricName ?? null,
+            fabricVendorId: fv?.vendorId ?? null,
+            fabricVendorName: fv?.vendorName ?? null,
+          };
+        })}
+        garmenters={garmenters}
         sampleQuantityArticles={sampleQuantityArticles}
         sampleFo={sampleFo}
         sampleFabricAllocations={sampleFabricAllocations}

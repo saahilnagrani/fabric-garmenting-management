@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +11,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { logGarmenterDispatch } from "@/actions/proto-custody";
+
+type Garmenter = { id: string; name: string };
 
 type Row = {
   fabricOrder: { id: string; fabricName: string; colour: string; vendorName: string; orderedKg: number; garmentingAtName: string | null };
@@ -16,18 +21,63 @@ type Row = {
   custody: { receivedKg: number; onOrderKg: number; inOurHandsKg: number; atGarmenterKg: Record<string, number>; surplusKg: number };
 };
 
-export function DispatchSheet({ row, open, onOpenChange }: { row: Row | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+export function DispatchSheet({ row, open, onOpenChange, garmenters }: { row: Row | null; open: boolean; onOpenChange: (v: boolean) => void; garmenters: Garmenter[] }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const [step, setStep] = useState<"form" | "branch">("form");
   const [allocateNow, setAllocateNow] = useState<boolean>(true);
   const [qty, setQty] = useState("");
+  const [date, setDate] = useState("");
+  const [garmenterId, setGarmenterId] = useState("");
+  const [vehicleRef, setVehicleRef] = useState("");
+  const [notes, setNotes] = useState("");
 
   useEffect(() => {
     if (open) {
       setStep("form");
       setAllocateNow(true);
       setQty(row ? String(Math.min(row.custody.inOurHandsKg + row.custody.surplusKg, 100).toFixed(1)) : "");
+      setDate(new Date().toISOString().slice(0, 10));
+      // Pre-select the garmenter that matches the FO's existing garmentingAt name, if any
+      const matched = row && row.fabricOrder.garmentingAtName
+        ? garmenters.find((g) => g.name === row.fabricOrder.garmentingAtName)
+        : null;
+      setGarmenterId(matched?.id ?? garmenters[0]?.id ?? "");
+      setVehicleRef("");
+      setNotes("");
     }
-  }, [open, row]);
+  }, [open, row, garmenters]);
+
+  const handleSave = () => {
+    if (!row) return;
+    if (!garmenterId) {
+      toast.error("Pick a garmenter");
+      return;
+    }
+    const qtyNum = Number(qty);
+    if (!qtyNum || qtyNum <= 0) {
+      toast.error("Quantity must be greater than 0");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await logGarmenterDispatch({
+          fabricOrderId: row.fabricOrder.id,
+          garmenterId,
+          qtyKg: qtyNum,
+          dispatchedAt: date,
+          vehicleRef: vehicleRef || undefined,
+          notes: notes || undefined,
+        });
+        toast.success(`Dispatched ${qtyNum.toFixed(1)} kg`);
+        setStep("branch");
+        router.refresh();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to dispatch";
+        toast.error(msg);
+      }
+    });
+  };
 
   if (!row) return null;
   const fo = row.fabricOrder;
@@ -69,11 +119,16 @@ export function DispatchSheet({ row, open, onOpenChange }: { row: Row | null; op
               </div>
               <div className="space-y-1.5">
                 <Label>Dispatch date</Label>
-                <Input type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>To garmenter</Label>
-                <Input defaultValue={fo.garmentingAtName ?? ""} placeholder="Pick garmenter" />
+                <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background h-9" value={garmenterId} onChange={(e) => setGarmenterId(e.target.value)}>
+                  <option value="">Pick garmenter…</option>
+                  {garmenters.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
               </div>
               <div className="space-y-1.5">
                 <Label>Quantity (kg)</Label>
@@ -81,11 +136,11 @@ export function DispatchSheet({ row, open, onOpenChange }: { row: Row | null; op
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Vehicle / docket no <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input placeholder="e.g. MH-04-AB-2231 / docket #4421" />
+                <Input value={vehicleRef} onChange={(e) => setVehicleRef(e.target.value)} placeholder="e.g. MH-04-AB-2231 / docket #4421" />
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Notes</Label>
-                <Textarea rows={2} placeholder="anything to record about this dispatch" />
+                <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="anything to record about this dispatch" />
               </div>
             </div>
 
@@ -136,8 +191,8 @@ export function DispatchSheet({ row, open, onOpenChange }: { row: Row | null; op
         <SheetFooter className="px-6 py-4 border-t flex-row justify-end gap-2 sm:flex-row">
           {step === "form" ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button size="sm" disabled={available === 0 || newQty <= 0} onClick={() => setStep("branch")}>Save dispatch</Button>
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+              <Button size="sm" disabled={pending || available === 0 || newQty <= 0 || !garmenterId} onClick={handleSave}>{pending ? "Saving…" : "Save dispatch"}</Button>
             </>
           ) : (
             <>

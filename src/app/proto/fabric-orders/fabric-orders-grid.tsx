@@ -52,11 +52,17 @@ export function FabricOrdersProtoGrid({
   totals,
   overReceiptId,
   demoIds,
+  garmenters,
+  isTestPhase,
+  phaseNumber,
 }: {
   rows: Row[];
   totals: { onOrder: number; inOurHands: number; atGarmenter: number; surplus: number };
   overReceiptId: string | null;
   demoIds?: Set<string>;
+  garmenters: { id: string; name: string }[];
+  isTestPhase: boolean;
+  phaseNumber: number;
 }) {
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
     return new Set(overReceiptId ? [overReceiptId] : []);
@@ -65,7 +71,16 @@ export function FabricOrdersProtoGrid({
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [activeSheet, setActiveSheet] = useState<{ kind: SheetKind; row: Row | null }>({ kind: null, row: null });
 
-  const openSheet = (kind: Exclude<SheetKind, null>, row: Row) => setActiveSheet({ kind, row });
+  const openSheet = (kind: Exclude<SheetKind, null>, row: Row) => {
+    if (!isTestPhase) {
+      // Soft-block — show toast and bail. The server action would also reject.
+      import("sonner").then(({ toast }) => {
+        toast.error(`Phase ${phaseNumber} is not a test phase. Toggle isTestPhase from /phases to enable proto writes.`);
+      });
+      return;
+    }
+    setActiveSheet({ kind, row });
+  };
   const closeSheet = () => setActiveSheet({ kind: null, row: null });
 
   const toggle = (id: string) => {
@@ -237,7 +252,7 @@ export function FabricOrdersProtoGrid({
       </p>
 
       <ReceiveSheet row={activeSheet.kind === "receive" ? activeSheet.row : null} open={activeSheet.kind === "receive"} onOpenChange={(v) => !v && closeSheet()} />
-      <DispatchSheet row={activeSheet.kind === "dispatch" ? activeSheet.row : null} open={activeSheet.kind === "dispatch"} onOpenChange={(v) => !v && closeSheet()} />
+      <DispatchSheet row={activeSheet.kind === "dispatch" ? activeSheet.row : null} open={activeSheet.kind === "dispatch"} onOpenChange={(v) => !v && closeSheet()} garmenters={garmenters} />
     </div>
   );
 }

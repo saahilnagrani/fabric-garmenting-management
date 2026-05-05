@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
+  adaptRealCustody,
   applyDemoState,
   assignFoDisplayNumbers,
   pickDemoStates,
@@ -78,6 +79,14 @@ export default async function ProtoArticleOrdersPage() {
             },
           },
         },
+        receipts: { orderBy: { receivedAt: "asc" } },
+        dispatches: { orderBy: { dispatchedAt: "asc" }, include: { garmenter: { select: { name: true } } } },
+        allocations: {
+          include: {
+            product: { select: { articleNumber: true, styleNumber: true, productName: true } },
+            garmenter: { select: { name: true } },
+          },
+        },
       },
     }),
   ]);
@@ -101,7 +110,8 @@ export default async function ProtoArticleOrdersPage() {
       productName: link.product.productName,
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
-    const synth = synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId });
+    const real = adaptRealCustody(row, fo.garmentingAtName);
+    const synth = synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId, real });
     synthByFoId.set(row.id, synth);
     sortedSynth.push(synth);
   }

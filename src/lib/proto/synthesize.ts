@@ -272,6 +272,11 @@ export function computeCustody(
 /**
  * Top-level convenience: takes a FabricOrder + its linked products and
  * returns everything the proto screens need for that order.
+ *
+ * If `real.receipts/dispatches/allocations` arrays are provided and
+ * non-empty, those win over synthesis (per-event-type independently).
+ * This is how the proto transitions from "all synthesized" to "real where
+ * available, synthesized where not."
  */
 export function synthesizeFabricOrder(
   fo: SynthFabricOrder,
@@ -282,13 +287,79 @@ export function synthesizeFabricOrder(
     productName: string | null;
     demandKg: number;
   }[],
-  opts?: { forceOverReceipt?: boolean }
+  opts?: {
+    forceOverReceipt?: boolean;
+    real?: {
+      receipts?: SynthReceipt[];
+      dispatches?: SynthDispatch[];
+      allocations?: SynthAllocation[];
+    };
+  }
 ) {
-  const receipts = synthesizeReceipts(fo, opts);
-  const dispatches = synthesizeDispatches(fo, receipts);
-  const allocations = synthesizeAllocations(fo, linkedProducts, dispatches);
+  const receipts = opts?.real?.receipts && opts.real.receipts.length > 0
+    ? opts.real.receipts
+    : synthesizeReceipts(fo, opts);
+  const dispatches = opts?.real?.dispatches && opts.real.dispatches.length > 0
+    ? opts.real.dispatches
+    : synthesizeDispatches(fo, receipts);
+  const allocations = opts?.real?.allocations && opts.real.allocations.length > 0
+    ? opts.real.allocations
+    : synthesizeAllocations(fo, linkedProducts, dispatches);
   const custody = computeCustody(fo, receipts, dispatches);
   return { fabricOrder: fo, receipts, dispatches, allocations, custody };
+}
+
+/**
+ * Adapter: turn raw Prisma rows (with receipts, dispatches, allocations
+ * relations included) into the SynthReceipt/Dispatch/Allocation shapes.
+ */
+export function adaptRealCustody(row: {
+  id: string;
+  receipts: { id: string; qtyKg: DecimalLike; receivedAt: Date; lotRef: string | null }[];
+  dispatches: { id: string; qtyKg: DecimalLike; dispatchedAt: Date; garmenter: { name: string } }[];
+  allocations: {
+    id: string;
+    qtyKg: DecimalLike;
+    consumedKg: DecimalLike;
+    stage: string;
+    isReservation: boolean;
+    reservationPurpose: string | null;
+    productId: string | null;
+    product: { articleNumber: string | null; styleNumber: string; productName: string | null } | null;
+    garmenter: { name: string } | null;
+  }[];
+}, fallbackGarmenterName: string | null): { receipts: SynthReceipt[]; dispatches: SynthDispatch[]; allocations: SynthAllocation[] } {
+  return {
+    receipts: row.receipts.map((r) => ({
+      id: r.id,
+      fabricOrderId: row.id,
+      date: r.receivedAt,
+      qtyKg: toNum(r.qtyKg),
+      lotRef: r.lotRef ?? "—",
+    })),
+    dispatches: row.dispatches.map((d) => ({
+      id: d.id,
+      fabricOrderId: row.id,
+      garmenterName: d.garmenter.name,
+      date: d.dispatchedAt,
+      qtyKg: toNum(d.qtyKg),
+    })),
+    allocations: row.allocations.map((a) => ({
+      id: a.id,
+      fabricOrderId: row.id,
+      productId: a.productId,
+      productLabel: a.isReservation
+        ? `Reservation${a.reservationPurpose ? ` · ${a.reservationPurpose}` : ""}`
+        : a.product
+          ? `${a.product.articleNumber ?? a.product.styleNumber}${a.product.productName ? ` · ${a.product.productName}` : ""}`
+          : "—",
+      garmenterName: a.garmenter?.name ?? fallbackGarmenterName ?? "—",
+      qtyKg: toNum(a.qtyKg),
+      consumedKg: toNum(a.consumedKg),
+      isReservation: a.isReservation,
+      reservationPurpose: a.reservationPurpose ?? undefined,
+    })),
+  };
 }
 
 /**

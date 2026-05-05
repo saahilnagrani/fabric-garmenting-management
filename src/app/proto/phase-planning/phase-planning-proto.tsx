@@ -1,16 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
+import { createPlannedOrders } from "@/actions/proto-custody";
 
 type Mode = "quantity" | "fabric";
 
-type PMOption = { id: string; label: string; fabricName: string | null };
+type PMOption = {
+  id: string;
+  styleNumber: string;
+  productName: string | null;
+  fabricName: string | null;
+  fabricVendorId: string | null;
+  fabricVendorName: string | null;
+};
+type Garmenter = { id: string; name: string };
 type SampleQuantityArticle = {
   pmId: string;
   styleNumber: string;
@@ -38,20 +49,116 @@ type SampleFabricAllocation = {
   garmenterName: string;
 };
 
+type PlanRow = {
+  rowKey: string;
+  pmId: string;
+  styleNumber: string;
+  productName: string | null;
+  fabricName: string;
+  fabricVendorId: string | null;
+  colour: string;
+  qty: number;
+  demandKg: number;
+  garmenterId: string;
+};
+
+let _rowSeq = 0;
+const nextKey = () => `r${++_rowSeq}`;
+
 export function PhasePlanningProto({
+  phaseId,
   phaseNumber,
+  isTestPhase,
   productMasterOptions,
+  garmenters,
   sampleQuantityArticles,
   sampleFo,
   sampleFabricAllocations,
 }: {
+  phaseId: string;
   phaseNumber: number;
+  isTestPhase: boolean;
   productMasterOptions: PMOption[];
+  garmenters: Garmenter[];
   sampleQuantityArticles: SampleQuantityArticle[];
   sampleFo: SampleFo;
   sampleFabricAllocations: SampleFabricAllocation[];
 }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const [mode, setMode] = useState<Mode>("quantity");
+  const [planRows, setPlanRows] = useState<PlanRow[]>([]);
+  const [pickPmId, setPickPmId] = useState("");
+
+  const addArticle = (pmId: string) => {
+    const pm = productMasterOptions.find((p) => p.id === pmId);
+    if (!pm) return;
+    setPlanRows((rows) => [
+      ...rows,
+      {
+        rowKey: nextKey(),
+        pmId: pm.id,
+        styleNumber: pm.styleNumber,
+        productName: pm.productName,
+        fabricName: pm.fabricName ?? "—",
+        fabricVendorId: pm.fabricVendorId,
+        colour: "",
+        qty: 100,
+        demandKg: 50,
+        garmenterId: garmenters[0]?.id ?? "",
+      },
+    ]);
+    setPickPmId("");
+  };
+
+  const updateRow = (rowKey: string, patch: Partial<PlanRow>) =>
+    setPlanRows((rows) => rows.map((r) => (r.rowKey === rowKey ? { ...r, ...patch } : r)));
+
+  const removeRow = (rowKey: string) => setPlanRows((rows) => rows.filter((r) => r.rowKey !== rowKey));
+
+  const handleCreate = () => {
+    if (!isTestPhase) {
+      toast.error(`Phase ${phaseNumber} is not a test phase. Toggle isTestPhase from /phases first.`);
+      return;
+    }
+    if (planRows.length === 0) {
+      toast.error("Add at least one article to plan");
+      return;
+    }
+    const missingVendor = planRows.find((r) => !r.fabricVendorId);
+    if (missingVendor) {
+      toast.error(`No fabric vendor mapped for "${missingVendor.fabricName}". Add a FabricMaster row for that fabric first.`);
+      return;
+    }
+    const missingColour = planRows.find((r) => !r.colour.trim());
+    if (missingColour) {
+      toast.error(`Pick a colour for ${missingColour.styleNumber}`);
+      return;
+    }
+    startTransition(async () => {
+      try {
+        const res = await createPlannedOrders({
+          phaseId,
+          articles: planRows.map((r) => ({
+            productMasterId: r.pmId,
+            styleNumber: r.styleNumber,
+            productName: r.productName,
+            fabricVendorId: r.fabricVendorId!,
+            fabricName: r.fabricName,
+            colour: r.colour,
+            qtyPcs: r.qty,
+            demandKg: r.demandKg,
+            garmenterId: r.garmenterId || null,
+          })),
+        });
+        toast.success(`Created ${res.productIds.length} article order${res.productIds.length === 1 ? "" : "s"}, ${res.fabricOrderIds.length} fabric order${res.fabricOrderIds.length === 1 ? "" : "s"}, ${res.allocationIds.length} allocation${res.allocationIds.length === 1 ? "" : "s"}`);
+        setPlanRows([]);
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to create orders");
+      }
+    });
+  };
 
   const totalAllocated = sampleFabricAllocations.reduce((s, a) => s + a.allocateKg, 0);
   const reservationKg = 20.0;
@@ -108,10 +215,16 @@ export function PhasePlanningProto({
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Add article from master</Label>
-                <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background">
-                  <option>Search article master…</option>
+                <select
+                  className="w-full border rounded-md px-3 py-2 text-[14px] bg-background"
+                  value={pickPmId}
+                  onChange={(e) => { setPickPmId(e.target.value); if (e.target.value) addArticle(e.target.value); }}
+                >
+                  <option value="">Search article master…</option>
                   {productMasterOptions.map((pm) => (
-                    <option key={pm.id} value={pm.id}>{pm.label}</option>
+                    <option key={pm.id} value={pm.id}>
+                      {pm.styleNumber}{pm.productName ? ` · ${pm.productName}` : ""}{pm.fabricName ? ` · ${pm.fabricName}` : ""}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -119,52 +232,87 @@ export function PhasePlanningProto({
 
             <div className="mt-5 border-t pt-4">
               <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Selected articles</div>
-              <div className="grid grid-cols-[1.4fr_0.7fr_0.7fr_1fr_0.6fr_24px] gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium pb-2 border-b">
-                <div>Article</div><div>Colour</div><div>Quantity</div><div>Garmenter</div><div className="text-right">Demand</div><div></div>
+              <div className="grid grid-cols-[1.4fr_0.7fr_0.6fr_1.2fr_0.7fr_24px] gap-2 text-[10.5px] uppercase tracking-wider text-muted-foreground font-medium pb-2 border-b">
+                <div>Article · Fabric</div><div>Colour</div><div>Qty (pcs)</div><div>Garmenter</div><div className="text-right">Demand (kg)</div><div></div>
               </div>
-              {sampleQuantityArticles.length === 0 ? (
-                <div className="py-4 text-[12.5px] text-muted-foreground">No article masters in DB to populate sample form.</div>
+              {planRows.length === 0 ? (
+                <div className="py-4 text-[12.5px] text-muted-foreground">Pick an article from the dropdown above to start.</div>
               ) : (
-                sampleQuantityArticles.map((a, i) => (
-                  <div key={i} className="grid grid-cols-[1.4fr_0.7fr_0.7fr_1fr_0.6fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
-                    <div>
-                      <div className="font-medium leading-tight">{a.productName}</div>
-                      <div className="text-[11.5px] text-muted-foreground font-mono">{a.styleNumber}</div>
+                planRows.map((r) => (
+                  <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.7fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
+                    <div className="min-w-0">
+                      <div className="font-medium leading-tight truncate">{r.productName ?? r.styleNumber}</div>
+                      <div className="text-[11.5px] text-muted-foreground font-mono truncate">{r.styleNumber} · {r.fabricName}{!r.fabricVendorId && <span className="text-[oklch(0.55_0.16_45)]"> · no vendor!</span>}</div>
                     </div>
-                    <div>{a.colour}</div>
-                    <div><Input className="h-8" defaultValue={String(a.qty)} /></div>
-                    <div><Input className="h-8" defaultValue={a.garmenterName} /></div>
-                    <div className="text-right font-mono tabular-nums">{a.demandKg.toFixed(1)} kg</div>
-                    <div className="text-muted-foreground text-center cursor-pointer">×</div>
+                    <div>
+                      <Input className="h-8" placeholder="Lime" value={r.colour} onChange={(e) => updateRow(r.rowKey, { colour: e.target.value })} />
+                    </div>
+                    <div>
+                      <Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateRow(r.rowKey, { qty: Number(e.target.value) || 0 })} />
+                    </div>
+                    <div>
+                      <select className="w-full border rounded-md px-2 h-8 text-[13px] bg-background" value={r.garmenterId} onChange={(e) => updateRow(r.rowKey, { garmenterId: e.target.value })}>
+                        <option value="">—</option>
+                        {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <Input className="h-8 font-mono text-right" inputMode="decimal" value={r.demandKg} onChange={(e) => updateRow(r.rowKey, { demandKg: Number(e.target.value) || 0 })} />
+                    </div>
+                    <button onClick={() => removeRow(r.rowKey)} className="text-muted-foreground hover:text-foreground text-center" aria-label="Remove">×</button>
                   </div>
                 ))
               )}
-              <Button variant="outline" size="xs" className="mt-3">+ Add another article</Button>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2 pt-4 border-t">
-              <Button variant="outline" size="sm">Save draft</Button>
-              <Button size="sm">Create orders</Button>
+            <div className="mt-5 flex items-center justify-between gap-2 pt-4 border-t">
+              <div className="text-[12px] text-muted-foreground">
+                {planRows.length > 0 && (
+                  <>
+                    Total demand: <span className="font-mono tabular-nums">{planRows.reduce((s, r) => s + r.demandKg, 0).toFixed(1)} kg</span>
+                  </>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPlanRows([])} disabled={pending || planRows.length === 0}>Clear</Button>
+                <Button size="sm" onClick={handleCreate} disabled={pending || planRows.length === 0 || !isTestPhase}>
+                  {pending ? "Creating…" : "Create orders"}
+                </Button>
+              </div>
             </div>
+            {!isTestPhase && (
+              <div className="mt-3 rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[12.5px] text-[oklch(0.40_0.16_45)]">
+                Phase {phaseNumber} is not flagged as a test phase. Toggle isTestPhase on <a href="/phases" className="underline">/phases</a> to enable proto writes here.
+              </div>
+            )}
           </Card>
 
           <CommitsPanel
             mode="quantity"
-            productRows={sampleQuantityArticles.map((a, i) => ({
+            productRows={planRows.map((r, i) => ({
               tempId: `AO-?·${i + 1}`,
-              label: `${a.productName} · ${a.colour} · ${a.qty} pcs · ${a.garmenterName}`,
+              label: `${r.productName ?? r.styleNumber} · ${r.colour || "(no colour)"} · ${r.qty} pcs · ${garmenters.find((g) => g.id === r.garmenterId)?.name ?? "—"}`,
             }))}
-            fabricOrderRows={sampleQuantityArticles.map((a, i) => ({
-              tempId: `FO-?·${i + 1}`,
-              label: `${a.fabricName} · ${a.colour} · ${a.demandKg.toFixed(0)} kg`,
-              note: "rounded up to procurement minimum",
-            }))}
-            allocationRows={sampleQuantityArticles.map((a, i) => ({
+            fabricOrderRows={Array.from(
+              planRows.reduce((m, r) => {
+                const k = `${r.fabricVendorId}|${r.fabricName}|${r.colour}`;
+                m.set(k, (m.get(k) ?? 0) + r.demandKg);
+                return m;
+              }, new Map<string, number>())
+            ).map(([k, kg], i) => {
+              const [, fabricName, colour] = k.split("|");
+              return { tempId: `FO-?·${i + 1}`, label: `${fabricName} · ${colour || "(no colour)"} · ${kg.toFixed(1)} kg` };
+            })}
+            allocationRows={planRows.map((r, i) => ({
               tempId: `ALC-?·${i + 1}`,
-              label: `AO·${i + 1} → FO·${i + 1}  ${a.demandKg.toFixed(1)} kg`,
-              stage: "expected",
+              label: `AO·${i + 1} → FO  ${r.demandKg.toFixed(1)} kg`,
+              stage: "at vendor" as const,
             }))}
-            footnote="All allocations start at 'at vendor' stage. They become 'in our hands' when receipts are logged, then 'at garmenter' after dispatch."
+            footnote={
+              planRows.length === 0
+                ? "Pick an article above to see what would be written."
+                : "All allocations start at 'at vendor' stage. They become 'in our hands' when receipts are logged, then 'at garmenter' after dispatch."
+            }
           />
         </div>
       ) : (
@@ -274,7 +422,7 @@ function CommitsPanel({
   mode: Mode;
   productRows: { tempId: string; label: string }[];
   fabricOrderRows: { tempId: string; label: string; note?: string }[];
-  allocationRows: { tempId: string; label: string; stage: "expected" | "in our hands" | "at garmenter"; isReservation?: boolean }[];
+  allocationRows: { tempId: string; label: string; stage: "expected" | "at vendor" | "in our hands" | "at garmenter"; isReservation?: boolean }[];
   footnote: string;
 }) {
   return (

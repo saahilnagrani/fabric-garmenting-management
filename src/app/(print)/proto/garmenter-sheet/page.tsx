@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
+  adaptRealCustody,
   applyDemoState,
   assignFoDisplayNumbers,
   pickDemoStates,
@@ -50,6 +51,14 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
           },
         },
       },
+      receipts: { orderBy: { receivedAt: "asc" } },
+      dispatches: { orderBy: { dispatchedAt: "asc" }, include: { garmenter: { select: { name: true } } } },
+      allocations: {
+        include: {
+          product: { select: { articleNumber: true, styleNumber: true, productName: true } },
+          garmenter: { select: { name: true } },
+        },
+      },
     },
   });
 
@@ -69,7 +78,8 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
       productName: link.product.productName,
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
-    return synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId });
+    const real = adaptRealCustody(row, fo.garmentingAtName);
+    return synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId, real });
   });
 
   // Canonical FO display numbers (shared across all proto screens).

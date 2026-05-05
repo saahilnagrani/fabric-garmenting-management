@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { logFabricReceipt } from "@/actions/proto-custody";
 
 type Row = {
   fabricOrder: { id: string; fabricName: string; colour: string; vendorName: string; orderedKg: number; garmentingAtName: string | null };
@@ -19,18 +22,51 @@ type Row = {
 type Branch = "alloc" | "dispatch";
 
 export function ReceiveSheet({ row, open, onOpenChange }: { row: Row | null; open: boolean; onOpenChange: (v: boolean) => void }) {
+  const router = useRouter();
+  const [pending, startTransition] = useTransition();
   const [step, setStep] = useState<"form" | "branch">("form");
   const [branch, setBranch] = useState<Branch | null>(null);
   const [qty, setQty] = useState("");
+  const [date, setDate] = useState("");
+  const [lotRef, setLotRef] = useState("");
+  const [notes, setNotes] = useState("");
 
   useEffect(() => {
     if (open) {
       setStep("form");
       setBranch(null);
-      // Default qty to remaining on-order, capped to a sensible round number
       setQty(row ? String(Math.min(row.custody.onOrderKg || 50, 100).toFixed(1)) : "");
+      setDate(new Date().toISOString().slice(0, 10));
+      setLotRef("");
+      setNotes("");
     }
   }, [open, row]);
+
+  const handleSave = () => {
+    if (!row) return;
+    const qtyNum = Number(qty);
+    if (!qtyNum || qtyNum <= 0) {
+      toast.error("Quantity must be greater than 0");
+      return;
+    }
+    startTransition(async () => {
+      try {
+        await logFabricReceipt({
+          fabricOrderId: row.fabricOrder.id,
+          qtyKg: qtyNum,
+          receivedAt: date,
+          lotRef: lotRef || undefined,
+          notes: notes || undefined,
+        });
+        toast.success(`Receipt logged · ${qtyNum.toFixed(1)} kg`);
+        setStep("branch");
+        router.refresh();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to log receipt";
+        toast.error(msg);
+      }
+    });
+  };
 
   if (!row) return null;
   const fo = row.fabricOrder;
@@ -66,7 +102,7 @@ export function ReceiveSheet({ row, open, onOpenChange }: { row: Row | null; ope
               </div>
               <div className="space-y-1.5">
                 <Label>Receipt date</Label>
-                <Input type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
               <div className="space-y-1.5">
                 <Label>Quantity received (kg)</Label>
@@ -74,11 +110,11 @@ export function ReceiveSheet({ row, open, onOpenChange }: { row: Row | null; ope
               </div>
               <div className="space-y-1.5">
                 <Label>Lot ref <span className="text-muted-foreground font-normal">(optional)</span></Label>
-                <Input placeholder="vendor lot/roll number" />
+                <Input value={lotRef} onChange={(e) => setLotRef(e.target.value)} placeholder="vendor lot/roll number" />
               </div>
               <div className="col-span-2 space-y-1.5">
                 <Label>Notes</Label>
-                <Textarea rows={2} placeholder="anything to record about this shipment" />
+                <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="anything to record about this shipment" />
               </div>
             </div>
 
@@ -145,8 +181,8 @@ export function ReceiveSheet({ row, open, onOpenChange }: { row: Row | null; ope
         <SheetFooter className="px-6 py-4 border-t flex-row justify-end gap-2 sm:flex-row">
           {step === "form" ? (
             <>
-              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>Cancel</Button>
-              <Button size="sm" onClick={() => setStep("branch")}>Save receipt</Button>
+              <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={pending}>Cancel</Button>
+              <Button size="sm" onClick={handleSave} disabled={pending}>{pending ? "Saving…" : "Save receipt"}</Button>
             </>
           ) : (
             <>
