@@ -31,7 +31,7 @@ export default async function ProtoPhasePlanningPage() {
   const [productMasters, fabricOrders, fabricMasters, garmenters] = await Promise.all([
     db.productMaster.findMany({
       where: { isStrikedThrough: false },
-      select: { id: true, styleNumber: true, productName: true, fabricName: true },
+      select: { id: true, articleNumber: true, styleNumber: true, productName: true, fabricName: true },
       orderBy: { styleNumber: "asc" },
     }),
     db.fabricOrder.findMany({
@@ -86,6 +86,7 @@ export default async function ProtoPhasePlanningPage() {
             const fv = pm.fabricName ? fabricNameToVendor.get(pm.fabricName) : null;
             return {
               id: pm.id,
+              articleNumber: pm.articleNumber ?? null,
               styleNumber: pm.styleNumber,
               productName: pm.productName ?? null,
               fabricName: pm.fabricName ?? null,
@@ -93,12 +94,15 @@ export default async function ProtoPhasePlanningPage() {
               fabricVendorName: fv?.vendorName ?? null,
             };
           })
-          // Drop rows with no usable label (e.g. styleNumber="-" and no name/fabric)
+          // Drop rows with no usable label (e.g. articleNumber/styleNumber both empty/dash)
           .filter((pm) => {
+            const an = (pm.articleNumber ?? "").trim();
             const sn = (pm.styleNumber ?? "").trim();
+            const hasArt = an !== "" && an !== "-";
+            const hasStyle = sn !== "" && sn !== "-";
             const hasName = (pm.productName ?? "").trim().length > 0;
             const hasFabric = (pm.fabricName ?? "").trim().length > 0;
-            return (sn !== "" && sn !== "-") || hasName || hasFabric;
+            return hasArt || hasStyle || hasName || hasFabric;
           })}
         garmenters={garmenters}
         existingFabricOrders={fabricOrders.map((fo) => ({

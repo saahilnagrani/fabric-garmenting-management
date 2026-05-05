@@ -16,6 +16,7 @@ type Mode = "quantity" | "fabric";
 
 type PMOption = {
   id: string;
+  articleNumber: string | null;
   styleNumber: string;
   productName: string | null;
   fabricName: string | null;
@@ -35,6 +36,7 @@ type ExistingFo = {
 type PlanRow = {
   rowKey: string;
   pmId: string;
+  articleNumber: string | null;
   styleNumber: string;
   productName: string | null;
   fabricName: string;
@@ -48,6 +50,7 @@ type PlanRow = {
 type FabricRow = {
   rowKey: string;
   pmId: string;
+  articleNumber: string | null;
   styleNumber: string;
   productName: string | null;
   qty: number;
@@ -59,14 +62,17 @@ let _seq = 0;
 const nextKey = () => `r${++_seq}`;
 
 function pmLabel(pm: PMOption): string {
-  const sn = pm.styleNumber?.trim();
-  const valid = sn && sn !== "-";
-  if (valid && pm.productName && pm.fabricName) return `${pm.styleNumber} · ${pm.productName} · ${pm.fabricName}`;
-  if (valid && pm.productName) return `${pm.styleNumber} · ${pm.productName}`;
-  if (valid && pm.fabricName) return `${pm.styleNumber} · ${pm.fabricName}`;
-  if (valid) return pm.styleNumber;
-  if (pm.productName && pm.fabricName) return `${pm.productName} · ${pm.fabricName}`;
-  return pm.productName ?? pm.fabricName ?? "(unnamed)";
+  // Format: articleNumber · productName · fabricName
+  // Each part is omitted if empty/dash; we join the rest gracefully.
+  const clean = (s: string | null | undefined) => {
+    const t = (s ?? "").trim();
+    return t && t !== "-" ? t : "";
+  };
+  const article = clean(pm.articleNumber) || clean(pm.styleNumber);
+  const name = clean(pm.productName);
+  const fabric = clean(pm.fabricName);
+  const parts = [article, name, fabric].filter((p) => p.length > 0);
+  return parts.length > 0 ? parts.join(" · ") : "(unnamed)";
 }
 
 export function PhasePlanningProto({
@@ -107,7 +113,7 @@ export function PhasePlanningProto({
     return productMasterOptions.map((pm) => ({
       label: pmLabel(pm),
       value: pm.id,
-      searchText: [pm.styleNumber, pm.productName, pm.fabricName, pm.fabricVendorName].filter(Boolean).join(" "),
+      searchText: [pm.articleNumber, pm.styleNumber, pm.productName, pm.fabricName, pm.fabricVendorName].filter(Boolean).join(" "),
     }));
   }, [productMasterOptions]);
 
@@ -128,6 +134,7 @@ export function PhasePlanningProto({
       {
         rowKey: nextKey(),
         pmId: pm.id,
+        articleNumber: pm.articleNumber,
         styleNumber: pm.styleNumber,
         productName: pm.productName,
         fabricName: pm.fabricName ?? "—",
@@ -186,6 +193,7 @@ export function PhasePlanningProto({
       {
         rowKey: nextKey(),
         pmId: pm.id,
+        articleNumber: pm.articleNumber,
         styleNumber: pm.styleNumber,
         productName: pm.productName,
         qty: 50,
@@ -287,8 +295,8 @@ export function PhasePlanningProto({
                 planRows.map((r) => (
                   <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.7fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
                     <div className="min-w-0">
-                      <div className="font-medium leading-tight truncate">{r.productName ?? r.styleNumber}</div>
-                      <div className="text-[11.5px] text-muted-foreground font-mono truncate">{r.styleNumber || "(no style)"} · {r.fabricName}{!r.fabricVendorId && <span className="text-[oklch(0.55_0.16_45)]"> · no vendor!</span>}</div>
+                      <div className="font-medium leading-tight truncate font-mono">{r.articleNumber ?? r.styleNumber ?? "—"}</div>
+                      <div className="text-[11.5px] text-muted-foreground truncate">{r.productName ?? r.styleNumber} · {r.fabricName}{!r.fabricVendorId && <span className="text-[oklch(0.55_0.16_45)]"> · no vendor!</span>}</div>
                     </div>
                     <div><Input className="h-8" placeholder="Lime" value={r.colour} onChange={(e) => updateRow(r.rowKey, { colour: e.target.value })} /></div>
                     <div><Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateRow(r.rowKey, { qty: Number(e.target.value) || 0 })} /></div>
@@ -369,8 +377,8 @@ export function PhasePlanningProto({
                 fabricRows.map((r) => (
                   <div key={r.rowKey} className="grid grid-cols-[1.4fr_0.6fr_1.2fr_0.7fr_24px] gap-2 items-center py-2.5 border-b last:border-b-0 text-[13px]">
                     <div className="min-w-0">
-                      <div className="font-medium leading-tight truncate">{r.productName ?? r.styleNumber}</div>
-                      <div className="text-[11.5px] text-muted-foreground font-mono truncate">{r.styleNumber || "(no style)"}</div>
+                      <div className="font-medium leading-tight truncate font-mono">{r.articleNumber ?? r.styleNumber ?? "—"}</div>
+                      <div className="text-[11.5px] text-muted-foreground truncate">{r.productName ?? r.styleNumber}</div>
                     </div>
                     <div><Input className="h-8 font-mono" inputMode="numeric" value={r.qty} onChange={(e) => updateFabricRow(r.rowKey, { qty: Number(e.target.value) || 0 })} /></div>
                     <div>
