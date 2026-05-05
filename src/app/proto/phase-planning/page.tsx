@@ -23,7 +23,7 @@ export default async function ProtoPhasePlanningPage() {
     );
   }
 
-  const [productMasters, fabricOrders, fabricMasters, garmenters, sizeDistributions, previousArticles, priorProducts] = await Promise.all([
+  const [productMasters, fabricOrders, fabricMasters, garmenters, sizeDistributions, previousArticles] = await Promise.all([
     db.productMaster.findMany({
       where: { isStrikedThrough: false },
       orderBy: { articleNumber: "asc" },
@@ -51,34 +51,12 @@ export default async function ProtoPhasePlanningPage() {
     }),
     db.sizeDistribution.findMany(),
     getArticlesInPreviousPhases(phase.id),
-    // Past Products per articleNumber → infer the historical garmenter
-    db.product.findMany({
-      where: { isStrikedThrough: false, articleNumber: { not: null } },
-      select: {
-        articleNumber: true,
-        garmentingAt: true,
-        garmentingAtRef: { select: { name: true } },
-        createdAt: true,
-      },
-      orderBy: { createdAt: "desc" },
-    }),
   ]);
 
-  // Build articleNumber → most-recent-garmenter-name lookup
-  const articleNumberToGarmenter = new Map<string, string>();
-  for (const p of priorProducts) {
-    const an = (p.articleNumber ?? "").trim();
-    if (!an || articleNumberToGarmenter.has(an)) continue;
-    const name = p.garmentingAtRef?.name ?? p.garmentingAt ?? null;
-    if (name) articleNumberToGarmenter.set(an, name);
-  }
-  // Resolve to vendor IDs (Vendor type=GARMENTING with matching name)
+  // Resolve ProductMaster.garmentingAt (name) → Vendor.id (type=GARMENTING).
+  // The article master is the source of truth for the article's preferred
+  // garmenter — this matches what the live PlanningForm does.
   const garmenterByName = new Map(garmenters.map((g) => [g.name, g.id]));
-  const articleDefaultGarmenter: Record<string, string> = {};
-  for (const [an, name] of articleNumberToGarmenter) {
-    const vid = garmenterByName.get(name);
-    if (vid) articleDefaultGarmenter[an] = vid;
-  }
 
   // fabricName → vendor info (first match wins; FabricMaster.fabricName is unique-ish)
   const fabricNameToVendor = new Map<string, { vendorId: string; vendorName: string; mrp: number | null }>();
@@ -98,6 +76,8 @@ export default async function ProtoPhasePlanningPage() {
       const fv2 = pm.fabric2Name ? fabricNameToVendor.get(pm.fabric2Name) : null;
       const fv3 = pm.fabric3Name ? fabricNameToVendor.get(pm.fabric3Name) : null;
       const fv4 = pm.fabric4Name ? fabricNameToVendor.get(pm.fabric4Name) : null;
+      const garmenterName = pm.garmentingAt ?? null;
+      const garmenterId = garmenterName ? (garmenterByName.get(garmenterName) ?? null) : null;
       return {
         id: pm.id,
         articleNumber: pm.articleNumber ?? null,
@@ -106,6 +86,8 @@ export default async function ProtoPhasePlanningPage() {
         productName: pm.productName ?? null,
         type: pm.type,
         gender: String(pm.gender),
+        garmenterName,
+        garmenterId,
         // Fabric 1 (always present)
         fabricName: pm.fabricName ?? null,
         fabricVendorId: fv?.vendorId ?? null,
@@ -163,7 +145,6 @@ export default async function ProtoPhasePlanningPage() {
         garmenters={garmenters}
         sizeDistMap={sizeDistMap}
         previousArticleNumbers={[...previousArticles]}
-        articleDefaultGarmenter={articleDefaultGarmenter}
         existingFabricOrders={fabricOrders.map((fo) => ({
           id: fo.id,
           fabricName: fo.fabricName,

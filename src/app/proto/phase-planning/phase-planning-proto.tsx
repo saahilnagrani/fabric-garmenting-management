@@ -22,6 +22,8 @@ export type PMOption = {
   productName: string | null;
   type: string;
   gender: string;
+  garmenterName: string | null;
+  garmenterId: string | null;
   // Fabric 1
   fabricName: string | null;
   fabricVendorId: string | null;
@@ -171,7 +173,6 @@ export function PhasePlanningProto({
   garmenters,
   sizeDistMap,
   previousArticleNumbers,
-  articleDefaultGarmenter,
   existingFabricOrders,
 }: {
   phaseId: string;
@@ -181,7 +182,6 @@ export function PhasePlanningProto({
   garmenters: Garmenter[];
   sizeDistMap: Record<string, number>;
   previousArticleNumbers: string[];
-  articleDefaultGarmenter: Record<string, string>;
   existingFabricOrders: ExistingFo[];
 }) {
   const router = useRouter();
@@ -272,9 +272,10 @@ export function PhasePlanningProto({
     const pms = articleGroups.get(articleNumber);
     if (!pms || pms.length === 0) return;
     const canonical = pms[0];
-    // Prefer the article's historical garmenter (from past Product rows) if
-    // we know it, otherwise fall back to the form's default garmenter.
-    const garmenterId = articleDefaultGarmenter[articleNumber] ?? defaultGarmenterId;
+    // Prefer the article master's own garmentingAt (resolved to a Vendor.id
+    // on the server). Fall back to the form's default garmenter only when
+    // the master has no preferred garmenter set.
+    const garmenterId = canonical.garmenterId ?? defaultGarmenterId;
     const rowKey = nextKey();
     setSelected((rows) => [...rows, {
       rowKey,
