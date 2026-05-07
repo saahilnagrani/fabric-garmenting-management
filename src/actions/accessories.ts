@@ -6,21 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
 import type { AccessoryUnit } from "@/generated/prisma/client";
-import { composeDisplayName, type PriceTier } from "@/lib/accessory-categories";
-import { createLookupResolver, type LookupResolver } from "@/lib/lookups";
-
-function colourFromAttributes(attrs: Record<string, unknown> | null | undefined): string | null {
-  if (!attrs) return null;
-  const c = attrs.colour;
-  return typeof c === "string" && c.trim() ? c : null;
-}
-
-async function colourIdFromAttributes(
-  attrs: Record<string, unknown> | null | undefined,
-  resolver: LookupResolver = createLookupResolver(),
-): Promise<string | null> {
-  return resolver.colourId(colourFromAttributes(attrs));
-}
+import type { PriceTier } from "@/lib/accessory-categories";
 
 export const getAccessoryMasters = cache(async (includeArchived = false) => {
   await requirePermission("inventory:accessories:view");
@@ -42,9 +28,7 @@ export type ArticleCodeUnit = { code: string; units: number };
 
 export type AccessoryMasterInput = {
   category: string;
-  // When provided, used directly as the displayName (new simplified flow).
-  name?: string;
-  attributes?: Record<string, unknown>;
+  name: string;
   unit: AccessoryUnit;
   vendorId?: string | null;
   defaultCostPerUnit?: number | null;
@@ -54,15 +38,6 @@ export type AccessoryMasterInput = {
   imageUrl?: string | null;
   articleCodeUnits?: ArticleCodeUnit[];
 };
-
-function normalizeAttributes(attrs: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(attrs)) {
-    if (v == null || v === "") continue;
-    out[k] = v;
-  }
-  return out;
-}
 
 /**
  * Sync article-code BOM entries for an accessory into ProductMasterAccessory.
@@ -101,34 +76,20 @@ function revalidateAccessoryPaths() {
 }
 
 /**
- * Create a single AccessoryMaster from structured input. The display name is
- * composed from the category config so every row has a consistent label.
+ * Create a single AccessoryMaster. The user-entered `name` is the display name.
  */
 export async function createAccessoryMaster(input: AccessoryMasterInput) {
   const session = await requirePermission("inventory:accessories:create");
 
   if (!input.category.trim()) throw new Error("Category is required");
+  const displayName = input.name?.trim();
+  if (!displayName) throw new Error("Name is required");
 
-  let displayName: string;
-  let attributes: Record<string, unknown>;
-
-  if (input.name?.trim()) {
-    // Simplified flow: user-entered name is the display name.
-    displayName = input.name.trim();
-    attributes = { name: displayName };
-  } else {
-    attributes = normalizeAttributes(input.attributes ?? {});
-    displayName = composeDisplayName(input.category, attributes);
-    if (!displayName.trim()) throw new Error("Accessory has no identifying attributes");
-  }
-
-  const colourId = await colourIdFromAttributes(attributes);
   const master = await db.accessoryMaster.create({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     data: {
       displayName,
       category: input.category.trim(),
-      attributes: attributes as any,
       priceTiers: (input.priceTiers ?? []) as any,
       unit: input.unit,
       vendorId: input.vendorId || null,
@@ -136,7 +97,6 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
       hsnCode: input.hsnCode?.trim() || null,
       comments: input.comments?.trim() || null,
       imageUrl: input.imageUrl?.trim() || null,
-      colourId,
     } as any,
   });
 
@@ -147,131 +107,6 @@ export async function createAccessoryMaster(input: AccessoryMasterInput) {
   logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", master.id);
   revalidateAccessoryPaths();
   return master;
-}
-
-/**
- * Backwards-compat wrapper: the old UI created Cartesian products of
- * (colours × sizes) under a baseName. Kept so existing callers in the sheet
- * continue to work while we migrate the UI. Each combination becomes an
- * independent AccessoryMaster row.
- */
-export type CreateAccessoryMastersInput = {
-  baseName: string;
-  category: string;
-  unit: AccessoryUnit;
-  vendorId?: string | null;
-  defaultCostPerUnit?: number | null;
-  hsnCode?: string | null;
-  comments?: string | null;
-  colours: string[];
-  sizes: string[];
-};
-
-export async function createAccessoryMasters(input: CreateAccessoryMastersInput) {
-  const session = await requirePermission("inventory:accessories:create");
-
-  const baseName = input.baseName.trim();
-  if (!baseName) throw new Error("Base name is required");
-  if (!input.category.trim()) throw new Error("Category is required");
-
-  const colours = input.colours.length > 0 ? input.colours : [null];
-  const sizes = input.sizes.length > 0 ? input.sizes : [null];
-
-  const payloads: AccessoryMasterInput[] = [];
-  for (const c of colours) {
-    for (const s of sizes) {
-      const attributes: Record<string, unknown> = { baseName };
-      if (c) attributes.colour = c;
-      if (s) attributes.size = s;
-      payloads.push({
-        category: input.category,
-        attributes,
-        unit: input.unit,
-        vendorId: input.vendorId,
-        defaultCostPerUnit: input.defaultCostPerUnit,
-        hsnCode: input.hsnCode,
-        comments: input.comments,
-      });
-    }
-  }
-
-  const resolver = createLookupResolver();
-  const prepared = await Promise.all(
-    payloads.map(async (p) => {
-      const attributes = normalizeAttributes(p.attributes ?? {});
-      const displayName = composeDisplayName(p.category, attributes);
-      const colourId = await colourIdFromAttributes(attributes, resolver);
-      return { p, displayName, attributes, colourId };
-    }),
-  );
-  const created = await db.$transaction(
-    prepared.map(({ p, displayName, attributes, colourId }) =>
-      db.accessoryMaster.create({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: {
-          displayName,
-          category: p.category.trim(),
-          attributes: attributes as any,
-          priceTiers: [] as any,
-          unit: p.unit,
-          vendorId: p.vendorId || null,
-          defaultCostPerUnit: p.defaultCostPerUnit ?? null,
-          hsnCode: p.hsnCode?.trim() || null,
-          comments: p.comments?.trim() || null,
-          colourId,
-        } as any,
-      }),
-    ),
-  );
-
-  for (const m of created) {
-    logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", m.id);
-  }
-
-  revalidatePath("/accessory-masters");
-  return created;
-}
-
-/**
- * Bulk-create multiple accessories sharing the same category, unit, vendor,
- * cost, and HSN. Each entry provides its own attribute map. Used by the
- * "Bulk Add" CSV-paste flow in the master sheet.
- */
-export async function bulkCreateAccessoryMasters(
-  shared: Omit<AccessoryMasterInput, "attributes">,
-  rows: Array<{ attributes: Record<string, unknown> }>
-) {
-  const session = await requirePermission("inventory:accessories:create");
-  if (!shared.category.trim()) throw new Error("Category is required");
-  if (rows.length === 0) throw new Error("No rows to create");
-
-  const created = await db.$transaction(
-    rows.map((row) => {
-      const attributes = normalizeAttributes(row.attributes);
-      const displayName = composeDisplayName(shared.category, attributes);
-      return db.accessoryMaster.create({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        data: {
-          displayName,
-          category: shared.category.trim(),
-          attributes: attributes as any,
-          priceTiers: (shared.priceTiers ?? []) as any,
-          unit: shared.unit,
-          vendorId: shared.vendorId || null,
-          defaultCostPerUnit: shared.defaultCostPerUnit ?? null,
-          hsnCode: shared.hsnCode?.trim() || null,
-          comments: shared.comments?.trim() || null,
-        } as any,
-      });
-    })
-  );
-
-  for (const m of created) {
-    logAction(session.user!.id!, session.user!.name!, "CREATE", "AccessoryMaster", m.id);
-  }
-
-  revalidatePath("/accessory-masters");
-  return created;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -285,36 +120,13 @@ export async function updateAccessoryMaster(id: string, data: any) {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { articleCodeUnits: _acu, ...updateData } = data;
 
-  // If a direct name is provided, use it; otherwise recompute from attributes/category.
-  const nextCategory = updateData.category ?? previous.category;
-  const nextAttributes =
-    updateData.attributes !== undefined
-      ? normalizeAttributes(updateData.attributes)
-      : (previous.attributes as Record<string, unknown>);
-  let nextDisplayName: string;
-  let attrsToWrite: Record<string, unknown> | undefined;
+  const nextDisplayName = updateData.name?.trim() || previous.displayName;
+  delete updateData.name;
 
-  if (updateData.name?.trim()) {
-    nextDisplayName = updateData.name.trim();
-    attrsToWrite = { name: nextDisplayName };
-    delete updateData.name;
-  } else {
-    const shouldRecompute = updateData.attributes !== undefined || updateData.category !== undefined;
-    nextDisplayName = shouldRecompute
-      ? composeDisplayName(nextCategory, nextAttributes)
-      : previous.displayName;
-    attrsToWrite = updateData.attributes !== undefined ? nextAttributes : undefined;
-  }
-
-  const colourIdPatch = attrsToWrite !== undefined
-    ? { colourId: await colourIdFromAttributes(attrsToWrite) }
-    : {};
   const master = await db.accessoryMaster.update({
     where: { id },
     data: {
       ...updateData,
-      ...(attrsToWrite !== undefined ? { attributes: attrsToWrite } : {}),
-      ...colourIdPatch,
       displayName: nextDisplayName,
     },
   });
@@ -371,12 +183,12 @@ export async function createAccessoryMastersTyped(
     unit: AccessoryUnit;
     vendorId: string | null;
     hsnCode: string | null;
-    comments: string | null;
   },
   entries: Array<{
     name: string;
     defaultCostPerUnit: number | null;
     imageUrl: string | null;
+    comments: string | null;
     articleCodeUnits: ArticleCodeUnit[];
   }>
 ) {
@@ -398,7 +210,7 @@ export async function createAccessoryMastersTyped(
           vendorId: shared.vendorId || null,
           defaultCostPerUnit: entry.defaultCostPerUnit ?? null,
           hsnCode: shared.hsnCode?.trim() || null,
-          comments: shared.comments?.trim() || null,
+          comments: entry.comments?.trim() || null,
           imageUrl: entry.imageUrl || null,
         } as any,
       });

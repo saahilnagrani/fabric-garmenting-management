@@ -89,21 +89,21 @@ type LineItem = {
   vendorId: string;
   quantity: string;
   costPerUnit: string;
+  comments: string;
 };
 
 type SharedFields = {
   category: string;
   invoiceNumber: string;
   purchaseDate: string;
-  comments: string;
 };
 
 function newLine(): LineItem {
-  return { _key: Math.random().toString(36).slice(2), accessoryId: "", vendorId: "", quantity: "", costPerUnit: "" };
+  return { _key: Math.random().toString(36).slice(2), accessoryId: "", vendorId: "", quantity: "", costPerUnit: "", comments: "" };
 }
 
 function emptyShared(): SharedFields {
-  return { category: "", invoiceNumber: "", purchaseDate: new Date().toISOString().slice(0, 10), comments: "" };
+  return { category: "", invoiceNumber: "", purchaseDate: new Date().toISOString().slice(0, 10) };
 }
 
 // --- Edit-mode form ---
@@ -327,7 +327,7 @@ export function AccessoryPurchaseSheet({
             costPerUnit: toNum(l.costPerUnit),
             invoiceNumber: shared.invoiceNumber.trim() || null,
             purchaseDate: shared.purchaseDate ? new Date(shared.purchaseDate) : null,
-            comments: shared.comments.trim() || null,
+            comments: l.comments.trim() || null,
           })),
         );
         toast.success(lines.length === 1 ? "Purchase recorded" : `${lines.length} purchases recorded`);
@@ -646,13 +646,6 @@ export function AccessoryPurchaseSheet({
                     </div>
                   </div>
 
-                  <div className="space-y-0.5">
-                    <Label className="text-[11px]">Comments</Label>
-                    <Textarea value={shared.comments}
-                      onChange={(e) => updateShared("comments", e.target.value)}
-                      className="min-h-[48px] resize-none text-xs" />
-                  </div>
-
                   <div className="space-y-2">
                     <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Accessories ({lines.length})
@@ -710,6 +703,13 @@ export function AccessoryPurchaseSheet({
                               <Input type="number" step="0.01" value={line.costPerUnit}
                                 onChange={(e) => updateLine(idx, "costPerUnit", e.target.value)} className="h-8 text-xs" />
                             </div>
+                          </div>
+
+                          <div className="space-y-0.5">
+                            <Label className="text-[11px]">Comments</Label>
+                            <Textarea value={line.comments}
+                              onChange={(e) => updateLine(idx, "comments", e.target.value)}
+                              className="min-h-[40px] resize-none text-xs" />
                           </div>
 
                           {lineTotal > 0 && (

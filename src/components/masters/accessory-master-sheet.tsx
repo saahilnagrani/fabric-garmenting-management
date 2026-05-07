@@ -51,6 +51,7 @@ type TypeRow = {
   defaultCostPerUnit: string;
   imageUrl: string | null;    // base64 data URL
   imageName: string | null;   // original filename for display
+  comments: string;
   articleCodeUnits: ArticleCodeRow[];
 };
 
@@ -61,7 +62,7 @@ function toNum(v: unknown): number | null {
 }
 
 function emptyTypeRow(): TypeRow {
-  return { name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, articleCodeUnits: [] };
+  return { name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, comments: "", articleCodeUnits: [] };
 }
 
 // Shared form state (category, vendor, unit, etc.)
@@ -70,7 +71,6 @@ type SharedForm = {
   unit: string;
   vendorId: string;
   hsnCode: string;
-  comments: string;
 };
 
 const emptyShared: SharedForm = {
@@ -78,7 +78,6 @@ const emptyShared: SharedForm = {
   unit: "PIECES",
   vendorId: "",
   hsnCode: "",
-  comments: "",
 };
 
 // Edit form (single row)
@@ -87,14 +86,14 @@ type EditForm = SharedForm & {
   defaultCostPerUnit: string;
   imageUrl: string | null;
   imageName: string | null;
+  comments: string;
   articleCodeUnits: ArticleCodeRow[];
 };
 
 function rowToEditForm(row: AccessoryMasterRow): EditForm {
-  const attrName = typeof row.attributes?.name === "string" ? row.attributes.name : null;
   return {
     category: row.category,
-    name: attrName || row.displayName,
+    name: row.displayName,
     unit: row.unit,
     vendorId: row.vendorId || "",
     hsnCode: row.hsnCode || "",
@@ -143,7 +142,7 @@ export function AccessoryMasterSheet({
 
   // Edit mode state
   const [editForm, setEditForm] = useState<EditForm>({
-    ...emptyShared, name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, articleCodeUnits: [],
+    ...emptyShared, name: "", defaultCostPerUnit: "", imageUrl: null, imageName: null, comments: "", articleCodeUnits: [],
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -269,6 +268,7 @@ export function AccessoryMasterSheet({
       name: string;
       defaultCostPerUnit: number | null;
       imageUrl: string | null;
+      comments: string | null;
       articleCodeUnits: Array<{ code: string; units: number }>;
     }> = [];
 
@@ -279,7 +279,7 @@ export function AccessoryMasterSheet({
       const cost = toNum(row.defaultCostPerUnit);
       const articleCodeUnits = cleanArticleCodes(row.articleCodeUnits);
       if (articleCodeUnits === null) return;
-      entries.push({ name, defaultCostPerUnit: cost, imageUrl: row.imageUrl, articleCodeUnits });
+      entries.push({ name, defaultCostPerUnit: cost, imageUrl: row.imageUrl, comments: row.comments.trim() || null, articleCodeUnits });
     }
 
     setSubmitting(true);
@@ -291,7 +291,6 @@ export function AccessoryMasterSheet({
           unit: shared.unit as any,
           vendorId: shared.vendorId || null,
           hsnCode: shared.hsnCode.trim() || null,
-          comments: shared.comments.trim() || null,
         },
         entries
       );
@@ -480,7 +479,7 @@ function SharedFields({
   vendors,
   onChange,
 }: {
-  shared: { category: string; unit: string; vendorId: string; hsnCode: string; comments: string };
+  shared: { category: string; unit: string; vendorId: string; hsnCode: string };
   vendors: { id: string; name: string }[];
   onChange: (patch: Partial<typeof shared>) => void;
 }) {
@@ -752,6 +751,15 @@ function CreateModeForm({
               onClear={() => onUpdateType(idx, { imageUrl: null, imageName: null })}
             />
 
+            <div className="space-y-0.5">
+              <Label className="text-[11px]">Comments</Label>
+              <Textarea
+                value={row.comments}
+                onChange={(e) => onUpdateType(idx, { comments: e.target.value })}
+                className="min-h-[50px] resize-none text-xs"
+              />
+            </div>
+
             <ArticleCodesSection
               rows={row.articleCodeUnits}
               articleCodes={articleCodes}
@@ -761,15 +769,6 @@ function CreateModeForm({
             />
           </div>
         ))}
-      </div>
-
-      <div className="space-y-0.5">
-        <Label className="text-[11px]">Comments</Label>
-        <Textarea
-          value={shared.comments}
-          onChange={(e) => onSharedChange("comments", e.target.value)}
-          className="min-h-[50px] resize-none text-xs"
-        />
       </div>
     </div>
   );
