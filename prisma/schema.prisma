@@ -676,6 +676,7 @@ enum AccessoryUnit {
   GRAMS
   ROLLS
   PACKS
+  GROSS
 }
 
 model AccessoryMaster {

@@ -20,7 +20,7 @@ import { CATEGORIES } from "@/lib/accessory-categories";
 import { toast } from "sonner";
 import { Loader2, Archive, Trash2, Plus, X, ImageIcon } from "lucide-react";
 
-const UNIT_OPTIONS = ["PIECES", "METERS", "KG", "GRAMS", "ROLLS", "PACKS"] as const;
+const UNIT_OPTIONS = ["PIECES", "METERS", "KG", "GRAMS", "ROLLS", "PACKS", "GROSS"] as const;
 
 export type AccessoryMasterRow = {
   id: string;

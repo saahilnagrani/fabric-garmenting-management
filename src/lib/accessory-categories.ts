@@ -135,6 +135,15 @@ export const CATEGORIES: CategoryConfig[] = [
     displayFields: ["baseName", "size"],
   },
   {
+    value: "BRA_CUPS",
+    label: "Bra Cups",
+    fields: [
+      { key: "baseName", label: "Name", type: "text", required: true },
+      { key: "variant",  label: "Variant", type: "text" },
+    ],
+    displayFields: ["baseName", "variant"],
+  },
+  {
     value: "OTHER",
     label: "Other",
     fields: [
