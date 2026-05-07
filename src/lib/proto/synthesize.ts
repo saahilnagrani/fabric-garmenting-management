@@ -59,6 +59,10 @@ export type SynthAllocation = {
   consumedKg: number;
   isReservation: boolean;
   reservationPurpose?: string;
+  // Real-data only: how many kg of this allocation have been dispatched
+  // (sum of AllocationDispatch.qtyKg). 0 for synthesised rows.
+  dispatchedKg?: number;
+  stage?: "AT_VENDOR" | "PARTIALLY_AT_GARMENTER" | "AT_GARMENTER";
 };
 
 export type SynthCustody = {
@@ -296,13 +300,16 @@ export function synthesizeFabricOrder(
     };
   }
 ) {
-  const receipts = opts?.real?.receipts && opts.real.receipts.length > 0
+  // If the real arrays are provided — even when empty — they are
+  // authoritative. Only fall back to synthesis when a field is wholly
+  // omitted (i.e. caller didn't pass any real data at all).
+  const receipts = opts?.real?.receipts !== undefined
     ? opts.real.receipts
     : synthesizeReceipts(fo, opts);
-  const dispatches = opts?.real?.dispatches && opts.real.dispatches.length > 0
+  const dispatches = opts?.real?.dispatches !== undefined
     ? opts.real.dispatches
     : synthesizeDispatches(fo, receipts);
-  const allocations = opts?.real?.allocations && opts.real.allocations.length > 0
+  const allocations = opts?.real?.allocations !== undefined
     ? opts.real.allocations
     : synthesizeAllocations(fo, linkedProducts, dispatches);
   const custody = computeCustody(fo, receipts, dispatches);
@@ -327,6 +334,7 @@ export function adaptRealCustody(row: {
     productId: string | null;
     product: { articleNumber: string | null; styleNumber: string; productName: string | null } | null;
     garmenter: { name: string } | null;
+    dispatches?: { qtyKg: DecimalLike }[];
   }[];
 }, fallbackGarmenterName: string | null): { receipts: SynthReceipt[]; dispatches: SynthDispatch[]; allocations: SynthAllocation[] } {
   return {
@@ -358,6 +366,8 @@ export function adaptRealCustody(row: {
       consumedKg: toNum(a.consumedKg),
       isReservation: a.isReservation,
       reservationPurpose: a.reservationPurpose ?? undefined,
+      dispatchedKg: (a.dispatches ?? []).reduce((s, d) => s + toNum(d.qtyKg), 0),
+      stage: (a.stage as SynthAllocation["stage"]) ?? "AT_VENDOR",
     })),
   };
 }

@@ -350,16 +350,8 @@ export function PlanningForm({
     const options: { label: string; value: string }[] = [];
     for (const [article, masters] of articleGroups) {
       const productName = String(masters[0].productName || masters[0].styleNumber || "");
-      // Build a list of unique fabric names across this article's PMs
-      const fabricNames = Array.from(
-        new Set(
-          masters
-            .map((m) => String(m.fabricName || "").trim())
-            .filter((f) => f.length > 0)
-        )
-      );
-      const fabricPart = fabricNames.length > 0 ? fabricNames.join(", ") : "";
-      const parts = [article, productName, fabricPart].filter((p) => p.length > 0);
+      const productType = String(masters[0].type || "");
+      const parts = [article, productType, productName].filter((p) => p.length > 0);
       options.push({ label: parts.join(" · "), value: article });
     }
     return options.sort((a, b) => {

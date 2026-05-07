@@ -4,9 +4,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
   adaptRealCustody,
-  applyDemoState,
   assignFoDisplayNumbers,
-  pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
   type SynthAllocation,
@@ -93,19 +91,13 @@ export default async function ProtoGarmentersPage({ searchParams }: { searchPara
     if (!garmentersByName.has(l.name)) garmentersByName.set(l.name, { name: l.name, contactInfo: null, address: null });
   }
 
-  // 2. Synthesize all FOs (with demo overrides so the screen has something to show)
-  const adapted = orders.map(adaptFabricOrder);
-  const demoStates = pickDemoStates(adapted);
-  const overReceiptId = [...demoStates.entries()].find(([, s]) => s === "over")?.[0] ?? null;
-
+  // 2. Synthesize all FOs from real data only (no demo overrides).
   // Resolve each FO's garmenter from the FO field first, then fall back to the
-  // most-frequent garmenter among its linked Products. The real data lives on
-  // Product.garmentingAtId in this client's setup.
+  // most-frequent garmenter among its linked Products.
   const synthesized = orders.map((row) => {
     const baseFo = adaptFabricOrder(row);
     const inferredGarm = baseFo.garmentingAtName ?? inferGarmenterFromProducts(row.productLinks);
-    const foWithGarm = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
-    const fo = applyDemoState(foWithGarm, demoStates.get(baseFo.id));
+    const fo = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
       articleNumber: link.product.articleNumber,
@@ -114,7 +106,7 @@ export default async function ProtoGarmentersPage({ searchParams }: { searchPara
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
     const real = adaptRealCustody(row, fo.garmentingAtName);
-    return synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId, real });
+    return synthesizeFabricOrder(fo, linkedProducts, { real });
   });
 
   // 3. Aggregate dispatches per garmenter, broken down by (fabric, colour)
@@ -139,7 +131,7 @@ export default async function ProtoGarmentersPage({ searchParams }: { searchPara
   };
 
   // Canonical FO display numbers (shared across all proto screens).
-  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
+  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), new Map());
 
   // Group dispatches and allocations by garmenter → fabric+colour
   const byGarmenter = new Map<string, Map<string, FabricBlock>>();

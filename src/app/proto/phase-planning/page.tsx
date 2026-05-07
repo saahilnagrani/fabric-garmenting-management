@@ -88,18 +88,19 @@ export default async function ProtoPhasePlanningPage() {
         gender: String(pm.gender),
         garmenterName,
         garmenterId,
-        // Fabric 1 (always present)
+        // Fabric 1 (always present). PM's own per-fabric cost wins; fall
+        // back to the FabricMaster's mrp. Mirrors the live PlanningForm.
         fabricName: pm.fabricName ?? null,
         fabricVendorId: fv?.vendorId ?? null,
         fabricVendorName: fv?.vendorName ?? null,
-        fabricCostPerKg: fv?.mrp ?? null,
+        fabricCostPerKg: pm.fabricCostPerKg ? Number(pm.fabricCostPerKg.toString()) : (fv?.mrp ?? null),
         garmentsPerKg: pm.garmentsPerKg ? Number(pm.garmentsPerKg.toString()) : null,
         coloursAvailable: pm.coloursAvailable ?? [],
         // Fabric 2
         fabric2Name: pm.fabric2Name ?? null,
         fabric2VendorId: fv2?.vendorId ?? null,
         fabric2VendorName: fv2?.vendorName ?? null,
-        fabric2CostPerKg: fv2?.mrp ?? null,
+        fabric2CostPerKg: pm.fabric2CostPerKg ? Number(pm.fabric2CostPerKg.toString()) : (fv2?.mrp ?? null),
         garmentsPerKg2: pm.garmentsPerKg2 ? Number(pm.garmentsPerKg2.toString()) : null,
         colours2Available: pm.colours2Available ?? [],
         // Fabric 3

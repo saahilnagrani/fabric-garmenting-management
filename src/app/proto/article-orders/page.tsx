@@ -1,11 +1,12 @@
 import { db } from "@/lib/db";
 import { getCurrentPhase } from "@/actions/phases";
+import { getVendors } from "@/actions/vendors";
+import { getFabricMasters } from "@/actions/fabric-masters";
+import { getProductMasters } from "@/actions/product-masters";
 import {
   adaptFabricOrder,
   adaptRealCustody,
-  applyDemoState,
   assignFoDisplayNumbers,
-  pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
 } from "@/lib/proto/synthesize";
@@ -48,14 +49,26 @@ export default async function ProtoArticleOrdersPage() {
         articleNumber: true,
         styleNumber: true,
         productName: true,
+        type: true,
         colourOrdered: true,
         fabricName: true,
         fabricOrderedQuantityKg: true,
+        garmentNumber: true,
         garmentingAt: true,
         garmentingAtRef: { select: { name: true } },
         status: true,
         isRepeat: true,
-        fabricOrderLinks: { select: { fabricOrderId: true } },
+        fabricOrderLinks: { select: { fabricOrderId: true, fabricSlot: true } },
+        allocations: {
+          select: {
+            id: true,
+            fabricOrderId: true,
+            qtyKg: true,
+            stage: true,
+            fabricOrder: { select: { fabricName: true, colour: true } },
+            dispatches: { select: { qtyKg: true } },
+          },
+        },
       },
     }),
     db.fabricOrder.findMany({
@@ -85,15 +98,12 @@ export default async function ProtoArticleOrdersPage() {
           include: {
             product: { select: { articleNumber: true, styleNumber: true, productName: true } },
             garmenter: { select: { name: true } },
+            dispatches: { select: { qtyKg: true } },
           },
         },
       },
     }),
   ]);
-
-  const adapted = fabricOrders.map(adaptFabricOrder);
-  const demoStates = pickDemoStates(adapted);
-  const overReceiptId = [...demoStates.entries()].find(([, s]) => s === "over")?.[0] ?? null;
 
   // Synthesize each FO so we know its received/ordered ratio, dispatches etc.
   const synthByFoId = new Map<string, ReturnType<typeof synthesizeFabricOrder>>();
@@ -101,8 +111,7 @@ export default async function ProtoArticleOrdersPage() {
   for (const row of fabricOrders) {
     const baseFo = adaptFabricOrder(row);
     const inferredGarm = baseFo.garmentingAtName ?? inferGarmenterFromProducts(row.productLinks);
-    const foWithGarm = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
-    const fo = applyDemoState(foWithGarm, demoStates.get(baseFo.id));
+    const fo = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
       articleNumber: link.product.articleNumber,
@@ -111,47 +120,125 @@ export default async function ProtoArticleOrdersPage() {
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
     const real = adaptRealCustody(row, fo.garmentingAtName);
-    const synth = synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId, real });
+    const synth = synthesizeFabricOrder(fo, linkedProducts, { real });
     synthByFoId.set(row.id, synth);
     sortedSynth.push(synth);
   }
 
   // Canonical FO display numbers (shared across all proto screens).
-  const foDisplayNumber = assignFoDisplayNumbers(sortedSynth.map((s) => s.fabricOrder), demoStates);
+  const foDisplayNumber = assignFoDisplayNumbers(sortedSynth.map((s) => s.fabricOrder), new Map());
 
-  // Build per-article coverage rows
+  // Precompute, per FO:
+  //   pendingKg          = vendor still owes us (orderedKg − Σ receipts)
+  //   freeKg             = received but not yet dispatched
+  //   totalUnfulfilledKg = sum of (planned − dispatched) across all allocs
+  // Used to prorate "expected" (pending pool) and "in-pool" (free pool)
+  // shares across the FO's open allocations.
+  type FoAgg = { pendingKg: number; freeKg: number; totalUnfulfilledKg: number };
+  const foAggById = new Map<string, FoAgg>();
+  // FO statuses that mean "vendor will not ship anything more" — pendingKg
+  // collapses to 0 even if received < ordered. The shortfall flips to
+  // hard-short on every AO that was relying on this FO.
+  const VENDOR_DONE_STATUSES = new Set(["RECEIVED", "FULLY_SETTLED"]);
+  for (const fo of fabricOrders) {
+    const ordered = protoNumberFmt.toNum(fo.fabricOrderedQuantityKg);
+    const receivedSum = fo.receipts.reduce((s, r) => s + protoNumberFmt.toNum(r.qtyKg), 0);
+    const dispatchedSum = fo.dispatches.reduce((s, d) => s + protoNumberFmt.toNum(d.qtyKg), 0);
+    const vendorDone = VENDOR_DONE_STATUSES.has(String(fo.orderStatus));
+    const pendingKg = vendorDone ? 0 : Math.max(0, ordered - receivedSum);
+    const freeKg = Math.max(0, receivedSum - dispatchedSum);
+    let totalUnfulfilledKg = 0;
+    for (const a of fo.allocations) {
+      const planned = protoNumberFmt.toNum(a.qtyKg);
+      const allocDispatched = (a.dispatches ?? []).reduce((s, d) => s + protoNumberFmt.toNum(d.qtyKg), 0);
+      totalUnfulfilledKg += Math.max(0, planned - allocDispatched);
+    }
+    foAggById.set(fo.id, { pendingKg, freeKg, totalUnfulfilledKg });
+  }
+
+  // Build per-article coverage rows. Demand is computed from Allocations
+  // (sum of qtyKg per fabricName) so multi-fabric articles report total
+  // correctly. Each fabric becomes its own bar in the row.
   const rows: ArticleRow[] = products.map((p, idx) => {
-    const demand = protoNumberFmt.toNum(p.fabricOrderedQuantityKg);
-    let fromReceived = 0;
-    let fromExpected = 0;
-    const sources: ArticleRow["sources"] = [];
+    type FabricGroup = {
+      fabricName: string;
+      colour: string;
+      demandKg: number;
+      dispatchedKg: number;     // already at garmenter (green)
+      inPoolKg: number;         // in our warehouse, eligible (blue)
+      fromExpectedKg: number;   // vendor still owes (ochre)
+      shortfallKg: number;      // hatched
+      sources: ArticleRow["fabrics"][number]["sources"];
+    };
+    const groups = new Map<string, FabricGroup>();
 
-    for (const link of p.fabricOrderLinks) {
-      const synth = synthByFoId.get(link.fabricOrderId);
-      if (!synth) continue;
-      // Allocation qty against this FO from this product (synthesizer set it
-      // = demandKg per link; we divide by number of links for this product so
-      // we don't double-count when a product spans 2 FOs).
-      const linkCount = p.fabricOrderLinks.length || 1;
-      const allocatedQty = round1(demand / linkCount);
-      const ratioReceived = synth.custody.orderedKg > 0
-        ? Math.min(1, synth.custody.receivedKg / synth.custody.orderedKg)
+    for (const a of p.allocations) {
+      const fabricName = a.fabricOrder?.fabricName ?? "—";
+      const colour = a.fabricOrder?.colour ?? "—";
+      const key = `${fabricName}|${colour}`;
+      const planned = protoNumberFmt.toNum(a.qtyKg);
+      const dispatched = (a.dispatches ?? []).reduce((s, d) => s + protoNumberFmt.toNum(d.qtyKg), 0);
+      const unfulfilled = Math.max(0, planned - dispatched);
+
+      // Pro-rate the FO's free pool and pending-from-vendor across all
+      // unfulfilled allocations on this FO. Free is consumed first
+      // (since it's already in our hands); whatever the AO can still
+      // expect from the vendor comes after.
+      const foAgg = foAggById.get(a.fabricOrderId) ?? { pendingKg: 0, freeKg: 0, totalUnfulfilledKg: 0 };
+      const share = foAgg.totalUnfulfilledKg > 0 ? (unfulfilled / foAgg.totalUnfulfilledKg) : 0;
+      const inPoolPart = round1(share * Math.min(foAgg.freeKg, foAgg.totalUnfulfilledKg));
+      // The free pool fills first, so the "expected from vendor" share is
+      // calculated against the unfulfilled remaining after pool coverage.
+      const stillUnfulfilledAfterPool = Math.max(0, foAgg.totalUnfulfilledKg - foAgg.freeKg);
+      const shareForVendor = stillUnfulfilledAfterPool > 0
+        ? Math.max(0, unfulfilled - inPoolPart) / stillUnfulfilledAfterPool
         : 0;
-      const recPart = round1(allocatedQty * ratioReceived);
-      const expPart = round1(allocatedQty - recPart);
-      fromReceived += recPart;
-      fromExpected += expPart;
-      sources.push({
-        foDisplay: foDisplayNumber.get(link.fabricOrderId) ?? link.fabricOrderId.slice(-4),
-        receivedKg: recPart,
+      const expPart = round1(shareForVendor * Math.min(foAgg.pendingKg, stillUnfulfilledAfterPool));
+      const shortPart = round1(Math.max(0, unfulfilled - inPoolPart - expPart));
+
+      const g = groups.get(key) ?? {
+        fabricName,
+        colour,
+        demandKg: 0,
+        dispatchedKg: 0,
+        inPoolKg: 0,
+        fromExpectedKg: 0,
+        shortfallKg: 0,
+        sources: [],
+      };
+      g.demandKg += planned;
+      g.dispatchedKg += dispatched;
+      g.inPoolKg += inPoolPart;
+      g.fromExpectedKg += expPart;
+      g.shortfallKg += shortPart;
+      g.sources.push({
+        foDisplay: foDisplayNumber.get(a.fabricOrderId) ?? a.fabricOrderId.slice(-4),
+        dispatchedKg: round1(dispatched),
+        inPoolKg: inPoolPart,
         expectedKg: expPart,
       });
+      groups.set(key, g);
     }
 
-    const allocated = round1(fromReceived + fromExpected);
-    const shortfallKg = round1(Math.max(0, demand - allocated));
-    const overKg = round1(Math.max(0, allocated - demand));
-    const coveragePct = demand > 0 ? Math.round((allocated / demand) * 100) : 0;
+    const fabrics = [...groups.values()].map((g) => ({
+      fabricName: g.fabricName,
+      colour: g.colour,
+      demandKg: round1(g.demandKg),
+      dispatchedKg: round1(g.dispatchedKg),
+      inPoolKg: round1(g.inPoolKg),
+      fromExpectedKg: round1(g.fromExpectedKg),
+      shortfallKg: round1(g.shortfallKg),
+      sources: g.sources,
+    }));
+
+    // Aggregates across all fabrics (for KPI strip + coverage %)
+    const demand = round1(fabrics.reduce((s, f) => s + f.demandKg, 0));
+    const dispatched = round1(fabrics.reduce((s, f) => s + f.dispatchedKg, 0));
+    const inPool = round1(fabrics.reduce((s, f) => s + f.inPoolKg, 0));
+    const fromExpected = round1(fabrics.reduce((s, f) => s + f.fromExpectedKg, 0));
+    const covered = round1(dispatched + inPool + fromExpected);
+    const shortfallKg = round1(Math.max(0, demand - covered));
+    const coveragePct = demand > 0 ? Math.round((covered / demand) * 100) : 0;
 
     return {
       id: p.id,
@@ -159,18 +246,20 @@ export default async function ProtoArticleOrdersPage() {
       articleNumber: p.articleNumber,
       styleNumber: p.styleNumber,
       productName: p.productName,
+      type: p.type ?? null,
       colour: p.colourOrdered,
       fabricName: p.fabricName,
       garmenterName: p.garmentingAtRef?.name ?? p.garmentingAt ?? null,
       status: p.status,
       isRepeat: p.isRepeat,
-      demandKg: round1(demand),
-      fromReceivedKg: round1(fromReceived),
-      fromExpectedKg: round1(fromExpected),
+      targetQty: p.garmentNumber ?? 0,
+      demandKg: demand,
+      dispatchedKg: dispatched,
+      inPoolKg: inPool,
+      fromExpectedKg: fromExpected,
       shortfallKg,
-      overKg,
       coveragePct,
-      sources,
+      fabrics,
     };
   });
 
@@ -178,13 +267,24 @@ export default async function ProtoArticleOrdersPage() {
   const totals = rows.reduce(
     (acc, r) => {
       acc.demand += r.demandKg;
-      acc.received += r.fromReceivedKg;
+      acc.dispatched += r.dispatchedKg;
+      acc.inPool += r.inPoolKg;
       acc.expected += r.fromExpectedKg;
       acc.shortfall += r.shortfallKg;
       return acc;
     },
-    { demand: 0, received: 0, expected: 0, shortfall: 0 }
+    { demand: 0, dispatched: 0, inPool: 0, expected: 0, shortfall: 0 }
   );
+
+  // Masters needed by the live ProductOrderSheet (for the pencil edit
+  // button on the proto AO row).
+  const [vendors, fabricMastersData, productMastersData, sizeDistData] = await Promise.all([
+    getVendors(),
+    getFabricMasters(),
+    getProductMasters(),
+    db.sizeDistribution.findMany(),
+  ]);
+  const rawProducts = JSON.parse(JSON.stringify(products));
 
   return (
     <div className="space-y-4">
@@ -196,7 +296,16 @@ export default async function ProtoArticleOrdersPage() {
         </p>
       </div>
 
-      <ArticleOrdersProtoGrid rows={rows} totals={totals} />
+      <ArticleOrdersProtoGrid
+        rows={rows}
+        totals={totals}
+        rawProducts={rawProducts}
+        vendors={JSON.parse(JSON.stringify(vendors))}
+        fabricMasters={JSON.parse(JSON.stringify(fabricMastersData))}
+        productMasters={JSON.parse(JSON.stringify(productMastersData))}
+        sizeDistributions={JSON.parse(JSON.stringify(sizeDistData))}
+        phaseId={phase.id}
+      />
     </div>
   );
 }

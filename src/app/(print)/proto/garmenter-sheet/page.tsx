@@ -3,9 +3,7 @@ import { getCurrentPhase } from "@/actions/phases";
 import {
   adaptFabricOrder,
   adaptRealCustody,
-  applyDemoState,
   assignFoDisplayNumbers,
-  pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
   type SynthAllocation,
@@ -62,15 +60,10 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
     },
   });
 
-  const adapted = orders.map(adaptFabricOrder);
-  const demoStates = pickDemoStates(adapted);
-  const overReceiptId = [...demoStates.entries()].find(([, s]) => s === "over")?.[0] ?? null;
-
   const synthesized = orders.map((row) => {
     const baseFo = adaptFabricOrder(row);
     const inferredGarm = baseFo.garmentingAtName ?? inferGarmenterFromProducts(row.productLinks);
-    const foWithGarm = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
-    const fo = applyDemoState(foWithGarm, demoStates.get(baseFo.id));
+    const fo = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
       articleNumber: link.product.articleNumber,
@@ -79,11 +72,11 @@ export default async function ProtoGarmenterPrintPage({ searchParams }: { search
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
     const real = adaptRealCustody(row, fo.garmentingAtName);
-    return synthesizeFabricOrder(fo, linkedProducts, { forceOverReceipt: fo.id === overReceiptId, real });
+    return synthesizeFabricOrder(fo, linkedProducts, { real });
   });
 
   // Canonical FO display numbers (shared across all proto screens).
-  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
+  const foDisplayNumber = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), new Map());
 
   // Aggregate this garmenter's fabric blocks
   type Block = {

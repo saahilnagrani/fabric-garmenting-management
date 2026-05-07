@@ -211,6 +211,8 @@ export function ProductGrid({
     numCol("packagingCost", "Packaging", 100),
     { headerName: "Total Garmenting", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalGarmenting(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Total Fabric Cost", minWidth: 110, editable: false, cellClass: "computed-cell", valueGetter: (p) => { if (!p.data) return 0; return (toNum(p.data.fabricCostPerKg) || 0) * (toNum(p.data.fabricOrderedQuantityKg) || 0); }, valueFormatter: (p) => formatCurrency(p.value) },
+    { headerName: "Fabric 1 Cost/Piece", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeFabricCostPerPiece({ fabricCostPerKg: p.data.fabricCostPerKg, assumedFabricGarmentsPerKg: p.data.assumedFabricGarmentsPerKg }) : 0, valueFormatter: (p) => formatCurrency(p.value) },
+    { headerName: "Fabric 2 Cost/Piece", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeFabricCostPerPiece({ fabricCostPerKg: p.data.fabric2CostPerKg, assumedFabricGarmentsPerKg: p.data.assumedFabric2GarmentsPerKg }) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Fabric Cost/Piece", minWidth: 115, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeFabricCostPerPiece(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     { headerName: "Total Cost Per Piece", minWidth: 120, editable: false, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalCost(p.data) : 0, valueFormatter: (p) => formatCurrency(p.value) },
     numCol("outwardShippingCost", "Inward Shipping", 110),

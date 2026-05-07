@@ -1,11 +1,13 @@
 import { db } from "@/lib/db";
 import { getCurrentPhase } from "@/actions/phases";
+import { getVendors } from "@/actions/vendors";
+import { getFabricMasters } from "@/actions/fabric-masters";
+import { getProductMasters } from "@/actions/product-masters";
+import { getGarmentingLocations } from "@/actions/garmenting-locations";
 import {
   adaptFabricOrder,
   adaptRealCustody,
-  applyDemoState,
   assignFoDisplayNumbers,
-  pickDemoStates,
   protoNumberFmt,
   synthesizeFabricOrder,
 } from "@/lib/proto/synthesize";
@@ -64,20 +66,16 @@ export default async function ProtoFabricOrdersPage() {
         include: {
           product: { select: { articleNumber: true, styleNumber: true, productName: true } },
           garmenter: { select: { name: true } },
+          dispatches: { select: { qtyKg: true } },
         },
       },
     },
   });
 
-  const adapted = orders.map(adaptFabricOrder);
-  const demoStates = pickDemoStates(adapted);
-  const overReceiptId = [...demoStates.entries()].find(([, s]) => s === "over")?.[0] ?? null;
-
   const synthesized = orders.map((row) => {
     const baseFo = adaptFabricOrder(row);
     const inferredGarm = baseFo.garmentingAtName ?? inferGarmenterFromProducts(row.productLinks);
-    const foWithGarm = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
-    const fo = applyDemoState(foWithGarm, demoStates.get(baseFo.id));
+    const fo = inferredGarm ? { ...baseFo, garmentingAtName: inferredGarm } : baseFo;
     const linkedProducts = row.productLinks.map((link) => ({
       productId: link.product.id,
       articleNumber: link.product.articleNumber,
@@ -86,10 +84,7 @@ export default async function ProtoFabricOrdersPage() {
       demandKg: protoNumberFmt.toNum(link.product.fabricOrderedQuantityKg),
     }));
     const real = adaptRealCustody(row, fo.garmentingAtName);
-    return synthesizeFabricOrder(fo, linkedProducts, {
-      forceOverReceipt: fo.id === overReceiptId,
-      real,
-    });
+    return synthesizeFabricOrder(fo, linkedProducts, { real });
   });
 
   function inferGarmenterFromProducts(
@@ -118,28 +113,40 @@ export default async function ProtoFabricOrdersPage() {
   );
 
   // Canonical FO display numbers (shared across all proto screens).
-  const displayNumbers = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), demoStates);
+  const displayNumbers = assignFoDisplayNumbers(synthesized.map((s) => s.fabricOrder), new Map());
 
-  // Sort rows so demo orders appear first in the table.
-  const demoOrder: Record<string, number> = { over: 0, partial: 1, full: 2, vendor: 3 };
-  const sortedSynth = [...synthesized].sort((a, b) => {
-    const aState = demoStates.get(a.fabricOrder.id);
-    const bState = demoStates.get(b.fabricOrder.id);
-    const ai = aState ? demoOrder[aState] : 99;
-    const bi = bState ? demoOrder[bState] : 99;
-    if (ai !== bi) return ai - bi;
-    return a.fabricOrder.id.localeCompare(b.fabricOrder.id);
+  const sortedSynth = [...synthesized].sort((a, b) => a.fabricOrder.id.localeCompare(b.fabricOrder.id));
+  const serialized = sortedSynth.map((s) => {
+    // freeKg = total received − total dispatched. Everything received that
+    // hasn't been dispatched is "in our hands, available for any AO".
+    const totalReceived = s.receipts.reduce((sum, r) => sum + r.qtyKg, 0);
+    const totalDispatched = s.dispatches.reduce((sum, d) => sum + d.qtyKg, 0);
+    const freeKg = Math.max(0, totalReceived - totalDispatched);
+    return {
+      fabricOrder: s.fabricOrder,
+      displayNumber: displayNumbers.get(s.fabricOrder.id) ?? "FO-????",
+      receipts: s.receipts.map((r) => ({ ...r, date: r.date.toISOString() })),
+      dispatches: s.dispatches.map((d) => ({ ...d, date: d.date.toISOString() })),
+      allocations: s.allocations,
+      freeKg: Math.round(freeKg * 10) / 10,
+      custody: s.custody,
+      orderDateIso: s.fabricOrder.orderDate?.toISOString() ?? null,
+      demoState: null,
+    };
   });
-  const serialized = sortedSynth.map((s) => ({
-    fabricOrder: s.fabricOrder,
-    displayNumber: displayNumbers.get(s.fabricOrder.id) ?? "FO-????",
-    receipts: s.receipts.map((r) => ({ ...r, date: r.date.toISOString() })),
-    dispatches: s.dispatches.map((d) => ({ ...d, date: d.date.toISOString() })),
-    allocations: s.allocations,
-    custody: s.custody,
-    orderDateIso: s.fabricOrder.orderDate?.toISOString() ?? null,
-    demoState: demoStates.get(s.fabricOrder.id) ?? null,
-  }));
+
+  // Pull masters needed by the live FabricOrderSheet (for the pencil edit
+  // button on the proto FO row).
+  const [vendors, fabricMasters, productMasters, garmentingLocationRecords] = await Promise.all([
+    getVendors(),
+    getFabricMasters(),
+    getProductMasters(),
+    getGarmentingLocations(),
+  ]);
+  const garmentingLocations = garmentingLocationRecords.map((l) => l.name);
+
+  // Raw FO rows (decimals stringified) so the live sheet can pre-fill its form.
+  const rawOrders = JSON.parse(JSON.stringify(orders));
 
   return (
     <div className="space-y-4">
@@ -151,21 +158,20 @@ export default async function ProtoFabricOrdersPage() {
         </p>
       </div>
 
-      {demoStates.size > 0 && (
-        <div className="text-[12.5px] rounded-md border border-[oklch(0.85_0.06_45)] bg-[oklch(0.98_0.025_45)] px-3 py-2 text-[oklch(0.40_0.16_45)]">
-          Phase {phase.number} has no live shipping data, so the top {demoStates.size} orders are seeded with demo states (full · partial · over · vendor) so the screen reads as a worked example.
-          Real orders below behave normally.
-        </div>
-      )}
-
       <FabricOrdersProtoGrid
         rows={serialized}
         totals={totals}
-        overReceiptId={overReceiptId}
-        demoIds={new Set(demoStates.keys())}
+        overReceiptId={null}
+        demoIds={new Set()}
         garmenters={garmenters}
         isTestPhase={phase.isTestPhase}
         phaseNumber={phase.number}
+        rawOrders={rawOrders}
+        vendors={JSON.parse(JSON.stringify(vendors))}
+        fabricMasters={JSON.parse(JSON.stringify(fabricMasters))}
+        productMasters={JSON.parse(JSON.stringify(productMasters))}
+        garmentingLocations={garmentingLocations}
+        phaseId={phase.id}
       />
     </div>
   );

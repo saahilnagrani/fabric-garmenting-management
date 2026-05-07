@@ -16,20 +16,20 @@ const screens = [
       "Orders grid with expandable receipts timeline. Adds On-order / In-our-hands / At-garmenter columns. One row force-demos an over-receipt with the surplus banner.",
   },
   {
-    href: "/proto/fabric-orders",
-    title: "Receive fabric",
+    href: "/proto/receipts",
+    title: "Receipts",
     n: "02",
-    status: "live · sheet on fabric-orders",
+    status: "live · real DB data",
     blurb:
-      "Click 'Log receipt' on any expanded fabric order row to open the receive sheet (form + post-save allocate/dispatch branch).",
+      "Phase-wide list of every FabricReceipt with its assigned-vs-free split. Audit trail across all FOs. Log new receipts from /proto/fabric-orders.",
   },
   {
-    href: "/proto/fabric-orders",
-    title: "Dispatch to garmenter",
+    href: "/proto/dispatches",
+    title: "Dispatches",
     n: "03",
-    status: "live · sheet on fabric-orders",
+    status: "live · real DB data",
     blurb:
-      "Click 'Dispatch' on any expanded fabric order row (or 'Allocate surplus' on an over-receipt) to open the dispatch sheet.",
+      "Phase-wide list of every GarmenterDispatch grouped by garmenter. Log new dispatches from /proto/fabric-orders.",
   },
   {
     href: "/proto/garmenters",

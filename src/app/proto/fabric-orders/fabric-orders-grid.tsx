@@ -1,13 +1,14 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import { ChevronRight, Plus, ArrowRight, ChevronDown } from "lucide-react";
+import { ChevronRight, Plus, ArrowRight, ChevronDown, Pencil } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ReceiveSheet } from "./receive-sheet";
 import { DispatchSheet } from "./dispatch-sheet";
+import { FabricOrderSheet } from "@/components/fabric-orders/fabric-order-sheet";
 
 type GroupBy = "none" | "vendor" | "garmenter" | "fabric";
 type SheetKind = "receive" | "dispatch" | null;
@@ -34,7 +35,10 @@ type Row = {
     consumedKg: number;
     isReservation: boolean;
     reservationPurpose?: string;
+    dispatchedKg?: number;
+    stage?: "AT_VENDOR" | "PARTIALLY_AT_GARMENTER" | "AT_GARMENTER";
   }[];
+  freeKg: number;
   custody: {
     orderedKg: number;
     receivedKg: number;
@@ -55,6 +59,12 @@ export function FabricOrdersProtoGrid({
   garmenters,
   isTestPhase,
   phaseNumber,
+  rawOrders,
+  vendors,
+  fabricMasters,
+  productMasters,
+  garmentingLocations,
+  phaseId,
 }: {
   rows: Row[];
   totals: { onOrder: number; inOurHands: number; atGarmenter: number; surplus: number };
@@ -63,7 +73,21 @@ export function FabricOrdersProtoGrid({
   garmenters: { id: string; name: string }[];
   isTestPhase: boolean;
   phaseNumber: number;
+  rawOrders: Record<string, unknown>[];
+  vendors: Parameters<typeof FabricOrderSheet>[0]["vendors"];
+  fabricMasters: Parameters<typeof FabricOrderSheet>[0]["fabricMasters"];
+  productMasters: Parameters<typeof FabricOrderSheet>[0]["productMasters"];
+  garmentingLocations: string[];
+  phaseId: string;
 }) {
+  const rawOrderById = useMemo(() => {
+    const m = new Map<string, Record<string, unknown>>();
+    for (const r of rawOrders) m.set(r.id as string, r);
+    return m;
+  }, [rawOrders]);
+  const [editFOId, setEditFOId] = useState<string | null>(null);
+  const editingRow = editFOId ? rawOrderById.get(editFOId) ?? null : null;
+  const isRepeatTab = editingRow ? Boolean(editingRow.isRepeat) : false;
   const [openIds, setOpenIds] = useState<Set<string>>(() => {
     return new Set(overReceiptId ? [overReceiptId] : []);
   });
@@ -237,6 +261,7 @@ export function FabricOrdersProtoGrid({
                           onToggle={() => toggle(row.fabricOrder.id)}
                           onReceive={() => openSheet("receive", row)}
                           onDispatch={() => openSheet("dispatch", row)}
+                          onEdit={() => setEditFOId(row.fabricOrder.id)}
                         />
                       );
                     })}
@@ -253,6 +278,17 @@ export function FabricOrdersProtoGrid({
 
       <ReceiveSheet row={activeSheet.kind === "receive" ? activeSheet.row : null} open={activeSheet.kind === "receive"} onOpenChange={(v) => !v && closeSheet()} />
       <DispatchSheet row={activeSheet.kind === "dispatch" ? activeSheet.row : null} open={activeSheet.kind === "dispatch"} onOpenChange={(v) => !v && closeSheet()} garmenters={garmenters} />
+      <FabricOrderSheet
+        open={editFOId !== null}
+        onOpenChange={(v) => !v && setEditFOId(null)}
+        vendors={vendors}
+        phaseId={phaseId}
+        fabricMasters={fabricMasters}
+        productMasters={productMasters}
+        garmentingLocations={garmentingLocations}
+        isRepeatTab={isRepeatTab}
+        editingRow={editingRow}
+      />
     </div>
   );
 }
@@ -267,6 +303,7 @@ function RowGroup({
   onToggle,
   onReceive,
   onDispatch,
+  onEdit,
 }: {
   row: Row;
   isOpen: boolean;
@@ -277,6 +314,7 @@ function RowGroup({
   onToggle: () => void;
   onReceive: () => void;
   onDispatch: () => void;
+  onEdit: () => void;
 }) {
   const fo = row.fabricOrder;
   const dispatchedTotal = Object.values(row.custody.atGarmenterKg).reduce((a, b) => a + b, 0);
@@ -305,6 +343,15 @@ function RowGroup({
         <td className="px-3 py-3 align-top whitespace-nowrap">
           <div className="font-mono text-[12.5px] font-medium flex items-center gap-1.5">
             {row.displayNumber}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(); }}
+              className="p-0.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
+              aria-label="Edit fabric order"
+              title="Edit fabric order"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
             {isDemo && (
               <span className="inline-flex items-center px-1 h-3.5 rounded-full text-[8.5px] font-medium uppercase tracking-wider bg-[oklch(0.95_0.04_45)] border border-[oklch(0.85_0.06_45)] text-[oklch(0.45_0.16_45)]">demo</span>
             )}
@@ -338,23 +385,6 @@ function RowGroup({
         </td>
       </tr>
 
-      {isOver && isOpen && (
-        <tr className="border-b bg-[oklch(0.98_0.025_45)]">
-          <td colSpan={9} className="px-6 py-2 border-t border-[oklch(0.85_0.06_45)]">
-            <div className="flex items-center gap-3 text-[12.5px] text-[oklch(0.40_0.16_45)]">
-              <Badge className="bg-[oklch(0.95_0.04_45)] text-[oklch(0.45_0.16_45)] border border-[oklch(0.85_0.06_45)]">surplus</Badge>
-              <span>
-                <span className="font-mono font-medium">+{kgN(row.custody.surplusKg)} kg</span> over order on {row.displayNumber} — keep, allocate, or reserve.
-              </span>
-              <div className="ml-auto flex gap-2">
-                <Button size="xs" variant="outline" onClick={onDispatch}>Allocate surplus</Button>
-                <Button size="xs" variant="outline" onClick={onDispatch}>Reserve for next phase</Button>
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-
       {isOpen && (
         <tr className="border-b bg-muted/20">
           <td></td>
@@ -384,30 +414,56 @@ function RowGroup({
               </div>
 
               <div className="col-span-7">
-                <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Where the fabric is</div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[13px]">
-                  {row.custody.onOrderKg > 0 && <CustodyRow label="at vendor" tone="vendor" qty={row.custody.onOrderKg} />}
-                  {row.custody.inOurHandsKg > 0 && <CustodyRow label="in our hands" tone="custody" qty={row.custody.inOurHandsKg} />}
+                <div className="flex items-center flex-wrap gap-2 mb-2">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Where the fabric is</span>
+                  {row.custody.onOrderKg > 0 && <CustodyPill label="at vendor" tone="vendor" qty={row.custody.onOrderKg} />}
+                  {row.custody.inOurHandsKg > 0 && <CustodyPill label="in our hands" tone="custody" qty={row.custody.inOurHandsKg} />}
                   {Object.entries(row.custody.atGarmenterKg).map(([name, qty]) => (
-                    <CustodyRow key={name} label={`at ${name}`} tone="garm" qty={qty} />
+                    <CustodyPill key={name} label={`at ${name}`} tone="garm" qty={qty} />
                   ))}
+                  {row.custody.surplusKg > 0 && <CustodyPill label="surplus" tone="warn" qty={row.custody.surplusKg} />}
                 </div>
 
                 <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mt-4 mb-2">Allocations</div>
-                {row.allocations.length === 0 ? (
+                {row.allocations.length === 0 && row.freeKg <= 0 ? (
                   <div className="text-[12.5px] text-muted-foreground">No allocations yet.</div>
                 ) : (
                   <table className="w-full text-[12.5px]">
                     <tbody>
-                      {row.allocations.map((a) => (
-                        <tr key={a.id} className="border-t border-border">
+                      {row.allocations.map((a) => {
+                        const sent = a.dispatchedKg ?? 0;
+                        const stageLabel = a.stage === "AT_GARMENTER"
+                          ? `full · ${sent.toFixed(1)}/${a.qtyKg.toFixed(1)} sent`
+                          : a.stage === "PARTIALLY_AT_GARMENTER"
+                            ? `partial · ${sent.toFixed(1)}/${a.qtyKg.toFixed(1)} sent`
+                            : "at vendor";
+                        const stageCls = a.stage === "AT_GARMENTER"
+                          ? "bg-[oklch(0.95_0.04_140)] text-[oklch(0.40_0.10_140)] border-[oklch(0.85_0.06_140)]"
+                          : a.stage === "PARTIALLY_AT_GARMENTER"
+                            ? "bg-[oklch(0.95_0.02_250)] text-[oklch(0.40_0.10_250)] border-[oklch(0.85_0.05_250)]"
+                            : "bg-[oklch(0.96_0.012_80)] text-[oklch(0.40_0.04_80)] border-[oklch(0.88_0.02_80)]";
+                        return (
+                          <tr key={a.id} className="border-t border-border">
+                            <td className="py-1.5">
+                              {a.isReservation ? <span className="text-muted-foreground">— {a.reservationPurpose} reservation</span> : a.productLabel}
+                            </td>
+                            <td className="text-muted-foreground">{a.garmenterName}</td>
+                            <td><Badge className={cn("border text-[10px] h-4 px-1.5", stageCls)}>{stageLabel}</Badge></td>
+                            <td className="text-right font-mono tabular-nums">{kg(a.qtyKg)}</td>
+                          </tr>
+                        );
+                      })}
+                      {row.freeKg > 0 && (
+                        <tr className="border-t border-border bg-[oklch(0.97_0.025_75)]/40">
                           <td className="py-1.5">
-                            {a.isReservation ? <span className="text-muted-foreground">— {a.reservationPurpose} reservation</span> : a.productLabel}
+                            <span className="font-medium">In our hands · pool</span>
+                            <span className="ml-2 text-[11px] text-muted-foreground">received, not yet dispatched</span>
                           </td>
-                          <td className="text-muted-foreground">{a.garmenterName}</td>
-                          <td className="text-right font-mono tabular-nums">{kg(a.qtyKg)}</td>
+                          <td></td>
+                          <td><Badge className="border text-[10px] h-4 px-1.5 bg-[oklch(0.95_0.02_250)] text-[oklch(0.40_0.10_250)] border-[oklch(0.85_0.05_250)]">in our hands</Badge></td>
+                          <td className="text-right font-mono tabular-nums font-semibold">{kg(row.freeKg)}</td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 )}
@@ -420,18 +476,19 @@ function RowGroup({
   );
 }
 
-function CustodyRow({ label, tone, qty }: { label: string; tone: "vendor" | "custody" | "garm"; qty: number }) {
+function CustodyPill({ label, tone, qty }: { label: string; tone: "vendor" | "custody" | "garm" | "warn"; qty: number }) {
   const cls =
     tone === "vendor"
       ? "bg-[oklch(0.96_0.012_80)] text-[oklch(0.40_0.04_80)] border-[oklch(0.88_0.02_80)]"
       : tone === "custody"
         ? "bg-[oklch(0.95_0.02_250)] text-[oklch(0.40_0.10_250)] border-[oklch(0.85_0.05_250)]"
-        : "bg-[oklch(0.95_0.04_140)] text-[oklch(0.40_0.10_140)] border-[oklch(0.85_0.06_140)]";
+        : tone === "warn"
+          ? "bg-[oklch(0.95_0.04_45)] text-[oklch(0.45_0.16_45)] border-[oklch(0.85_0.06_45)]"
+          : "bg-[oklch(0.95_0.04_140)] text-[oklch(0.40_0.10_140)] border-[oklch(0.85_0.06_140)]";
   return (
-    <div className="flex items-center gap-2">
-      <Badge className={cn("border", cls)}>{label}</Badge>
-      <span className="ml-auto font-mono tabular-nums">{kg(qty)}</span>
-    </div>
+    <Badge className={cn("border font-mono", cls)}>
+      {label} · {kgN(qty)} kg
+    </Badge>
   );
 }
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { createPlanOrders, type PlannedArticleOrder, type PlannedFabricOrder } from "@/actions/phase-planning";
 
 /**
  * Proto-custody server actions: writes to the new fabric custody tables.
@@ -58,35 +59,16 @@ export async function logFabricReceipt(input: {
   if (!fo) throw new Error("Fabric order not found");
   await requireAuthAndTestPhase(fo.phaseId);
 
-  await db.$transaction(async (tx) => {
-    await tx.fabricReceipt.create({
-      data: {
-        fabricOrderId: fo.id,
-        qtyKg: dec(input.qtyKg),
-        receivedAt: input.receivedAt ? new Date(input.receivedAt) : new Date(),
-        lotRef: input.lotRef ?? null,
-        notes: input.notes ?? null,
-      },
-    });
-
-    // FIFO-promote AT_VENDOR allocations to IN_OUR_HANDS up to receipt qty.
-    let remaining = input.qtyKg;
-    const atVendor = await tx.allocation.findMany({
-      where: { fabricOrderId: fo.id, stage: "AT_VENDOR" },
-      orderBy: { createdAt: "asc" },
-    });
-    for (const a of atVendor) {
-      if (remaining <= 0) break;
-      const aQty = Number(a.qtyKg);
-      if (remaining >= aQty) {
-        await tx.allocation.update({ where: { id: a.id }, data: { stage: "IN_OUR_HANDS" } });
-        remaining -= aQty;
-      } else {
-        // Split: would require row split — defer for v0. Skip promoting this one
-        // and stop (next receipts will promote it once cumulative covers it).
-        break;
-      }
-    }
+  // Receipt is just "fabric arrived". No per-allocation decision made here.
+  // Allocation to AOs happens at dispatch time via AllocationDispatch.
+  await db.fabricReceipt.create({
+    data: {
+      fabricOrderId: fo.id,
+      qtyKg: dec(input.qtyKg),
+      receivedAt: input.receivedAt ? new Date(input.receivedAt) : new Date(),
+      lotRef: input.lotRef ?? null,
+      notes: input.notes ?? null,
+    },
   });
 
   revalidatePath("/proto");
@@ -102,12 +84,21 @@ export async function logGarmenterDispatch(input: {
   dispatchedAt?: string;
   vehicleRef?: string;
   notes?: string;
+  // Per-allocation breakdown of the dispatch. Sum may be ≤ qtyKg; the
+  // leftover is "loose stock at garmenter" (no AO attached).
+  assignments?: { allocationId: string; qtyKg: number }[];
 }) {
   if (input.qtyKg <= 0) throw new Error("Quantity must be > 0");
 
   const fo = await db.fabricOrder.findUnique({
     where: { id: input.fabricOrderId },
-    select: { id: true, phaseId: true },
+    select: {
+      id: true,
+      phaseId: true,
+      fabricOrderedQuantityKg: true,
+      receipts: { select: { qtyKg: true } },
+      dispatches: { select: { qtyKg: true } },
+    },
   });
   if (!fo) throw new Error("Fabric order not found");
   await requireAuthAndTestPhase(fo.phaseId);
@@ -116,8 +107,42 @@ export async function logGarmenterDispatch(input: {
   if (!garm) throw new Error("Garmenter not found");
   if (garm.type !== "GARMENTING") throw new Error("Selected vendor is not a garmenter");
 
+  // Pool guard: can't dispatch more than is currently in our hands.
+  const totalReceived = fo.receipts.reduce((s, r) => s + Number(r.qtyKg), 0);
+  const totalDispatched = fo.dispatches.reduce((s, d) => s + Number(d.qtyKg), 0);
+  const inOurHands = totalReceived - totalDispatched;
+  if (input.qtyKg > inOurHands + 1e-6) {
+    throw new Error(`Only ${inOurHands.toFixed(2)} kg in our hands for this fabric order; cannot dispatch ${input.qtyKg.toFixed(2)} kg.`);
+  }
+
+  const assignments = (input.assignments ?? []).filter((a) => a.qtyKg > 0);
+  const assignedSum = assignments.reduce((s, a) => s + a.qtyKg, 0);
+  if (assignedSum > input.qtyKg + 1e-6) {
+    throw new Error(`Assignments sum (${assignedSum.toFixed(2)}) exceeds dispatch qty (${input.qtyKg.toFixed(2)}).`);
+  }
+
+  // Validate each assigned allocation belongs to this FO and that we're not
+  // dispatching more than its remaining unfulfilled qty.
+  const allocIds = assignments.map((a) => a.allocationId);
+  const allocs = allocIds.length > 0
+    ? await db.allocation.findMany({
+        where: { id: { in: allocIds }, fabricOrderId: fo.id },
+        include: { dispatches: { select: { qtyKg: true } } },
+      })
+    : [];
+  const allocById = new Map(allocs.map((a) => [a.id, a]));
+  for (const a of assignments) {
+    const al = allocById.get(a.allocationId);
+    if (!al) throw new Error(`Allocation ${a.allocationId} is not on this fabric order`);
+    const alreadyDispatched = al.dispatches.reduce((s, d) => s + Number(d.qtyKg), 0);
+    const remaining = Number(al.qtyKg) - alreadyDispatched;
+    if (a.qtyKg > remaining + 1e-6) {
+      throw new Error(`Cannot dispatch ${a.qtyKg.toFixed(2)} kg to allocation ${al.id}; only ${remaining.toFixed(2)} kg unfulfilled.`);
+    }
+  }
+
   await db.$transaction(async (tx) => {
-    await tx.garmenterDispatch.create({
+    const dispatch = await tx.garmenterDispatch.create({
       data: {
         fabricOrderId: fo.id,
         garmenterId: garm.id,
@@ -128,28 +153,38 @@ export async function logGarmenterDispatch(input: {
       },
     });
 
-    // FIFO-promote IN_OUR_HANDS allocations whose intended garmenter matches
-    // (or is null) to AT_GARMENTER, recording the actual garmenter.
-    let remaining = input.qtyKg;
-    const inHands = await tx.allocation.findMany({
-      where: {
-        fabricOrderId: fo.id,
-        stage: "IN_OUR_HANDS",
-        OR: [{ garmenterId: garm.id }, { garmenterId: null }],
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    for (const a of inHands) {
-      if (remaining <= 0) break;
-      const aQty = Number(a.qtyKg);
-      if (remaining >= aQty) {
-        await tx.allocation.update({
-          where: { id: a.id },
-          data: { stage: "AT_GARMENTER", garmenterId: garm.id },
-        });
-        remaining -= aQty;
-      } else {
-        break;
+    for (const a of assignments) {
+      await tx.allocationDispatch.create({
+        data: {
+          allocationId: a.allocationId,
+          garmenterDispatchId: dispatch.id,
+          qtyKg: dec(a.qtyKg),
+        },
+      });
+    }
+
+    // Recompute Allocation.stage for every touched allocation.
+    const touchedIds = Array.from(new Set(assignments.map((a) => a.allocationId)));
+    if (touchedIds.length > 0) {
+      const refreshed = await tx.allocation.findMany({
+        where: { id: { in: touchedIds } },
+        include: { dispatches: { select: { qtyKg: true } } },
+      });
+      for (const al of refreshed) {
+        const sum = al.dispatches.reduce((s, d) => s + Number(d.qtyKg), 0);
+        const planned = Number(al.qtyKg);
+        const nextStage = sum <= 0
+          ? "AT_VENDOR"
+          : sum >= planned - 1e-6
+            ? "AT_GARMENTER"
+            : "PARTIALLY_AT_GARMENTER";
+        const nextGarmenterId = sum > 0 ? garm.id : al.garmenterId;
+        if (al.stage !== nextStage || al.garmenterId !== nextGarmenterId) {
+          await tx.allocation.update({
+            where: { id: al.id },
+            data: { stage: nextStage, garmenterId: nextGarmenterId },
+          });
+        }
       }
     }
   });
@@ -158,7 +193,221 @@ export async function logGarmenterDispatch(input: {
   return { ok: true };
 }
 
+// ─── Plan a phase (proto route): translates proto state → live createPlanOrders ───
+// This is THE canonical save path for proto phase planning. It delegates
+// Product + FabricOrder creation to the live createPlanOrders action so both
+// paths share exactly the same DB writes. Proto then appends Allocation rows
+// (which the live form does not write).
+
+export type ProtoPlannedFabricSlot = {
+  slot: 1 | 2 | 3 | 4;
+  fabricName: string;
+  fabricVendorId: string;
+  fabricCostPerKg: number | null;
+  garmentsPerKg: number | null;
+  colour: string;
+  derivedKg: number;
+};
+
+export type ProtoPlannedColourCombo = {
+  colourLabel: string;
+  skuCode: string | null;
+  qty: number;
+  fabrics: ProtoPlannedFabricSlot[];
+};
+
+export type ProtoPlannedArticle = {
+  articleNumber: string;
+  styleNumber: string;
+  productName: string | null;
+  type: string;
+  gender: "MENS" | "WOMENS" | "KIDS";
+  isRepeat: boolean;
+  garmenterId: string | null;
+  combos: ProtoPlannedColourCombo[];
+};
+
+export async function createPlannedOrdersProto(input: {
+  phaseId: string;
+  articles: ProtoPlannedArticle[];
+}): Promise<{ ok: boolean; productIds: string[]; fabricOrderIds: string[]; allocationIds: string[] }> {
+  if (input.articles.length === 0) throw new Error("No articles to plan");
+  await requireAuthAndTestPhase(input.phaseId);
+
+  // ── Fetch ProductMasters for cost + MRP field resolution ──────────
+  const articleNums = Array.from(new Set(input.articles.map((a) => a.articleNumber).filter(Boolean)));
+  const pms = articleNums.length > 0
+    ? await db.productMaster.findMany({ where: { articleNumber: { in: articleNums } } })
+    : [];
+  const pmsByArticle = new Map<string, typeof pms>();
+  for (const p of pms) {
+    if (!p.articleNumber) continue;
+    const arr = pmsByArticle.get(p.articleNumber) ?? [];
+    arr.push(p);
+    pmsByArticle.set(p.articleNumber, arr);
+  }
+
+  // Pick the PM variant that best matches this combo's colour + gender.
+  function pickPM(articleNumber: string, primaryColour: string, gender: string) {
+    const candidates = pmsByArticle.get(articleNumber) ?? [];
+    if (candidates.length === 0) return null;
+    const exact = candidates.find(
+      (p) => String(p.gender) === gender && (p.coloursAvailable ?? []).includes(primaryColour)
+    );
+    if (exact) return exact;
+    const sameGender = candidates.find((p) => String(p.gender) === gender);
+    if (sameGender) return sameGender;
+    const colourMatch = candidates.find((p) => (p.coloursAvailable ?? []).includes(primaryColour));
+    if (colourMatch) return colourMatch;
+    return candidates[0];
+  }
+
+  // ── Resolve garmenter Vendor.id → name ───────────────────────────
+  const vendorIds = Array.from(
+    new Set(input.articles.map((a) => a.garmenterId).filter((v): v is string => !!v))
+  );
+  const garmenterNameByVendorId = new Map<string, string>();
+  if (vendorIds.length > 0) {
+    const vendors = await db.vendor.findMany({
+      where: { id: { in: vendorIds } },
+      select: { id: true, name: true },
+    });
+    for (const v of vendors) garmenterNameByVendorId.set(v.id, v.name);
+  }
+
+  const toNum = (d: { toString(): string } | null | undefined): number | null =>
+    d != null ? Number(d.toString()) : null;
+
+  // ── Build the live-format arrays ──────────────────────────────────
+  const articleOrdersForLive: PlannedArticleOrder[] = [];
+  const fabricOrdersForLive: PlannedFabricOrder[] = [];
+
+  // Parallel plan: for each FO we'll create, record qtyKg + garmenterId so
+  // we can write the Allocation rows after createPlanOrders returns IDs.
+  const allocationPlan: {
+    articleOrderIndex: number;
+    slot: number;
+    qtyKg: number;
+    garmenterId: string | null;
+  }[] = [];
+
+  for (const article of input.articles) {
+    for (const combo of article.combos) {
+      if (combo.qty <= 0) continue;
+
+      const primaryColour = (combo.fabrics[0]?.colour ?? combo.colourLabel.split("/")[0] ?? "").trim();
+      const pm = pickPM(article.articleNumber, primaryColour, article.gender);
+      const articleOrderIndex = articleOrdersForLive.length;
+
+      // Prefer user-selected garmenter name; fall back to PM's default.
+      const garmenterName = article.garmenterId
+        ? (garmenterNameByVendorId.get(article.garmenterId) ?? null)
+        : (pm?.garmentingAt ?? null);
+
+      articleOrdersForLive.push({
+        styleNumber: article.styleNumber,
+        articleNumber: article.articleNumber,
+        skuCode: pm?.skuCode ?? combo.skuCode ?? "",
+        colourOrdered: combo.colourLabel,
+        garmentNumber: combo.qty,
+        isRepeat: article.isRepeat,
+        type: article.type || "—",
+        gender: article.gender,
+        productName: article.productName ?? "",
+        // Fabric slot 1 + 2 names/vendors (slots 3/4 go via fabric3/4Name fields)
+        fabricVendorId: combo.fabrics[0]?.fabricVendorId ?? "",
+        fabricName: combo.fabrics[0]?.fabricName ?? "",
+        fabric2Name: combo.fabrics[1]?.fabricName ?? null,
+        fabric2VendorId: combo.fabrics[1]?.fabricVendorId ?? null,
+        fabric3Name: combo.fabrics[2]?.fabricName ?? null,
+        fabric3VendorId: combo.fabrics[2]?.fabricVendorId ?? null,
+        fabric4Name: combo.fabrics[3]?.fabricName ?? null,
+        fabric4VendorId: combo.fabrics[3]?.fabricVendorId ?? null,
+        // Cost fields resolved from the colour-matched PM (mirrors live form)
+        fabricCostPerKg: toNum(pm?.fabricCostPerKg) ?? (combo.fabrics[0]?.fabricCostPerKg ?? null),
+        fabric2CostPerKg: toNum(pm?.fabric2CostPerKg) ?? (combo.fabrics[1]?.fabricCostPerKg ?? null),
+        assumedFabricGarmentsPerKg: toNum(pm?.garmentsPerKg),
+        assumedFabric2GarmentsPerKg: toNum(pm?.garmentsPerKg2),
+        stitchingCost: toNum(pm?.stitchingCost),
+        brandLogoCost: toNum(pm?.brandLogoCost),
+        neckTwillCost: toNum(pm?.neckTwillCost),
+        reflectorsCost: toNum(pm?.reflectorsCost),
+        fusingCost: toNum(pm?.fusingCost),
+        accessoriesCost: toNum(pm?.accessoriesCost),
+        brandTagCost: toNum(pm?.brandTagCost),
+        sizeTagCost: toNum(pm?.sizeTagCost),
+        packagingCost: toNum(pm?.packagingCost),
+        // PM.inwardShipping maps to Product.outwardShippingCost (same as live)
+        outwardShippingCost: toNum(pm?.inwardShipping),
+        proposedMrp: toNum(pm?.proposedMrp),
+        onlineMrp: toNum(pm?.onlineMrp),
+        garmentingAt: garmenterName,
+      });
+
+      for (const slot of combo.fabrics) {
+        if (slot.derivedKg <= 0) continue;
+        fabricOrdersForLive.push({
+          fabricName: slot.fabricName,
+          fabricVendorId: slot.fabricVendorId,
+          articleNumbers: article.articleNumber,
+          colour: slot.colour,
+          fabricOrderedQuantityKg: Math.round(slot.derivedKg * 100) / 100,
+          costPerUnit: slot.fabricCostPerKg,
+          isRepeat: article.isRepeat,
+          gender: article.gender,
+          orderStatus: "DRAFT_ORDER",
+          garmentingAt: null,
+          articleOrderIndex,
+        });
+        allocationPlan.push({
+          articleOrderIndex,
+          slot: slot.slot,
+          qtyKg: slot.derivedKg,
+          garmenterId: article.garmenterId || null,
+        });
+      }
+    }
+  }
+
+  // ── Create Products + FabricOrders via the live action ────────────
+  // This guarantees proto and live write identical Product/FO rows.
+  const { created } = await createPlanOrders(input.phaseId, articleOrdersForLive, fabricOrdersForLive);
+
+  // ── Write Allocations (proto-only) ────────────────────────────────
+  const allocationIds: string[] = [];
+  if (allocationPlan.length > 0) {
+    await db.$transaction(async (tx) => {
+      for (const plan of allocationPlan) {
+        const p = created[plan.articleOrderIndex];
+        if (!p) continue;
+        const link = p.fabricLinks.find((l) => l.slot === plan.slot);
+        if (!link) continue;
+        const alloc = await tx.allocation.create({
+          data: {
+            productId: p.productId,
+            fabricOrderId: link.fabricOrderId,
+            garmenterId: plan.garmenterId || null,
+            qtyKg: dec(plan.qtyKg),
+            stage: "AT_VENDOR",
+          },
+        });
+        allocationIds.push(alloc.id);
+      }
+    });
+  }
+
+  revalidatePath("/proto");
+  return {
+    ok: true,
+    productIds: created.map((c) => c.productId),
+    fabricOrderIds: [...new Set(created.flatMap((c) => c.fabricLinks.map((l) => l.fabricOrderId)))],
+    allocationIds,
+  };
+}
+
 // ─── Plan a phase: create products, fabric orders, allocations ───
+// LEGACY: kept for reference but no longer called by the proto form.
+// createPlannedOrdersProto above is the correct entry point.
 
 type PlannedFabricSlot = {
   slot: 1 | 2 | 3 | 4;
@@ -202,6 +451,7 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
     colour: string;
     totalKg: number;
     articleNumbers: Set<string>;
+    garmenterIds: Set<string>; // distinct garmenter Vendor.ids feeding this bucket
   };
   const bucketKey = (s: PlannedFabricSlot) => `${s.fabricVendorId}|${s.fabricName}|${s.colour}`;
   const buckets = new Map<string, Bucket>();
@@ -218,11 +468,69 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
           colour: slot.colour,
           totalKg: 0,
           articleNumbers: new Set<string>(),
+          garmenterIds: new Set<string>(),
         };
         b.totalKg += slot.derivedKg;
         b.articleNumbers.add(article.articleNumber);
+        if (article.garmenterId) b.garmenterIds.add(article.garmenterId);
         buckets.set(key, b);
       }
+    }
+  }
+
+  // Look up every ProductMaster touching these articles. A single article
+  // number can have multiple PMs (one per gender × colour combo). At the
+  // Product create site we pick the variant whose coloursAvailable best
+  // matches the combo's primary colour — that gives the right skuCode + the
+  // right per-PM cost / MRP fields.
+  const articleNums = Array.from(new Set(input.articles.map((a) => a.articleNumber).filter(Boolean)));
+  const pmsByArticle = articleNums.length > 0
+    ? await db.productMaster.findMany({ where: { articleNumber: { in: articleNums } } })
+    : [];
+  const pmsByArticleMap = new Map<string, typeof pmsByArticle>();
+  for (const p of pmsByArticle) {
+    if (!p.articleNumber) continue;
+    const arr = pmsByArticleMap.get(p.articleNumber) ?? [];
+    arr.push(p);
+    pmsByArticleMap.set(p.articleNumber, arr);
+  }
+  function pickPM(articleNumber: string, primaryColour: string, gender: string) {
+    const candidates = pmsByArticleMap.get(articleNumber) ?? [];
+    if (candidates.length === 0) return null;
+    // 1. Same gender + colour appears in coloursAvailable
+    const exact = candidates.find((p) =>
+      String(p.gender) === gender && (p.coloursAvailable ?? []).includes(primaryColour)
+    );
+    if (exact) return exact;
+    // 2. Same gender, any colour
+    const sameGender = candidates.find((p) => String(p.gender) === gender);
+    if (sameGender) return sameGender;
+    // 3. Any PM whose colour set includes this primary colour
+    const colourMatch = candidates.find((p) => (p.coloursAvailable ?? []).includes(primaryColour));
+    if (colourMatch) return colourMatch;
+    // 4. Fallback: first
+    return candidates[0];
+  }
+
+  const { createLookupResolver } = await import("@/lib/lookups");
+  const resolver = createLookupResolver();
+
+  // Translate garmenter Vendor.id → GarmentingLocation.id (by name).
+  // Product.garmentingAtId references GarmentingLocation, NOT Vendor —
+  // the two parallel records are kept in sync by name. Also stash the
+  // garmenter name so we can populate the legacy Product.garmentingAt /
+  // FabricOrder.garmentingAt string fields the live UI reads.
+  const vendorIds = Array.from(new Set(input.articles.map((a) => a.garmenterId).filter((v): v is string => !!v)));
+  const garmentingLocationIdByVendorId = new Map<string, string>();
+  const garmenterNameByVendorId = new Map<string, string>();
+  if (vendorIds.length > 0) {
+    const vendors = await db.vendor.findMany({ where: { id: { in: vendorIds } }, select: { id: true, name: true } });
+    const locs = await db.garmentingLocation.findMany({ where: { name: { in: vendors.map((v) => v.name) } }, select: { id: true, name: true } });
+    const locByName = new Map(locs.map((l) => [l.name, l.id]));
+    for (const v of vendors) {
+      garmenterNameByVendorId.set(v.id, v.name);
+      const locId = locByName.get(v.name);
+      if (locId) garmentingLocationIdByVendorId.set(v.id, locId);
     }
   }
 
@@ -231,18 +539,54 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
     const fabricOrderIdByKey = new Map<string, string>();
     const allocationIds: string[] = [];
 
-    // Create FabricOrders
+    // Create FabricOrders. If every article in this bucket goes to the same
+    // garmenter, tag the FO with that GarmentingLocation; otherwise leave
+    // null (mixed garmenters → ambiguous at the FO level).
     for (const [key, b] of buckets) {
+      const bucketGarmIds = [...b.garmenterIds];
+      const sharedGarmenterVendorId = bucketGarmIds.length === 1 ? bucketGarmIds[0] : null;
+      const sharedGarmentingAtId = sharedGarmenterVendorId
+        ? garmentingLocationIdByVendorId.get(sharedGarmenterVendorId) ?? null
+        : null;
+      const sharedGarmenterName = sharedGarmenterVendorId
+        ? garmenterNameByVendorId.get(sharedGarmenterVendorId) ?? null
+        : null;
+      const colourId = await resolver.colourId(b.colour);
+      // Bucket-level isRepeat / gender: true / single value if every article
+      // feeding this bucket agrees, else null.
+      const articleIsRepeats = new Set<boolean>();
+      const articleGenders = new Set<string>();
+      for (const a of input.articles) {
+        for (const c of a.combos) {
+          if (c.qty <= 0) continue;
+          for (const s of c.fabrics) {
+            if (bucketKey(s) === key) {
+              articleIsRepeats.add(a.isRepeat);
+              articleGenders.add(a.gender);
+            }
+          }
+        }
+      }
+      const bucketIsRepeat = articleIsRepeats.size === 1 ? [...articleIsRepeats][0] : false;
+      const bucketGender = articleGenders.size === 1
+        ? ([...articleGenders][0] as "MENS" | "WOMENS" | "KIDS")
+        : null;
       const fo = await tx.fabricOrder.create({
         data: {
           phaseId: input.phaseId,
+          orderDate: new Date(),
           fabricVendorId: b.fabricVendorId,
           fabricName: b.fabricName,
           colour: b.colour,
+          colourId,
           articleNumbers: [...b.articleNumbers].join(", "),
           costPerUnit: b.fabricCostPerKg ?? null,
           fabricOrderedQuantityKg: dec(Math.round(b.totalKg * 100) / 100),
           orderStatus: "DRAFT_ORDER",
+          isRepeat: bucketIsRepeat,
+          gender: bucketGender,
+          garmentingAtId: sharedGarmentingAtId,
+          garmentingAt: sharedGarmenterName,
         },
       });
       fabricOrderIdByKey.set(key, fo.id);
@@ -252,15 +596,26 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
     for (const article of input.articles) {
       for (const combo of article.combos) {
         if (combo.qty <= 0) continue;
+        // Pick the PM that matches this combo's primary colour + gender —
+        // gives us the right skuCode, cost, and MRP fields. Live form does
+        // the same when you choose a colour for an article.
+        const primaryColour = (combo.fabrics[0]?.colour ?? combo.colourLabel.split("/")[0] ?? "").trim();
+        const pm = pickPM(article.articleNumber, primaryColour, article.gender);
+        const colourOrderedId = await resolver.colourId(combo.colourLabel);
+        const typeRefId = pm?.typeRefId ?? (await resolver.productTypeId(article.type));
         const product = await tx.product.create({
           data: {
             phaseId: input.phaseId,
             orderDate: new Date().toISOString().slice(0, 10),
             styleNumber: article.styleNumber,
             articleNumber: article.articleNumber,
-            skuCode: combo.skuCode ?? null,
+            // Prefer the colour-matched PM's skuCode so the live sheet's
+            // article picker can pre-select the right variant.
+            skuCode: pm?.skuCode ?? combo.skuCode ?? null,
             colourOrdered: combo.colourLabel,
+            colourOrderedId,
             type: article.type || "—",
+            typeRefId,
             gender: article.gender,
             productName: article.productName ?? null,
             status: "PLANNED",
@@ -272,6 +627,21 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
             fabric2Name: combo.fabrics[1]?.fabricName ?? null,
             fabric2VendorId: combo.fabrics[1]?.fabricVendorId ?? null,
             fabric2CostPerKg: combo.fabrics[1]?.fabricCostPerKg ?? null,
+            fabric2OrderedQuantityKg: combo.fabrics[1]?.derivedKg ? dec(combo.fabrics[1].derivedKg) : null,
+            // Cost / pricing copied from ProductMaster (matches live form)
+            assumedFabricGarmentsPerKg: pm?.garmentsPerKg ?? null,
+            assumedFabric2GarmentsPerKg: pm?.garmentsPerKg2 ?? null,
+            stitchingCost: pm?.stitchingCost ?? null,
+            brandLogoCost: pm?.brandLogoCost ?? null,
+            neckTwillCost: pm?.neckTwillCost ?? null,
+            reflectorsCost: pm?.reflectorsCost ?? null,
+            fusingCost: pm?.fusingCost ?? null,
+            accessoriesCost: pm?.accessoriesCost ?? null,
+            brandTagCost: pm?.brandTagCost ?? null,
+            sizeTagCost: pm?.sizeTagCost ?? null,
+            packagingCost: pm?.packagingCost ?? null,
+            proposedMrp: pm?.proposedMrp ?? null,
+            onlineMrp: pm?.onlineMrp ?? null,
             garmentNumber: combo.qty,
             actualStitchedXS: 0, actualStitchedS: 0, actualStitchedM: 0,
             actualStitchedL: 0, actualStitchedXL: 0, actualStitchedXXL: 0,
@@ -279,10 +649,21 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
             actualInwardL: 0, actualInwardXL: 0, actualInwardXXL: 0,
             actualInwardTotal: 0,
             isRepeat: article.isRepeat,
-            garmentingAtId: article.garmenterId,
+            garmentingAtId: article.garmenterId ? (garmentingLocationIdByVendorId.get(article.garmenterId) ?? null) : null,
+            garmentingAt: article.garmenterId ? (garmenterNameByVendorId.get(article.garmenterId) ?? null) : null,
           },
         });
         productIds.push(product.id);
+
+        // Per-slot ProductColour rows from the slash-separated colourOrdered
+        // string (matches the live PlanningForm).
+        const parts = combo.colourLabel.split("/").map((s) => s.trim()).filter(Boolean);
+        for (let i = 0; i < parts.length; i++) {
+          const cid = await resolver.colourId(parts[i]);
+          if (cid) {
+            await tx.productColour.create({ data: { productId: product.id, colourId: cid, slot: i + 1 } });
+          }
+        }
 
         // Per slot: link + allocation
         for (const slot of combo.fabrics) {
@@ -298,7 +679,7 @@ export async function createPlannedOrders(input: { phaseId: string; articles: Pl
             data: {
               productId: product.id,
               fabricOrderId: foId,
-              garmenterId: article.garmenterId,
+              garmenterId: article.garmenterId || null,
               qtyKg: dec(slot.derivedKg),
               stage: "AT_VENDOR",
             },
@@ -350,6 +731,24 @@ export async function allocateAgainstFabricOrder(input: {
 
   const stage = fo._count.receipts > 0 ? "IN_OUR_HANDS" : "AT_VENDOR";
 
+  // Vendor.id → GarmentingLocation.id translation (same reason as above).
+  const fabVendorIds = Array.from(new Set([
+    ...input.articles.map((a) => a.garmenterId),
+    input.reservation?.garmenterId,
+  ].filter((v): v is string => !!v)));
+  const fabGarmentingLocationByVendorId = new Map<string, string>();
+  const fabGarmenterNameByVendorId = new Map<string, string>();
+  if (fabVendorIds.length > 0) {
+    const vendors = await db.vendor.findMany({ where: { id: { in: fabVendorIds } }, select: { id: true, name: true } });
+    const locs = await db.garmentingLocation.findMany({ where: { name: { in: vendors.map((v) => v.name) } }, select: { id: true, name: true } });
+    const locByName = new Map(locs.map((l) => [l.name, l.id]));
+    for (const v of vendors) {
+      fabGarmenterNameByVendorId.set(v.id, v.name);
+      const locId = locByName.get(v.name);
+      if (locId) fabGarmentingLocationByVendorId.set(v.id, locId);
+    }
+  }
+
   const result = await db.$transaction(async (tx) => {
     const productIds: string[] = [];
     const allocationIds: string[] = [];
@@ -368,7 +767,8 @@ export async function allocateAgainstFabricOrder(input: {
           fabricVendorId: a.fabricVendorId,
           fabricName: a.fabricName,
           fabricOrderedQuantityKg: dec(a.allocateKg),
-          garmentingAtId: a.garmenterId,
+          garmentingAtId: a.garmenterId ? (fabGarmentingLocationByVendorId.get(a.garmenterId) ?? null) : null,
+          garmentingAt: a.garmenterId ? (fabGarmenterNameByVendorId.get(a.garmenterId) ?? null) : null,
         },
       });
       productIds.push(product.id);
@@ -381,7 +781,7 @@ export async function allocateAgainstFabricOrder(input: {
         data: {
           productId: product.id,
           fabricOrderId: input.fabricOrderId,
-          garmenterId: a.garmenterId,
+          garmenterId: a.garmenterId || null,
           qtyKg: dec(a.allocateKg),
           stage,
         },

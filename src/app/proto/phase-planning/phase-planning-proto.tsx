@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo, useRef, useEffect } from "react";
+import { useState, useTransition, useMemo, useRef, useEffect, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Card } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Combobox } from "@/components/ui/combobox";
 import { cn } from "@/lib/utils";
-import { createPlannedOrders, allocateAgainstFabricOrder } from "@/actions/proto-custody";
+import { createPlannedOrdersProto, allocateAgainstFabricOrder, type ProtoPlannedArticle, type ProtoPlannedColourCombo, type ProtoPlannedFabricSlot } from "@/actions/proto-custody";
 
 type Mode = "quantity" | "fabric";
 
@@ -206,7 +206,6 @@ export function PhasePlanningProto({
   }, [productMasterOptions]);
 
   // Quantity-mode state
-  const [defaultGarmenterId, setDefaultGarmenterId] = useState(garmenters[0]?.id ?? "");
   const [selected, setSelected] = useState<SelectedArticle[]>([]);
   const [pickArticle, setPickArticle] = useState("");
   const scrollTargetRef = useRef<string | null>(null);
@@ -226,17 +225,9 @@ export function PhasePlanningProto({
     const opts: { label: string; value: string; searchText: string }[] = [];
     for (const [articleNumber, pms] of articleGroups) {
       const first = pms[0];
-      const fabrics = new Set<string>();
-      for (const pm of pms) {
-        if (pm.fabricName) fabrics.add(pm.fabricName);
-        if (pm.fabric2Name) fabrics.add(pm.fabric2Name);
-        if (pm.fabric3Name) fabrics.add(pm.fabric3Name);
-        if (pm.fabric4Name) fabrics.add(pm.fabric4Name);
-      }
-      const fabricPart = [...fabrics].join(", ");
-      const parts = [articleNumber, first.productName, fabricPart].filter((p) => (p ?? "").toString().trim().length > 0);
+      const parts = [articleNumber, first.type, first.productName].filter((p) => (p ?? "").toString().trim().length > 0);
       const label = parts.join(" · ");
-      const searchText = [articleNumber, first.productName, first.styleNumber, first.fabricVendorName, fabricPart].filter(Boolean).join(" ");
+      const searchText = [articleNumber, first.type, first.productName, first.styleNumber, first.fabricName, first.fabric2Name, first.fabricVendorName].filter(Boolean).join(" ");
       opts.push({ label, value: articleNumber, searchText });
     }
     return opts.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
@@ -262,9 +253,17 @@ export function PhasePlanningProto({
   // ── Scroll newly added card into view ───────────────────────────
   useEffect(() => {
     if (!scrollTargetRef.current) return;
-    const el = document.getElementById(scrollTargetRef.current);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const id = scrollTargetRef.current;
     scrollTargetRef.current = null;
+    // rAF + small timeout: let the new card paint before scrolling, otherwise
+    // the picker's own sticky position can win and block:"start" computes
+    // against a stale layout.
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 30);
+    });
   }, [selected]);
 
   // ── Article actions ─────────────────────────────────────────────
@@ -275,7 +274,7 @@ export function PhasePlanningProto({
     // Prefer the article master's own garmentingAt (resolved to a Vendor.id
     // on the server). Fall back to the form's default garmenter only when
     // the master has no preferred garmenter set.
-    const garmenterId = canonical.garmenterId ?? defaultGarmenterId;
+    const garmenterId = canonical.garmenterId ?? "";
     const rowKey = nextKey();
     setSelected((rows) => [...rows, {
       rowKey,
@@ -295,7 +294,7 @@ export function PhasePlanningProto({
 
   // ── Computed: articleOrders + fabricOrders preview ──────────────
   const planSummary = useMemo(() => {
-    type ArticleRow = { rowKey: string; articleNumber: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] };
+    type ArticleRow = { rowKey: string; articleNumber: string; type: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] };
     type FabricBucket = { fabricVendorId: string; fabricName: string; colour: string; totalKg: number; vendorName: string };
     const articles: ArticleRow[] = [];
     const buckets = new Map<string, FabricBucket>();
@@ -320,6 +319,7 @@ export function PhasePlanningProto({
         articles.push({
           rowKey: a.rowKey,
           articleNumber: (a.pm.articleNumber ?? a.pm.styleNumber ?? "").trim() || "—",
+          type: a.pm.type ?? "",
           productName: a.pm.productName ?? a.pm.styleNumber,
           colour: colourLabel(c),
           qty: c.qty,
@@ -337,7 +337,7 @@ export function PhasePlanningProto({
     if (planSummary.articles.length === 0) { toast.error("No articles with quantity > 0"); return; }
     startTransition(async () => {
       try {
-        const articles = selected
+        const articles: ProtoPlannedArticle[] = selected
           .filter((a) => a.combos.some((c) => c.qty > 0))
           .map((a) => {
             const slots = fabricSlots(a.pm);
@@ -349,36 +349,32 @@ export function PhasePlanningProto({
               gender: (a.pm.gender as "MENS" | "WOMENS" | "KIDS") ?? "MENS",
               isRepeat: a.isRepeat,
               garmenterId: a.garmenterId || null,
-              combos: a.combos.filter((c) => c.qty > 0).map((c) => {
-                const sizes: Record<Size, number> = { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 };
-                for (const s of SIZES) sizes[s] = Math.round((c.qty * (sizeDistMap[s] ?? 0)) / 100);
-                const fabrics = slots
-                  .map((sl) => {
+              combos: a.combos.filter((c) => c.qty > 0).map((c): ProtoPlannedColourCombo => {
+                const fabrics: ProtoPlannedFabricSlot[] = slots
+                  .flatMap((sl) => {
                     const col = sl.slot === 1 ? c.colour : sl.slot === 2 ? c.colour2 : sl.slot === 3 ? c.colour3 : c.colour4;
-                    if (!col || !sl.vendorId || !sl.gpk || sl.gpk <= 0) return null;
+                    if (!col || !sl.vendorId || !sl.gpk || sl.gpk <= 0) return [];
                     const kg = Math.round((c.qty / sl.gpk) * 100) / 100;
-                    return {
-                      slot: sl.slot,
+                    return [{
+                      slot: sl.slot as 1 | 2 | 3 | 4,
                       fabricName: sl.name,
                       fabricVendorId: sl.vendorId,
                       fabricCostPerKg: sl.cost,
                       garmentsPerKg: sl.gpk,
                       colour: col,
                       derivedKg: kg,
-                    };
-                  })
-                  .filter(Boolean) as NonNullable<ReturnType<typeof slots[number] extends never ? never : (sl: typeof slots[number]) => unknown>>[];
+                    }];
+                  });
                 return {
                   colourLabel: colourLabel(c),
                   skuCode: a.pm.skuCode,
                   qty: c.qty,
-                  sizes,
-                  fabrics: fabrics as Parameters<typeof createPlannedOrders>[0]["articles"][number]["combos"][number]["fabrics"],
+                  fabrics,
                 };
               }),
             };
           });
-        const res = await createPlannedOrders({ phaseId, articles });
+        const res = await createPlannedOrdersProto({ phaseId, articles });
         toast.success(`Created ${res.productIds.length} article order${res.productIds.length === 1 ? "" : "s"} · ${res.fabricOrderIds.length} fabric order${res.fabricOrderIds.length === 1 ? "" : "s"} · ${res.allocationIds.length} allocation${res.allocationIds.length === 1 ? "" : "s"}`);
         setSelected([]);
         setStep("select");
@@ -393,7 +389,7 @@ export function PhasePlanningProto({
   const addFabricArticle = (pmId: string) => {
     const pm = productMasterOptions.find((p) => p.id === pmId);
     if (!pm) return;
-    setFabricRows((rows) => [...rows, { rowKey: nextKey(), pmId: pm.id, articleNumber: pm.articleNumber, styleNumber: pm.styleNumber, productName: pm.productName, qty: 50, allocateKg: 25, garmenterId: defaultGarmenterId }]);
+    setFabricRows((rows) => [...rows, { rowKey: nextKey(), pmId: pm.id, articleNumber: pm.articleNumber, styleNumber: pm.styleNumber, productName: pm.productName, qty: 50, allocateKg: 25, garmenterId: pm.garmenterId ?? "" }]);
     setPickPmIdFab("");
   };
   const updateFabricRow = (rowKey: string, patch: Partial<typeof fabricRows[number]>) =>
@@ -422,7 +418,7 @@ export function PhasePlanningProto({
             allocateKg: r.allocateKg,
             garmenterId: r.garmenterId || null,
           })),
-          reservation: reservationKg > 0 ? { qtyKg: reservationKg, purpose: reservationPurpose, garmenterId: defaultGarmenterId || null } : undefined,
+          reservation: reservationKg > 0 ? { qtyKg: reservationKg, purpose: reservationPurpose, garmenterId: null } : undefined,
         });
         toast.success(`Allocated ${res.allocationIds.length} row${res.allocationIds.length === 1 ? "" : "s"} (stage: ${res.stage.toLowerCase().replace(/_/g, " ")})`);
         setFabricRows([]);
@@ -451,20 +447,11 @@ export function PhasePlanningProto({
         step === "select" ? (
           <div className="grid grid-cols-12 gap-4">
             <div className="col-span-8 space-y-4">
-              {/* Sticky picker + default garmenter */}
+              {/* Sticky article picker */}
               <Card className="p-4 sticky top-[68px] z-10">
-                <div className="grid grid-cols-[1fr_220px] gap-3 items-end">
-                  <div className="space-y-1.5">
-                    <Label>Add article from master</Label>
-                    <Combobox value={pickArticle} onValueChange={(v) => { setPickArticle(v); if (v) addArticle(v); }} options={articleComboOptions} placeholder="Search by article #, name, fabric, vendor…" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Default garmenter</Label>
-                    <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background h-9" value={defaultGarmenterId} onChange={(e) => setDefaultGarmenterId(e.target.value)}>
-                      <option value="">—</option>
-                      {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                    </select>
-                  </div>
+                <div className="space-y-1.5">
+                  <Label>Add article from master</Label>
+                  <Combobox value={pickArticle} onValueChange={(v) => { setPickArticle(v); if (v) addArticle(v); }} options={articleComboOptions} placeholder="Search by article #, name, fabric, vendor…" />
                 </div>
               </Card>
 
@@ -508,14 +495,7 @@ export function PhasePlanningProto({
                   <Combobox value={foId} onValueChange={setFoId} options={foComboOptions} placeholder="Search by fabric, colour, or vendor…" />
                 )}
               </div>
-              <div className="space-y-1.5">
-                <Label>Default garmenter</Label>
-                <select className="w-full border rounded-md px-3 py-2 text-[14px] bg-background h-9" value={defaultGarmenterId} onChange={(e) => setDefaultGarmenterId(e.target.value)}>
-                  <option value="">—</option>
-                  {garmenters.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1.5">
+              <div className="col-span-2 space-y-1.5">
                 <Label>Add article</Label>
                 <Combobox value={pickPmIdFab} onValueChange={(v) => { setPickPmIdFab(v); if (v) addFabricArticle(v); }} options={pmComboOptions} placeholder="Search article master…" />
               </div>
@@ -587,11 +567,12 @@ function ArticleCard({ a, sizeDistMap, garmenters, onCombo, onGarmenter, onRemov
   const articleNumber = (a.pm.articleNumber ?? a.pm.styleNumber ?? "").trim() || "—";
 
   return (
-    <Card id={`art-${a.rowKey}`} className="p-5">
+    <Card id={`art-${a.rowKey}`} className="p-5 scroll-mt-[160px]">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="text-base font-semibold font-mono">{articleNumber}</h3>
+            {a.pm.type && <><span className="text-muted-foreground">·</span><span className="text-[13px] text-muted-foreground">{a.pm.type}</span></>}
             <span className="text-muted-foreground">·</span>
             <span className="text-[14px] font-medium">{a.pm.productName ?? a.pm.styleNumber}</span>
             <span className="text-muted-foreground text-[13px]">· {a.pm.gender.toLowerCase()}</span>
@@ -649,7 +630,7 @@ function ArticleCard({ a, sizeDistMap, garmenters, onCombo, onGarmenter, onRemov
 // ─── Review step ───────────────────────────────────────────────────
 
 function ReviewStep({ articles, buckets, pending, isTestPhase, phaseNumber, onBack, onConfirm }: {
-  articles: { rowKey: string; articleNumber: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] }[];
+  articles: { rowKey: string; articleNumber: string; type: string; productName: string; colour: string; qty: number; sizes: Record<Size, number>; fabricKgs: { slot: number; fabricName: string; kg: number; colour: string }[] }[];
   buckets: { fabricVendorId: string; fabricName: string; colour: string; totalKg: number; vendorName: string }[];
   pending: boolean;
   isTestPhase: boolean;
@@ -670,12 +651,12 @@ function ReviewStep({ articles, buckets, pending, isTestPhase, phaseNumber, onBa
       <div className="grid grid-cols-2 gap-6">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-2">Article orders</div>
-          <table className="w-full text-[12.5px]">
-            <thead className="text-muted-foreground"><tr><th className="text-left py-1.5 font-medium">Article</th><th className="text-left py-1.5 font-medium">Colour</th><th className="text-right py-1.5 font-medium">Qty</th></tr></thead>
+          <table className="w-full text-[12.5px] table-fixed">
+            <thead className="text-muted-foreground"><tr><th className="text-left py-1.5 font-medium w-[45%]">Article</th><th className="text-left py-1.5 font-medium w-[45%]">Colour</th><th className="text-right py-1.5 font-medium w-[10%]">Qty</th></tr></thead>
             <tbody>
               {articles.map((a) => (
                 <tr key={a.rowKey + a.colour} className="border-t">
-                  <td className="py-2 font-mono">{a.articleNumber}<div className="text-[11px] text-muted-foreground font-sans truncate">{a.productName}</div></td>
+                  <td className="py-2 font-mono">{a.articleNumber}<div className="text-[11px] text-muted-foreground font-sans truncate">{[a.type, a.productName].filter(Boolean).join(" · ")}</div></td>
                   <td className="py-2">{a.colour}</td>
                   <td className="py-2 text-right font-mono tabular-nums">{a.qty}</td>
                 </tr>
@@ -704,7 +685,7 @@ function ReviewStep({ articles, buckets, pending, isTestPhase, phaseNumber, onBa
         <div className="text-[12px] text-muted-foreground">Each article order also writes one Allocation per fabric slot (stage = AT_VENDOR). Sizes are derived from SizeDistribution.</div>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={onBack}>Back</Button>
-          <Button size="sm" onClick={onConfirm} disabled={pending || !isTestPhase}>{pending ? "Creating…" : `Create ${articles.length} + ${buckets.length}`}</Button>
+          <Button size="sm" onClick={onConfirm} disabled={pending || !isTestPhase}>{pending ? "Creating…" : `Create ${articles.length} article order${articles.length === 1 ? "" : "s"} and ${buckets.length} fabric order${buckets.length === 1 ? "" : "s"}`}</Button>
         </div>
       </div>
       {!isTestPhase && (
@@ -731,7 +712,6 @@ function CommitsPanel({ articles, buckets, mode }: {
       <div className="rounded-lg border bg-muted/30 sticky top-[68px]">
         <header className="px-4 py-2.5 border-b flex items-center justify-between">
           <span className="font-semibold text-[13px]">What this commits</span>
-          <Badge className="bg-[oklch(0.95_0.04_45)] text-[oklch(0.45_0.16_45)] border border-[oklch(0.85_0.06_45)]">new</Badge>
         </header>
         <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
           <span>Product · article orders</span>
@@ -748,23 +728,43 @@ function CommitsPanel({ articles, buckets, mode }: {
           </tbody>
         </table>
         <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
-          <span>FabricOrder</span>
+          <span>FabricOrder → Allocations</span>
           <span className="ml-auto font-mono">{mode === "fabric" ? "existing" : buckets.length}</span>
         </div>
         <table className="w-full">
           <tbody>
-            {buckets.map((b, i) => (
-              <tr key={i} className="border-t first:border-t-0">
-                <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top whitespace-nowrap">FO·{i + 1}</td>
-                <td className="px-4 py-1.5 text-[12.5px]">{b.fabricName} · {b.colour} · <span className="font-mono">{b.totalKg.toFixed(1)} kg</span></td>
-              </tr>
-            ))}
+            {buckets.map((b, bi) => {
+              const foNum = bi + 1;
+              const children = articles
+                .map((a, ai) => ({ a, ai }))
+                .flatMap(({ a, ai }) => a.fabricKgs
+                  .filter((fk) => fk.fabricName === b.fabricName && fk.colour === b.colour)
+                  .map((fk) => ({ ai, fk })));
+              return (
+                <Fragment key={`fo-nest-${bi}`}>
+                  <tr className="border-t first:border-t-0 bg-muted/20">
+                    <td className="px-4 py-1.5 font-mono text-[11.5px] text-muted-foreground w-[70px] align-top whitespace-nowrap">FO·{foNum}</td>
+                    <td className="px-4 py-1.5 text-[12.5px] font-medium">{b.fabricName} · {b.colour} · <span className="font-mono text-muted-foreground">{b.totalKg.toFixed(1)} kg</span></td>
+                  </tr>
+                  {children.length === 0 ? (
+                    <tr><td></td><td className="px-4 pb-1.5 text-[11.5px] text-muted-foreground italic">no allocations</td></tr>
+                  ) : children.map(({ ai, fk }, ci) => (
+                    <tr key={`fo-${bi}-alc-${ci}`}>
+                      <td className="px-4 py-1 font-mono text-[11px] text-muted-foreground w-[88px] align-top whitespace-nowrap">└ ALC·{foNum}-{ai + 1}</td>
+                      <td className="px-4 py-1 text-[12px]">
+                        <span className="font-mono">→ AO·{ai + 1}  {fk.kg.toFixed(1)} kg</span>
+                        <Badge variant="outline" className="ml-2 text-[10px] h-4 px-1.5">at vendor</Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              );
+            })}
           </tbody>
         </table>
         <div className="px-4 py-2 bg-muted/40 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground border-t">
-          <span>Allocation · pre-wired</span>
+          <span>Allocation · flat list</span>
           <span className="ml-auto font-mono">{allocCount}</span>
-          <Badge className="bg-[oklch(0.96_0.04_75)] text-[oklch(0.45_0.10_75)] border border-[oklch(0.85_0.06_75)]">new</Badge>
         </div>
         <table className="w-full">
           <tbody>

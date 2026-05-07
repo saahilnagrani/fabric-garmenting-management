@@ -19,6 +19,11 @@ export type PlannedArticleOrder = {
   fabricName: string;
   fabric2Name: string | null;
   fabric2VendorId: string | null;
+  // Optional fabric 3 and 4 (live form does not set these yet; proto uses them)
+  fabric3Name?: string | null;
+  fabric3VendorId?: string | null;
+  fabric4Name?: string | null;
+  fabric4VendorId?: string | null;
   fabricCostPerKg: number | null;
   fabric2CostPerKg: number | null;
   assumedFabricGarmentsPerKg: number | null;
@@ -56,19 +61,36 @@ export type PlannedFabricOrder = {
   garmentingAt: string | null;
 };
 
+export type CreatePlanOrdersResult = {
+  // One entry per element of articleOrders, in the same order.
+  created: Array<{
+    productId: string;
+    // FabricOrders successfully linked to this product (via ProductFabricOrder).
+    fabricLinks: Array<{ slot: number; fabricOrderId: string }>;
+  }>;
+};
+
 export async function createPlanOrders(
   phaseId: string,
   articleOrders: PlannedArticleOrder[],
   fabricOrders: PlannedFabricOrder[]
-) {
+): Promise<CreatePlanOrdersResult> {
   await requirePermission("inventory:phases:edit");
   const resolver = createLookupResolver();
-  await db.$transaction(async (tx) => {
-    // Parallel array to articleOrders: holds the created Product's id and the
-    // fabric names for each slot, so we can resolve which slot a fabric order
-    // belongs to without re-deriving identity from text fields.
-    const createdArticleOrders: { id: string; fabricName: string; fabric2Name: string | null }[] = [];
 
+  // Tracks created Products in parallel with articleOrders.
+  const createdArticleOrders: {
+    id: string;
+    fabricName: string;
+    fabric2Name: string | null;
+    fabric3Name: string | null;
+    fabric4Name: string | null;
+  }[] = [];
+
+  // Returned to the caller — one entry per AO.
+  const created: CreatePlanOrdersResult["created"] = [];
+
+  await db.$transaction(async (tx) => {
     for (const ao of articleOrders) {
       const colourOrderedId = await resolver.colourId(ao.colourOrdered);
       const typeRefId = await resolver.productTypeId(ao.type);
@@ -134,8 +156,11 @@ export async function createPlanOrders(
       createdArticleOrders.push({
         id: product.id,
         fabricName: ao.fabricName,
-        fabric2Name: ao.fabric2Name,
+        fabric2Name: ao.fabric2Name ?? null,
+        fabric3Name: ao.fabric3Name ?? null,
+        fabric4Name: ao.fabric4Name ?? null,
       });
+      created.push({ productId: product.id, fabricLinks: [] });
     }
 
     for (const fabric of fabricOrders) {
@@ -160,21 +185,26 @@ export async function createPlanOrders(
         },
       });
 
-      // Direct lookup by index — no colour parsing, no key collisions.
+      // Match FO to the product at the correct fabric slot.
       const articleOrder = createdArticleOrders[fabric.articleOrderIndex];
       if (!articleOrder) continue;
       const slot =
         articleOrder.fabricName === fabric.fabricName ? 1 :
-        articleOrder.fabric2Name === fabric.fabricName ? 2 : null;
+        articleOrder.fabric2Name === fabric.fabricName ? 2 :
+        (articleOrder.fabric3Name && articleOrder.fabric3Name === fabric.fabricName) ? 3 :
+        (articleOrder.fabric4Name && articleOrder.fabric4Name === fabric.fabricName) ? 4 : null;
       if (slot === null) continue;
       await tx.productFabricOrder.create({
         data: { productId: articleOrder.id, fabricOrderId: fabricOrder.id, fabricSlot: slot },
       });
+      created[fabric.articleOrderIndex].fabricLinks.push({ slot, fabricOrderId: fabricOrder.id });
     }
   });
+
   revalidatePath("/products");
   revalidatePath("/fabric-orders");
   revalidatePath("/phase-planning");
+  return { created };
 }
 
 // Check if an article was produced in any previous phase

@@ -361,7 +361,9 @@ enum FabricOrderStatus {
 
 enum AllocationStage {
   AT_VENDOR
-  IN_OUR_HANDS
+  PARTIALLY_IN_HANDS // legacy, no longer written; kept for backward compat
+  IN_OUR_HANDS       // legacy, no longer written
+  PARTIALLY_AT_GARMENTER
   AT_GARMENTER
 }
 
@@ -392,8 +394,28 @@ model GarmenterDispatch {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
+  allocationLinks AllocationDispatch[] @relation("DispatchToAllocations")
+
   @@index([fabricOrderId])
   @@index([garmenterId])
+}
+
+// Junction: how much of a given GarmenterDispatch fulfilled a given
+// Allocation. Σ qtyKg per allocation drives Allocation.stage.
+//   0                            → AT_VENDOR
+//   0 < sum < plannedKg          → PARTIALLY_AT_GARMENTER
+//   sum >= plannedKg             → AT_GARMENTER
+model AllocationDispatch {
+  id                  String            @id @default(cuid())
+  allocationId        String
+  allocation          Allocation        @relation("AllocationDispatches", fields: [allocationId], references: [id], onDelete: Cascade)
+  garmenterDispatchId String
+  garmenterDispatch   GarmenterDispatch @relation("DispatchToAllocations", fields: [garmenterDispatchId], references: [id], onDelete: Cascade)
+  qtyKg               Decimal           @db.Decimal(10, 2)
+  createdAt           DateTime          @default(now())
+
+  @@index([allocationId])
+  @@index([garmenterDispatchId])
 }
 
 model Allocation {
@@ -411,6 +433,8 @@ model Allocation {
   reservationPurpose String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
+
+  dispatches         AllocationDispatch[] @relation("AllocationDispatches")
 
   @@index([fabricOrderId])
   @@index([productId])
