@@ -154,6 +154,15 @@ export const CATEGORIES: CategoryConfig[] = [
   },
 ];
 
+/**
+ * CATEGORIES sorted alphabetically by label, with "Other" pinned to the end.
+ * Use this for dropdowns; the source array's order is undefined.
+ */
+export const CATEGORIES_FOR_DROPDOWN: CategoryConfig[] = [
+  ...CATEGORIES.filter((c) => c.value !== "OTHER").sort((a, b) => a.label.localeCompare(b.label)),
+  ...CATEGORIES.filter((c) => c.value === "OTHER"),
+];
+
 export function getCategoryConfig(value: string | null | undefined): CategoryConfig | null {
   if (!value) return null;
   return CATEGORIES.find((c) => c.value === value) ?? null;

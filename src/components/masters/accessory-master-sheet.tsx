@@ -16,7 +16,7 @@ import {
 import {
   createAccessoryMastersTyped, updateAccessoryMaster, deleteAccessoryMaster,
 } from "@/actions/accessories";
-import { CATEGORIES } from "@/lib/accessory-categories";
+import { CATEGORIES_FOR_DROPDOWN as CATEGORIES } from "@/lib/accessory-categories";
 import { toast } from "sonner";
 import { Loader2, Archive, Trash2, Plus, X, ImageIcon } from "lucide-react";
 

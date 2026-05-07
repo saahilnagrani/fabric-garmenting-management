@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 import { Loader2, Trash2, Plus, X } from "lucide-react";
 import { accessoryDisplayName } from "@/lib/accessory-display";
-import { CATEGORIES } from "@/lib/accessory-categories";
+import { CATEGORIES_FOR_DROPDOWN as CATEGORIES } from "@/lib/accessory-categories";
 import type { AccessoryPurchaseStatus } from "@/generated/prisma/client";
 
 export type AccessoryPurchaseRow = {
