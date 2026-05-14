@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,20 +14,24 @@ import {
 } from "@/components/ui/sheet";
 import { Combobox } from "@/components/ui/combobox";
 import { MultiCombobox } from "@/components/ui/multi-combobox";
+import { cn } from "@/lib/utils";
 import {
   createProductMaster,
   updateProductMaster,
   deleteProductMaster,
   batchCreateProductMasters,
   getNextStyleSequence,
-  getProductMasterBom,
+  getArticleBom,
   checkSkuCodeExists,
   setArticleCleaned,
 } from "@/actions/product-masters";
 import { FEATURES } from "@/lib/feature-flags";
 import { getFabricMasterColours } from "@/actions/fabric-masters";
-import { getPhaseCosts, upsertPhaseCost } from "@/actions/phase-costs";
+import { getPhaseCosts, upsertPhaseCost, deletePhaseCost } from "@/actions/phase-costs";
+import { getPhaseFabrics, upsertPhaseFabric, deletePhaseFabric } from "@/actions/phase-fabrics";
+import { articleIntroductionPhaseNumber } from "@/lib/article-history";
 import { GENDER_LABELS } from "@/lib/constants";
+import { sizeLabelForGender } from "@/lib/size-labels";
 import {
   computeTotalGarmenting,
   computeFabricCostPerPiece,
@@ -49,10 +54,10 @@ const GENDER_PREFIX: Record<string, string> = { MENS: "M", WOMENS: "W", KIDS: "K
  */
 function AutoFitTitle({ text }: { text: string }) {
   const ref = useRef<HTMLHeadingElement | null>(null);
-  const [fontPx, setFontPx] = useState(20);
+  const [fontPx, setFontPx] = useState(16);
 
   useLayoutEffect(() => {
-    setFontPx(20);
+    setFontPx(16);
   }, [text]);
 
   useLayoutEffect(() => {
@@ -116,7 +121,8 @@ export type GroupedStyleRow = {
   productName: string | null;
   colours: string[];
   skuCount: number;
-  skus: { id: string; skuCode: string; colour: string; colour2: string; colour3?: string; colour4?: string; isStrikedThrough: boolean }[];
+  skus: { id: string; skuCode: string; colour: string; colour2: string; colour3?: string; colour4?: string; isStrikedThrough: boolean; previousSkuCodes?: string[] }[];
+  previousTypes?: string[];
   archivedSkus?: { id: string; skuCode: string; colour: string; colour2: string; colour3?: string; colour4?: string }[];
   manuallyCleanedAt?: Date | string | null;
   fabric3Name?: string | null;
@@ -219,7 +225,7 @@ const emptyStyleForm: StyleFormData = {
 
 type SkuEntry = { colour: string; colour2?: string; colour3?: string; colour4?: string; skuCode: string };
 
-const SECTIONS = ["productInfo", "fabric", "colours", "garmentingCosts", "pricing", "accessories", "phaseCosts"] as const;
+const SECTIONS = ["productInfo", "fabric", "colours", "garmentingCosts", "pricing", "accessories", "phaseCosts", "phaseFabrics"] as const;
 type SectionName = (typeof SECTIONS)[number];
 
 type FabricData = { name: string; mrp: number | null };
@@ -228,7 +234,137 @@ type ProductTypeWithCode = { name: string; code: string };
 type ColourWithCode = { name: string; code: string };
 
 type AccessoryOption = { id: string; label: string; unit: string };
-type BomLine = { accessoryId: string; quantityPerPiece: string };
+type BomLine = { accessoryId: string; quantityPerPiece: string; applicableSizes: string[] };
+
+const BOM_SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL"] as const;
+
+/**
+ * Compact size picker for a BOM line. Empty array means "applies to all
+ * sizes" — the row is shipped for every size produced. Selecting one or more
+ * sizes restricts the line to just those.
+ */
+function BomSizeSelector({
+  value,
+  onChange,
+  gender,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+  gender?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Reposition relative to the trigger and re-render via portal so the
+  // popover isn't clipped by the parent Sheet's overflow.
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const popoverWidth = 144;
+    const popoverHeight = 200;
+    const margin = 4;
+    let top = rect.bottom + margin;
+    if (top + popoverHeight > window.innerHeight) {
+      top = Math.max(margin, rect.top - popoverHeight - margin);
+    }
+    const left = Math.min(
+      Math.max(margin, rect.right - popoverWidth),
+      window.innerWidth - popoverWidth - margin,
+    );
+    setPos({ top, left });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    updatePosition();
+    function handleClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (
+        triggerRef.current?.contains(t) ||
+        popoverRef.current?.contains(t)
+      ) {
+        return;
+      }
+      setOpen(false);
+    }
+    function handleResize() {
+      updatePosition();
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleResize, true);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleResize, true);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [open, updatePosition]);
+
+  const label =
+    value.length === 0
+      ? "All sizes"
+      : value.map((s) => sizeLabelForGender(gender, s)).join(", ");
+
+  function toggle(size: string) {
+    if (value.includes(size)) onChange(value.filter((s) => s !== size));
+    else onChange([...BOM_SIZE_OPTIONS].filter((s) => s === size || value.includes(s)));
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "h-7 min-w-[5.5rem] max-w-[8rem] shrink-0 truncate rounded border px-1.5 text-[10px]",
+          value.length === 0 ? "text-muted-foreground" : "text-foreground",
+        )}
+        title={value.length === 0 ? "Applies to all sizes" : `Applies only to: ${value.map((s) => sizeLabelForGender(gender, s)).join(", ")}`}
+      >
+        {label}
+      </button>
+      {open && pos && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            style={{ position: "fixed", top: pos.top, left: pos.left }}
+            className="z-[1000] w-36 rounded-md border bg-popover p-1 shadow-md"
+          >
+            {BOM_SIZE_OPTIONS.map((s) => {
+              const checked = value.includes(s);
+              return (
+                <label
+                  key={s}
+                  className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-xs hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => toggle(s)}
+                    className="h-3 w-3"
+                  />
+                  <span>{sizeLabelForGender(gender, s)}</span>
+                </label>
+              );
+            })}
+            {value.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onChange([])}
+                className="mt-1 w-full rounded px-2 py-1 text-left text-[10px] text-muted-foreground hover:bg-accent"
+              >
+                Clear (apply to all)
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
 
 export function ProductMasterSheet({
   open,
@@ -263,6 +399,10 @@ export function ProductMasterSheet({
   const [markingClean, setMarkingClean] = useState(false);
   const [cleanedAt, setCleanedAt] = useState<Date | string | null>(null);
   const [expandedPhases, setExpandedPhases] = useState<Record<string, boolean>>({});
+  // Per-phase override for how many fabric slots to show in the editor. The
+  // segments view computes a baseline (slots actually in use across master +
+  // all changes); the user can bump this up via "+ Add fabric slot".
+  const [extraFabricSlots, setExtraFabricSlots] = useState<Record<string, number>>({});
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isEdit = editingRow !== null;
@@ -294,6 +434,9 @@ export function ProductMasterSheet({
 
   // Phase cost overrides
   const [phaseCostOverrides, setPhaseCostOverrides] = useState<Record<string, Record<string, string>>>({});
+
+  // Phase fabric overrides (per-phase fabric history; mirrors phase-cost pattern)
+  const [phaseFabricOverrides, setPhaseFabricOverrides] = useState<Record<string, Record<string, string>>>({});
 
   // BOM lines (article-level — applied to every SKU on save)
   const [bomLines, setBomLines] = useState<BomLine[]>([]);
@@ -419,19 +562,21 @@ export function ProductMasterSheet({
       setSkuDupeStatus({});
       setResolvedSeqNum(null);
       setPhaseCostOverrides({});
+      setPhaseFabricOverrides({});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editingRow]);
 
-  // Load BOM lines for edit (article-level — fetched from first SKU; replicated to all on save)
+  // Load BOM lines for edit (article-level — fetched from ArticleAccessory by articleNumber).
   useEffect(() => {
-    if (open && FEATURES.accessories && editingRow && editingRow.skus.length > 0) {
-      getProductMasterBom(editingRow.skus[0].id)
+    if (open && FEATURES.accessories && editingRow && editingRow.articleNumber) {
+      getArticleBom(editingRow.articleNumber)
         .then((links) => {
           setBomLines(
-            (links as Array<{ accessoryId: string; quantityPerPiece: unknown }>).map((l) => ({
+            (links as Array<{ accessoryId: string; quantityPerPiece: unknown; applicableSizes?: string[] }>).map((l) => ({
               accessoryId: l.accessoryId,
               quantityPerPiece: String(l.quantityPerPiece ?? ""),
+              applicableSizes: Array.isArray(l.applicableSizes) ? l.applicableSizes : [],
             }))
           );
         })
@@ -442,7 +587,7 @@ export function ProductMasterSheet({
   }, [open, editingRow]);
 
   function addBomLine() {
-    setBomLines((prev) => [...prev, { accessoryId: "", quantityPerPiece: "" }]);
+    setBomLines((prev) => [...prev, { accessoryId: "", quantityPerPiece: "", applicableSizes: [] }]);
   }
   function updateBomLine(idx: number, patch: Partial<BomLine>) {
     setBomLines((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -456,23 +601,26 @@ export function ProductMasterSheet({
     if (open && editingRow && editingRow.skus.length > 0) {
       getPhaseCosts("PRODUCT_MASTER", editingRow.skus[0].id).then((costs) => {
         const overrides: Record<string, Record<string, string>> = {};
-        const fields = [
-          "fabricCostPerKg", "fabric2CostPerKg", "stitchingCost", "brandLogoCost",
-          "neckTwillCost", "reflectorsCost", "fusingCost", "accessoriesCost",
-          "brandTagCost", "sizeTagCost", "packagingCost", "inwardShipping",
-        ];
         for (const c of costs) {
           const values: Record<string, string> = {};
-          for (const f of fields) {
+          for (const f of PHASE_COST_FIELDS) {
             const val = (c as Record<string, unknown>)[f];
             if (val != null) values[f] = String(val);
           }
-          if (Object.keys(values).length > 0) overrides[c.phaseId] = values;
+          overrides[c.phaseId] = values;
         }
         setPhaseCostOverrides(overrides);
       }).catch(() => {});
     }
   }, [open, editingRow]);
+
+  // All cost fields tracked in the PhaseCost changelog.
+  const PHASE_COST_FIELDS = [
+    "fabricCostPerKg", "fabric2CostPerKg",
+    "stitchingCost", "brandLogoCost", "neckTwillCost", "reflectorsCost",
+    "fusingCost", "accessoriesCost", "brandTagCost", "sizeTagCost",
+    "packagingCost", "inwardShipping",
+  ] as const;
 
   function updatePhaseCostField(phaseId: string, field: string, value: string) {
     setPhaseCostOverrides((prev) => ({
@@ -485,15 +633,122 @@ export function ProductMasterSheet({
     if (!editingRow || editingRow.skus.length === 0) return;
     const values = phaseCostOverrides[phaseId] || {};
     const data: Record<string, number | null> = {};
-    for (const [key, val] of Object.entries(values)) {
-      data[key] = val.trim() === "" ? null : Number(val);
+    // Persist every changelog field (null = "no change at this phase").
+    for (const f of PHASE_COST_FIELDS) {
+      const val = values[f] ?? "";
+      data[f] = val.trim() === "" ? null : Number(val);
     }
     try {
       await upsertPhaseCost(phaseId, "PRODUCT_MASTER", editingRow.skus[0].id, data);
-      toast.success("Phase cost saved");
+      toast.success("Cost change saved");
     } catch {
-      toast.error("Failed to save phase cost");
+      toast.error("Failed to save cost change");
     }
+  }
+
+  async function removePhaseCost(phaseId: string) {
+    if (!editingRow || editingRow.skus.length === 0) return;
+    try {
+      await deletePhaseCost(phaseId, "PRODUCT_MASTER", editingRow.skus[0].id);
+      setPhaseCostOverrides((prev) => {
+        const next = { ...prev };
+        delete next[phaseId];
+        return next;
+      });
+      toast.success("Cost change removed");
+    } catch {
+      toast.error("Failed to remove cost change");
+    }
+  }
+
+  function addPhaseCostRow(phaseId: string) {
+    setPhaseCostOverrides((prev) => ({ ...prev, [phaseId]: prev[phaseId] ?? {} }));
+    setExpandedPhases((prev) => ({ ...prev, [`cost:${phaseId}`]: true }));
+  }
+
+  // PhaseFabric changelog rows loaded for the article. Keyed by phaseId.
+  // Under changelog semantics each row is "as of this phase, these fields
+  // changed" (non-null = change, null = no change in this slot).
+  const PHASE_FABRIC_FIELDS = [
+    "fabricName", "fabricVendorId", "fabricCostPerKg", "garmentsPerKg",
+    "fabric2Name", "fabric2VendorId", "fabric2CostPerKg", "garmentsPerKg2",
+    "fabric3Name", "fabric3VendorId", "fabric3CostPerKg", "garmentsPerKg3",
+    "fabric4Name", "fabric4VendorId", "fabric4CostPerKg", "garmentsPerKg4",
+  ] as const;
+
+  useEffect(() => {
+    if (open && editingRow && editingRow.skus.length > 0) {
+      getPhaseFabrics(editingRow.skus[0].id).then((rows) => {
+        const overrides: Record<string, Record<string, string>> = {};
+        for (const r of rows) {
+          const values: Record<string, string> = {};
+          for (const f of PHASE_FABRIC_FIELDS) {
+            const val = (r as Record<string, unknown>)[f];
+            if (val != null) values[f] = String(val);
+          }
+          // Keep the row even if all values are null — represents an
+          // explicitly-empty change entry the user just added.
+          overrides[r.phaseId] = values;
+        }
+        setPhaseFabricOverrides(overrides);
+      }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editingRow]);
+
+  function updatePhaseFabricField(phaseId: string, field: string, value: string) {
+    setPhaseFabricOverrides((prev) => ({
+      ...prev,
+      [phaseId]: { ...(prev[phaseId] || {}), [field]: value },
+    }));
+  }
+
+  async function savePhaseFabric(phaseId: string, valuesOverride?: Record<string, string>) {
+    if (!editingRow || editingRow.skus.length === 0) return;
+    const values = valuesOverride ?? phaseFabricOverrides[phaseId] ?? {};
+    const stringFields = new Set([
+      "fabricName", "fabricVendorId", "fabric2Name", "fabric2VendorId",
+      "fabric3Name", "fabric3VendorId", "fabric4Name", "fabric4VendorId",
+    ]);
+    const data: Record<string, string | number | null> = {};
+    // Persist ALL changelog fields, including the ones the user blanked out —
+    // null in the row means "no change at this phase, inherit from previous."
+    for (const f of PHASE_FABRIC_FIELDS) {
+      const val = values[f] ?? "";
+      if (val.trim() === "") {
+        data[f] = null;
+      } else if (stringFields.has(f)) {
+        data[f] = val;
+      } else {
+        data[f] = Number(val);
+      }
+    }
+    try {
+      await upsertPhaseFabric(phaseId, editingRow.skus[0].id, data);
+      toast.success("Fabric change saved");
+    } catch {
+      toast.error("Failed to save fabric change");
+    }
+  }
+
+  async function removePhaseFabric(phaseId: string) {
+    if (!editingRow || editingRow.skus.length === 0) return;
+    try {
+      await deletePhaseFabric(phaseId, editingRow.skus[0].id);
+      setPhaseFabricOverrides((prev) => {
+        const next = { ...prev };
+        delete next[phaseId];
+        return next;
+      });
+      toast.success("Fabric change removed");
+    } catch {
+      toast.error("Failed to remove fabric change");
+    }
+  }
+
+  function addPhaseFabricRow(phaseId: string) {
+    setPhaseFabricOverrides((prev) => ({ ...prev, [phaseId]: prev[phaseId] ?? {} }));
+    setExpandedPhases((prev) => ({ ...prev, [`fabric:${phaseId}`]: true }));
   }
 
   const updateField = useCallback((field: keyof StyleFormData, value: string) => {
@@ -815,7 +1070,11 @@ export function ProductMasterSheet({
       const bomPayload = FEATURES.accessories
         ? bomLines
             .filter((l) => l.accessoryId && l.quantityPerPiece && Number(l.quantityPerPiece) > 0)
-            .map((l) => ({ accessoryId: l.accessoryId, quantityPerPiece: Number(l.quantityPerPiece) }))
+            .map((l) => ({
+              accessoryId: l.accessoryId,
+              quantityPerPiece: Number(l.quantityPerPiece),
+              applicableSizes: l.applicableSizes,
+            }))
         : undefined;
 
       const sharedPayload = {
@@ -999,65 +1258,81 @@ export function ProductMasterSheet({
   const selectedColours = skuEntries.map((e) => e.colour);
   const selectedSingleColours = skuEntries.filter((e) => !e.colour2).map((e) => e.colour);
 
+  // Lookup previousSkuCodes for the SKU rows (matches editingRow.skus by current skuCode).
+  const previousSkuCodesByCurrent: Record<string, string[]> = {};
+  if (editingRow?.skus) {
+    for (const s of editingRow.skus) {
+      if (s.previousSkuCodes && s.previousSkuCodes.length > 0) {
+        previousSkuCodesByCurrent[s.skuCode] = s.previousSkuCodes;
+      }
+    }
+  }
+  const previousTypes = editingRow?.previousTypes ?? [];
+
   // For create mode: wizard steps
   // For edit mode: all sections visible (collapsible)
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-amber-400">
-        <SheetHeader className="pr-12">
-          <div className="flex items-center justify-between gap-2">
+        <SheetHeader className="pr-12 pb-0">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <AutoFitTitle
-                  text={(() => {
-                    if (!isEdit && step === 1) return "New Article";
-                    const parts = [
-                      form.articleNumber,
-                      form.type,
-                      form.productName,
-                      GENDER_LABELS[form.gender] || form.gender,
-                    ].filter((p) => p && String(p).trim());
-                    if (parts.length > 0) return parts.join(" - ");
-                    return isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article";
-                  })()}
-                />
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
-                {cleanedAt && (
-                  <span
-                    className="text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                    title={`Cleaned on ${new Date(cleanedAt).toLocaleString()}`}
-                  >
-                    <Lock className="h-2.5 w-2.5" />
-                    Cleaned
-                  </span>
-                )}
-              </div>
-              <SheetDescription className="sr-only">
-                {isEdit ? "Edit article master" : "Create article master"}
-              </SheetDescription>
+              <AutoFitTitle
+                text={(() => {
+                  if (!isEdit && step === 1) return "New Article";
+                  const parts = [
+                    form.articleNumber,
+                    form.type,
+                    form.productName,
+                    GENDER_LABELS[form.gender] || form.gender,
+                  ].filter((p) => p && String(p).trim());
+                  if (parts.length > 0) return parts.join(" - ");
+                  return isEdit ? (editingRow.articleNumber || editingRow.styleNumber || "Article") : "New Article";
+                })()}
+              />
             </div>
-            {isEdit && (
-              <button
-                type="button"
-                onClick={() => setAllSections(allExpanded ? false : true)}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
+            <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Master</span>
+            {cleanedAt && (
+              <span
+                className="text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded inline-flex items-center gap-1 shrink-0"
+                title={`Cleaned on ${new Date(cleanedAt).toLocaleString()}`}
               >
-                <ChevronsUpDown className="h-3 w-3" />
-                {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
-              </button>
-            )}
-            {!isEdit && (
-              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                <span className={step >= 1 ? "text-amber-600 font-semibold" : ""}>Article</span>
-                <span>→</span>
-                <span className={step >= 2 ? "text-amber-600 font-semibold" : ""}>Colours</span>
-                <span>→</span>
-                <span className={step >= 3 ? "text-amber-600 font-semibold" : ""}>Costs</span>
-              </div>
+                <Lock className="h-2.5 w-2.5" />
+                Cleaned
+              </span>
             )}
           </div>
+          <SheetDescription className="sr-only">
+            {isEdit ? "Edit article master" : "Create article master"}
+          </SheetDescription>
+          {previousTypes.length > 0 && (
+            <div className="text-[10px] text-muted-foreground">
+              <span>previously: </span>
+              <span>{previousTypes.join(", ")}</span>
+            </div>
+          )}
         </SheetHeader>
+        <div className="flex items-center px-4 pb-1 -mt-1">
+          {isEdit ? (
+            <button
+              type="button"
+              onClick={() => setAllSections(allExpanded ? false : true)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
+            >
+              <ChevronsUpDown className="h-3 w-3" />
+              {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+            </button>
+          ) : (
+            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+              <span className={step >= 1 ? "text-amber-600 font-semibold" : ""}>Article</span>
+              <span>→</span>
+              <span className={step >= 2 ? "text-amber-600 font-semibold" : ""}>Colours</span>
+              <span>→</span>
+              <span className={step >= 3 ? "text-amber-600 font-semibold" : ""}>Costs</span>
+            </div>
+          )}
+        </div>
 
         <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* ─── CREATE MODE: WIZARD ─── */}
@@ -1836,30 +2111,39 @@ export function ProductMasterSheet({
                     <div className="border rounded-lg divide-y">
                       {skuEntries.map((entry, i) => {
                         const dupeStatus = skuDupeStatus[entry.skuCode];
+                        const prevSkus = previousSkuCodesByCurrent[entry.skuCode] ?? [];
                         return (
-                          <div key={i} className="flex items-center gap-2 px-3 py-2">
-                            <span className="text-xs font-medium w-28 shrink-0">
-                              {entry.colour}
-                              {entry.colour2 && <span className="text-muted-foreground"> / {entry.colour2}</span>}
-                            {entry.colour3 && <span className="text-muted-foreground"> / {entry.colour3}</span>}
-                            {entry.colour4 && <span className="text-muted-foreground"> / {entry.colour4}</span>}
-                            </span>
-                            <Input
-                              value={entry.skuCode}
-                              onChange={(e) => updateSkuCode(i, e.target.value)}
-                              className={`flex-1 font-mono text-xs h-8 ${dupeStatus === "duplicate" ? "border-red-400 focus-visible:ring-red-400" : ""}`}
-                            />
-                            {dupeStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
-                            {dupeStatus === "duplicate" && <span className="text-[10px] text-red-500 shrink-0 font-medium">Exists</span>}
-                            {dupeStatus === "ok" && <span className="text-[10px] text-green-600 shrink-0">✓</span>}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0 text-destructive"
-                              onClick={() => removeSkuEntry(i)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
+                          <div key={i} className="flex flex-col gap-1 px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium w-28 shrink-0">
+                                {entry.colour}
+                                {entry.colour2 && <span className="text-muted-foreground"> / {entry.colour2}</span>}
+                                {entry.colour3 && <span className="text-muted-foreground"> / {entry.colour3}</span>}
+                                {entry.colour4 && <span className="text-muted-foreground"> / {entry.colour4}</span>}
+                              </span>
+                              <Input
+                                value={entry.skuCode}
+                                onChange={(e) => updateSkuCode(i, e.target.value)}
+                                className={`flex-1 font-mono text-xs h-8 ${dupeStatus === "duplicate" ? "border-red-400 focus-visible:ring-red-400" : ""}`}
+                              />
+                              {dupeStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground shrink-0" />}
+                              {dupeStatus === "duplicate" && <span className="text-[10px] text-red-500 shrink-0 font-medium">Exists</span>}
+                              {dupeStatus === "ok" && <span className="text-[10px] text-green-600 shrink-0">✓</span>}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-destructive"
+                                onClick={() => removeSkuEntry(i)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                            {prevSkus.length > 0 && (
+                              <div className="pl-30 text-[10px] text-muted-foreground">
+                                <span>previously: </span>
+                                <span className="font-mono">{prevSkus.join(", ")}</span>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -2081,16 +2365,12 @@ export function ProductMasterSheet({
                     return (
                       <div key={idx} className="flex items-center gap-1.5">
                         <div className="flex-1 min-w-0">
-                          <select
+                          <Combobox
                             value={line.accessoryId}
-                            onChange={(e) => updateBomLine(idx, { accessoryId: e.target.value })}
-                            className="h-7 text-xs w-full border rounded px-1"
-                          >
-                            <option value="">Select accessory...</option>
-                            {accessories.map((a) => (
-                              <option key={a.id} value={a.id}>{a.label}</option>
-                            ))}
-                          </select>
+                            onValueChange={(v) => updateBomLine(idx, { accessoryId: v })}
+                            options={accessories.map((a) => ({ value: a.id, label: a.label }))}
+                            placeholder="Select accessory..."
+                          />
                         </div>
                         <Input
                           type="number"
@@ -2103,6 +2383,11 @@ export function ProductMasterSheet({
                         <span className="text-[10px] text-muted-foreground w-12 shrink-0">
                           {acc?.unit || ""}
                         </span>
+                        <BomSizeSelector
+                          value={line.applicableSizes}
+                          onChange={(next) => updateBomLine(idx, { applicableSizes: next })}
+                          gender={form.gender}
+                        />
                         <Button
                           type="button"
                           variant="ghost"
@@ -2128,7 +2413,7 @@ export function ProductMasterSheet({
                 </CollapsibleSection>
               )}
 
-              {/* Phase Costs */}
+              {/* Phase Costs — changelog segments view */}
               {phases.length > 0 && (
                 <CollapsibleSection
                   title="Phase Costs"
@@ -2136,97 +2421,437 @@ export function ProductMasterSheet({
                   onToggle={() => toggleSection("phaseCosts")}
                 >
                   <p className="text-xs text-muted-foreground mb-2">
-                    Override costs per phase. Leave blank to use base costs. Saves on blur.
+                    Cost history as a changelog. The master cost applies until you record a change. Blank fields in a change row inherit the prior segment&apos;s value.
                   </p>
-                  <div className="space-y-2">
-                    {phases.map((phase) => {
-                      const overrides = phaseCostOverrides[phase.id] || {};
-                      const costFields = [
-                        { key: "fabricCostPerKg", label: "Fabric Cost/kg" },
-                        { key: "fabric2CostPerKg", label: "Fabric 2 Cost/kg" },
-                        { key: "stitchingCost", label: "Stitching" },
-                        { key: "brandLogoCost", label: "Brand Logo" },
-                        { key: "neckTwillCost", label: "Neck Twill" },
-                        { key: "reflectorsCost", label: "Reflectors" },
-                        { key: "fusingCost", label: "Fusing" },
-                        { key: "accessoriesCost", label: "Accessories" },
-                        { key: "brandTagCost", label: "Brand Tag" },
-                        { key: "sizeTagCost", label: "Size Tag" },
-                        { key: "packagingCost", label: "Packaging" },
-                        { key: "inwardShipping", label: "Shipping" },
+                  {(() => {
+                    // Fabric cost/kg per slot lives on PhaseFabric (alongside
+                    // fabric name and g/kg), not on PhaseCost. It's already
+                    // editable from the Phase Fabrics section, so it's
+                    // intentionally omitted here.
+                    const costFieldDefs: Array<{ key: typeof PHASE_COST_FIELDS[number]; label: string }> = [
+                      { key: "stitchingCost", label: "Stitching" },
+                      { key: "brandLogoCost", label: "Brand Logo" },
+                      { key: "neckTwillCost", label: "Neck Twill" },
+                      { key: "reflectorsCost", label: "Reflectors" },
+                      { key: "fusingCost", label: "Fusing" },
+                      { key: "accessoriesCost", label: "Accessories" },
+                      { key: "brandTagCost", label: "Brand Tag" },
+                      { key: "sizeTagCost", label: "Size Tag" },
+                      { key: "packagingCost", label: "Packaging" },
+                      { key: "inwardShipping", label: "Shipping" },
+                    ];
+                    const masterCostDefaults: Record<string, string> = {};
+                    for (const { key } of costFieldDefs) {
+                      masterCostDefaults[key] = String((form as unknown as Record<string, unknown>)[key] ?? "");
+                    }
+                    // Convention: leading digit of articleNumber = the phase the
+                    // article was introduced in. Clip the segments view to
+                    // phases >= introduction so we never show history for phases
+                    // that pre-date the article.
+                    const introNum = articleIntroductionPhaseNumber(editingRow?.articleNumber ?? "");
+                    const sortedPhases = [...phases]
+                      .sort((a, b) => (a.number ?? 0) - (b.number ?? 0))
+                      .filter((p) => introNum == null ? true : (p.number ?? 0) >= introNum);
+                    const changePhaseIds = Object.keys(phaseCostOverrides);
+                    const changePhases = sortedPhases.filter((p) => changePhaseIds.includes(p.id));
+                    // Walk changelog rows in phase order to compute resolved
+                    // values at each change. Under option B every article has
+                    // at least an introduction-phase row, so the cumulative
+                    // walk starts EMPTY (no master-defaults fallback) — the
+                    // changelog is authoritative.
+                    const resolvedAt = new Map<string, Record<string, string>>();
+                    let cumulative: Record<string, string> = {};
+                    for (const cp of changePhases) {
+                      const row = phaseCostOverrides[cp.id] || {};
+                      for (const { key } of costFieldDefs) {
+                        const v = row[key];
+                        if (v != null && v !== "") cumulative[key] = v;
+                      }
+                      resolvedAt.set(cp.id, { ...cumulative });
+                    }
+                    type Segment = { kind: "change"; startPhase: typeof sortedPhases[number]; endPhase: typeof sortedPhases[number] | null; values: Record<string, string>; phaseId: string };
+                    const segments: Segment[] = [];
+                    for (let i = 0; i < changePhases.length; i++) {
+                      const startP = changePhases[i];
+                      const next = changePhases[i + 1];
+                      const endP = next
+                        ? sortedPhases[sortedPhases.findIndex((p) => p.id === next.id) - 1] ?? null
+                        : null;
+                      segments.push({
+                        kind: "change",
+                        startPhase: startP,
+                        endPhase: endP,
+                        values: resolvedAt.get(startP.id) || cumulative,
+                        phaseId: startP.id,
+                      });
+                    }
+                    const fmtNum = (n: number | null | undefined) => {
+                      if (n == null) return "?";
+                      return Number.isInteger(n) ? String(n) : String(n);
+                    };
+                    const rangeLabel = (start: typeof sortedPhases[number] | undefined, end: typeof sortedPhases[number] | null) => {
+                      if (!start) start = sortedPhases[0];
+                      const s = fmtNum(start.number);
+                      if (!end) return `Phases ${s}+`;
+                      if (end.id === start.id) return `Phase ${s}`;
+                      return `Phases ${s} – ${fmtNum(end.number)}`;
+                    };
+                    // Resolve PhaseFabric-tracked fields (fabric cost/kg + g/kg
+                    // per slot) up to each phase, so the cost segment's total
+                    // and profit-margin badges include real fabric costs (not
+                    // just generic costs from PhaseCost).
+                    const fabricResolvedAtPhase = new Map<string, Record<string, string>>();
+                    {
+                      const fabricSorted = sortedPhases.filter((p) => phaseFabricOverrides[p.id]);
+                      const fabFields = [
+                        "fabricCostPerKg", "garmentsPerKg",
+                        "fabric2CostPerKg", "garmentsPerKg2",
                       ];
-                      // Compute effective costs for this phase (override ?? base)
-                      const effective = (key: string) => {
-                        const ov = overrides[key];
-                        if (ov != null && ov !== "") return Number(ov);
-                        return toNum((form as unknown as Record<string, string>)[key]);
-                      };
-                      const phaseData = {
-                        fabricCostPerKg: effective("fabricCostPerKg"),
-                        fabric2CostPerKg: effective("fabric2CostPerKg"),
-                        assumedFabricGarmentsPerKg: toNum(form.garmentsPerKg),
-                        assumedFabric2GarmentsPerKg: toNum(form.garmentsPerKg2),
-                        stitchingCost: effective("stitchingCost"),
-                        brandLogoCost: effective("brandLogoCost"),
-                        neckTwillCost: effective("neckTwillCost"),
-                        reflectorsCost: effective("reflectorsCost"),
-                        fusingCost: effective("fusingCost"),
-                        accessoriesCost: effective("accessoriesCost"),
-                        brandTagCost: effective("brandTagCost"),
-                        sizeTagCost: effective("sizeTagCost"),
-                        packagingCost: effective("packagingCost"),
-                        outwardShippingCost: effective("inwardShipping"),
+                      const cumFabric: Record<string, string> = {};
+                      for (const fp of fabricSorted) {
+                        const row = phaseFabricOverrides[fp.id] || {};
+                        for (const f of fabFields) {
+                          const v = row[f];
+                          if (v != null && v !== "") cumFabric[f] = v;
+                        }
+                        fabricResolvedAtPhase.set(fp.id, { ...cumFabric });
+                      }
+                    }
+                    const fabricAtOrBefore = (phaseId: string): Record<string, string> => {
+                      const target = sortedPhases.find((p) => p.id === phaseId);
+                      if (!target) return {};
+                      // Walk sortedPhases from start, accumulating fabric values until we pass the target.
+                      let result: Record<string, string> = {};
+                      for (const p of sortedPhases) {
+                        const r = fabricResolvedAtPhase.get(p.id);
+                        if (r) result = r;
+                        if (p.id === phaseId) break;
+                      }
+                      return result;
+                    };
+                    // Total & profit margin for the segment using resolved cost values.
+                    const segMetrics = (v: Record<string, string>, phaseId: string) => {
+                      const fab = fabricAtOrBefore(phaseId);
+                      const data = {
+                        fabricCostPerKg: toNum(fab.fabricCostPerKg ?? v.fabricCostPerKg),
+                        fabric2CostPerKg: toNum(fab.fabric2CostPerKg ?? v.fabric2CostPerKg),
+                        assumedFabricGarmentsPerKg: toNum(fab.garmentsPerKg ?? form.garmentsPerKg),
+                        assumedFabric2GarmentsPerKg: toNum(fab.garmentsPerKg2 ?? form.garmentsPerKg2),
+                        stitchingCost: toNum(v.stitchingCost),
+                        brandLogoCost: toNum(v.brandLogoCost),
+                        neckTwillCost: toNum(v.neckTwillCost),
+                        reflectorsCost: toNum(v.reflectorsCost),
+                        fusingCost: toNum(v.fusingCost),
+                        accessoriesCost: toNum(v.accessoriesCost),
+                        brandTagCost: toNum(v.brandTagCost),
+                        sizeTagCost: toNum(v.sizeTagCost),
+                        packagingCost: toNum(v.packagingCost),
+                        outwardShippingCost: toNum(v.inwardShipping),
                         proposedMrp: toNum(form.proposedMrp),
                       };
-                      const phaseTotalCost = computeTotalCost(phaseData);
-                      const phaseLanded = computeTotalLandedCost(phaseData);
-                      const phaseDealer = computeDealerPrice(toNum(form.proposedMrp));
-                      const phasePM = computeProfitMargin(phaseData);
-                      const isPhaseExpanded = expandedPhases[phase.id] ?? false;
-                      return (
-                        <div key={phase.id} className="border rounded overflow-hidden">
-                          <button
-                            type="button"
-                            onClick={() => setExpandedPhases((prev) => ({ ...prev, [phase.id]: !prev[phase.id] }))}
-                            className="w-full flex items-center justify-between px-2 py-1.5 bg-muted/50 hover:bg-muted transition-colors text-left"
-                          >
-                            <div className="text-[11px] font-semibold truncate max-w-[120px]" title={phase.name}>{phase.name}</div>
-                            <div className="flex items-center gap-2 text-[10px] shrink-0">
-                              <span className="text-muted-foreground">Cost: <strong className="text-foreground">{formatCurrency(phaseTotalCost)}</strong></span>
-                              <span className={`font-bold ${phasePM >= 0.2 ? "text-green-600" : phasePM >= 0.1 ? "text-amber-600" : "text-red-600"}`}>
-                                PM: {formatPercent(phasePM)}
-                              </span>
-                            </div>
-                          </button>
-                          {isPhaseExpanded && (
-                            <div className="px-2 py-1.5">
-                              <div className="flex items-center gap-2 text-[10px] mb-1.5">
-                                <span className="text-muted-foreground">Total: <strong>{formatCurrency(phaseTotalCost)}</strong></span>
-                                <span className="text-muted-foreground">Landed: <strong>{formatCurrency(phaseLanded)}</strong></span>
-                                <span className="text-muted-foreground">Dealer: <strong>{formatCurrency(phaseDealer)}</strong></span>
-                              </div>
-                              <div className="grid grid-cols-4 gap-2">
-                                {costFields.map(({ key, label }) => (
-                                  <div key={key} className="space-y-0.5">
-                                    <Label className="text-[10px] text-muted-foreground">{label}</Label>
-                                    <Input
-                                      type="number"
-                                      step="0.01"
-                                      className="h-7 text-xs"
-                                      value={overrides[key] ?? ""}
-                                      placeholder={String(toNum((form as unknown as Record<string, string>)[key]) ?? "")}
-                                      onChange={(e) => updatePhaseCostField(phase.id, key, e.target.value)}
-                                      onBlur={() => savePhaseCost(phase.id)}
-                                    />
+                      return {
+                        total: computeTotalCost(data),
+                        landed: computeTotalLandedCost(data),
+                        pm: computeProfitMargin(data),
+                      };
+                    };
+                    const usedPhaseIds = new Set(changePhaseIds);
+                    const availablePhases = sortedPhases.filter((p) => !usedPhaseIds.has(p.id));
+                    return (
+                      <div className="space-y-2">
+                        {segments.map((seg, i) => {
+                          const m = segMetrics(seg.values, seg.phaseId);
+                          const isExpanded = seg.phaseId ? (expandedPhases[`cost:${seg.phaseId}`] ?? false) : false;
+                          return (
+                            <div key={seg.phaseId} className="border rounded overflow-hidden">
+                              <div className="flex items-center justify-between px-2 py-1.5 bg-muted/50">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="text-[11px] font-semibold shrink-0">{rangeLabel(seg.startPhase, seg.endPhase)}</div>
+                                  <div className="flex items-center gap-2 text-[10px] shrink-0">
+                                    <span className="text-muted-foreground">Cost: <strong className="text-foreground">{formatCurrency(m.total)}</strong></span>
+                                    <span className={`font-bold ${m.pm >= 0.2 ? "text-green-600" : m.pm >= 0.1 ? "text-amber-600" : "text-red-600"}`}>
+                                      PM: {formatPercent(m.pm)}
+                                    </span>
                                   </div>
-                                ))}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setExpandedPhases((prev) => ({ ...prev, [`cost:${seg.phaseId}`]: !prev[`cost:${seg.phaseId}`] }))}>
+                                    {isExpanded ? "Close" : "Edit"}
+                                  </Button>
+                                  <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive" onClick={() => removePhaseCost(seg.phaseId)}>
+                                    Remove
+                                  </Button>
+                                </div>
                               </div>
+                              {isExpanded && (
+                                <div className="px-2 py-2">
+                                  <p className="text-[10px] text-muted-foreground mb-1.5">
+                                    Cost change starting at <strong>Phase {fmtNum(seg.startPhase!.number)}</strong>. Blank fields inherit the prior segment&apos;s value.
+                                  </p>
+                                  <div className="flex items-center gap-2 text-[10px] mb-1.5">
+                                    <span className="text-muted-foreground">Total: <strong>{formatCurrency(m.total)}</strong></span>
+                                    <span className="text-muted-foreground">Landed: <strong>{formatCurrency(m.landed)}</strong></span>
+                                    <span className="text-muted-foreground">Dealer: <strong>{formatCurrency(computeDealerPrice(toNum(form.proposedMrp)))}</strong></span>
+                                  </div>
+                                  <div className="grid grid-cols-4 gap-2">
+                                    {costFieldDefs.map(({ key, label }) => {
+                                      const overrides = phaseCostOverrides[seg.phaseId!] || {};
+                                      const idx = segments.findIndex((s) => s.phaseId === seg.phaseId);
+                                      // Introduction segment (idx === 0) has no prior state under option B.
+                                      const priorResolved = idx > 0 ? segments[idx - 1].values : ({} as Record<string, string>);
+                                      return (
+                                        <div key={key} className="space-y-0.5">
+                                          <Label className="text-[10px] text-muted-foreground">{label}</Label>
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            className="h-7 text-xs"
+                                            value={overrides[key] ?? ""}
+                                            placeholder={priorResolved[key] || ""}
+                                            onChange={(e) => updatePhaseCostField(seg.phaseId!, key, e.target.value)}
+                                            onBlur={() => savePhaseCost(seg.phaseId!)}
+                                          />
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                          );
+                        })}
+                        {availablePhases.length > 0 && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <Select onValueChange={(v) => { if (v) addPhaseCostRow(String(v)); }}>
+                              <SelectTrigger className="h-7 text-xs flex-1">
+                                <span className="text-muted-foreground">+ Add cost change…</span>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePhases.map((p) => (
+                                  <SelectItem key={p.id} value={p.id} className="text-xs">Phase {fmtNum(p.number)}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </CollapsibleSection>
+              )}
+
+              {/* Phase Fabrics — changelog segments view */}
+              {phases.length > 0 && (
+                <CollapsibleSection
+                  title="Phase Fabrics"
+                  expanded={expandedSections.phaseFabrics}
+                  onToggle={() => toggleSection("phaseFabrics")}
+                >
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Fabric history as a changelog. The master fabric applies to every phase until you record a change. Each change carries forward to later phases.
+                  </p>
+                  {(() => {
+                    const masterFabricDefaults: Record<string, string> = {
+                      fabricName: String(form.fabricName ?? ""),
+                      fabricVendorId: "",
+                      fabricCostPerKg: String((form as unknown as Record<string, unknown>).fabricCostPerKg ?? ""),
+                      garmentsPerKg: String((form as unknown as Record<string, unknown>).garmentsPerKg ?? ""),
+                      fabric2Name: String(form.fabric2Name ?? ""),
+                      fabric2VendorId: "",
+                      fabric2CostPerKg: String((form as unknown as Record<string, unknown>).fabric2CostPerKg ?? ""),
+                      garmentsPerKg2: String((form as unknown as Record<string, unknown>).garmentsPerKg2 ?? ""),
+                      fabric3Name: String((form as unknown as Record<string, unknown>).fabric3Name ?? ""),
+                      fabric3VendorId: "",
+                      fabric3CostPerKg: String((form as unknown as Record<string, unknown>).fabric3CostPerKg ?? ""),
+                      garmentsPerKg3: String((form as unknown as Record<string, unknown>).garmentsPerKg3 ?? ""),
+                      fabric4Name: String((form as unknown as Record<string, unknown>).fabric4Name ?? ""),
+                      fabric4VendorId: "",
+                      fabric4CostPerKg: String((form as unknown as Record<string, unknown>).fabric4CostPerKg ?? ""),
+                      garmentsPerKg4: String((form as unknown as Record<string, unknown>).garmentsPerKg4 ?? ""),
+                    };
+                    // Convention: leading digit of articleNumber = the phase the
+                    // article was introduced in. Clip the segments view to
+                    // phases >= introduction so we never show history for phases
+                    // that pre-date the article.
+                    const introNum = articleIntroductionPhaseNumber(editingRow?.articleNumber ?? "");
+                    const sortedPhases = [...phases]
+                      .sort((a, b) => (a.number ?? 0) - (b.number ?? 0))
+                      .filter((p) => introNum == null ? true : (p.number ?? 0) >= introNum);
+                    const changePhaseIds = Object.keys(phaseFabricOverrides);
+                    const changePhases = sortedPhases.filter((p) => changePhaseIds.includes(p.id));
+                    // Walk changelog cumulatively to compute resolved values per segment.
+                    const resolvedAt = new Map<string, Record<string, string>>();
+                    // Under option B the introduction-phase changelog row carries the
+                    // article's starting state; nothing exists before it. Walk starts empty.
+                    let cumulative: Record<string, string> = {};
+                    for (const cp of changePhases) {
+                      const row = phaseFabricOverrides[cp.id] || {};
+                      for (const f of PHASE_FABRIC_FIELDS) {
+                        const v = row[f];
+                        if (v != null && v !== "") cumulative[f] = v;
+                      }
+                      resolvedAt.set(cp.id, { ...cumulative });
+                    }
+                    type Segment = { kind: "change"; startPhase: typeof sortedPhases[number]; endPhase: typeof sortedPhases[number] | null; values: Record<string, string>; phaseId: string };
+                    const segments: Segment[] = [];
+                    for (let i = 0; i < changePhases.length; i++) {
+                      const startP = changePhases[i];
+                      const next = changePhases[i + 1];
+                      const endP = next
+                        ? sortedPhases[sortedPhases.findIndex((p) => p.id === next.id) - 1] ?? null
+                        : null;
+                      segments.push({
+                        kind: "change",
+                        startPhase: startP,
+                        endPhase: endP,
+                        values: resolvedAt.get(startP.id) || cumulative,
+                        phaseId: startP.id,
+                      });
+                    }
+                    const fmtNum = (n: number | null | undefined) => {
+                      if (n == null) return "?";
+                      return Number.isInteger(n) ? String(n) : String(n);
+                    };
+                    const rangeLabel = (start: typeof sortedPhases[number] | undefined, end: typeof sortedPhases[number] | null) => {
+                      if (!start) start = sortedPhases[0];
+                      const s = fmtNum(start.number);
+                      if (!end) return `Phases ${s}+`;
+                      if (end.id === start.id) return `Phase ${s}`;
+                      return `Phases ${s} – ${fmtNum(end.number)}`;
+                    };
+                    const summary = (v: Record<string, string>) => {
+                      const slots = [
+                        v.fabricName, v.fabric2Name, v.fabric3Name, v.fabric4Name,
+                      ].filter((x) => x && x.trim());
+                      return slots.length ? slots.join(" + ") : "—";
+                    };
+                    const usedPhaseIds = new Set(changePhaseIds);
+                    const availablePhases = sortedPhases.filter((p) => !usedPhaseIds.has(p.id));
+                    return (
+                      <div className="space-y-2">
+                        {segments.map((seg) => {
+                          const start = seg.startPhase;
+                          const isExpanded = expandedPhases[`fabric:${seg.phaseId}`] ?? false;
+                          return (
+                            <div key={seg.phaseId} className="border rounded overflow-hidden">
+                              <div className="flex items-center justify-between px-2 py-1.5 bg-muted/50">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="text-[11px] font-semibold shrink-0">{rangeLabel(seg.startPhase, seg.endPhase)}</div>
+                                  <div className="text-[10px] text-muted-foreground truncate">
+                                    {summary(seg.values)}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-[10px]" onClick={() => setExpandedPhases((prev) => ({ ...prev, [`fabric:${seg.phaseId}`]: !prev[`fabric:${seg.phaseId}`] }))}>
+                                    {isExpanded ? "Close" : "Edit"}
+                                  </Button>
+                                  <Button type="button" variant="ghost" size="sm" className="h-6 px-1.5 text-[10px] text-destructive" onClick={() => removePhaseFabric(seg.phaseId)}>
+                                    Remove
+                                  </Button>
+                                </div>
+                              </div>
+                              {isExpanded && (() => {
+                                // Compute "slots actually in use" across the master + every
+                                // segment's resolved values + any override on this row.
+                                const slotHasContent = (slot: number) => {
+                                  const nk = slot === 1 ? "fabricName" : `fabric${slot}Name`;
+                                  if ((masterFabricDefaults[nk] || "").trim()) return true;
+                                  for (const s of segments) if ((s.values[nk] || "").trim()) return true;
+                                  return false;
+                                };
+                                const baseSlots = [1, 2, 3, 4].filter(slotHasContent).length || 1;
+                                const extra = extraFabricSlots[seg.phaseId!] ?? 0;
+                                const slotsToRender = Math.min(4, Math.max(baseSlots, extra));
+                                const overridesThisSeg = phaseFabricOverrides[seg.phaseId!] || {};
+                                return (
+                                <div className="px-2 py-2 space-y-2">
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Fabric change starting at <strong>Phase {fmtNum(start.number)}</strong>. Blank slots inherit the prior segment&apos;s value.
+                                  </p>
+                                  {Array.from({ length: slotsToRender }, (_, i) => i + 1).map((slot) => {
+                                    const nameKey = slot === 1 ? "fabricName" : `fabric${slot}Name`;
+                                    const costKey = slot === 1 ? "fabricCostPerKg" : `fabric${slot}CostPerKg`;
+                                    const gpkKey = slot === 1 ? "garmentsPerKg" : `garmentsPerKg${slot}`;
+                                    const overrides = overridesThisSeg;
+                                    // For placeholder/inherited display use the prior segment's resolved value
+                                    const idx = segments.findIndex((s) => s.phaseId === seg.phaseId);
+                                    // Introduction segment (idx === 0) has no prior state under option B.
+                                    const priorResolved = idx > 0 ? segments[idx - 1].values : ({} as Record<string, string>);
+                                    return (
+                                      <div key={slot} className="grid grid-cols-[1.4fr_1fr_1fr] gap-2 items-end">
+                                        <div className="space-y-0.5">
+                                          <Label className="text-[10px] text-muted-foreground">Fabric {slot} name</Label>
+                                          <Combobox
+                                            value={overrides[nameKey] ?? ""}
+                                            onValueChange={(v) => {
+                                              updatePhaseFabricField(seg.phaseId!, nameKey, v);
+                                              savePhaseFabric(seg.phaseId!, { ...overrides, [nameKey]: v });
+                                            }}
+                                            options={fabricNames}
+                                            placeholder={priorResolved[nameKey] || "Inherit"}
+                                          />
+                                        </div>
+                                        <div className="space-y-0.5">
+                                          <Label className="text-[10px] text-muted-foreground">Cost/kg</Label>
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            className="h-7 text-xs"
+                                            value={overrides[costKey] ?? ""}
+                                            placeholder={priorResolved[costKey] || ""}
+                                            onChange={(e) => updatePhaseFabricField(seg.phaseId!, costKey, e.target.value)}
+                                            onBlur={() => savePhaseFabric(seg.phaseId!)}
+                                          />
+                                        </div>
+                                        <div className="space-y-0.5">
+                                          <Label className="text-[10px] text-muted-foreground">Garments/kg</Label>
+                                          <Input
+                                            type="number"
+                                            step="0.01"
+                                            className="h-7 text-xs"
+                                            value={overrides[gpkKey] ?? ""}
+                                            placeholder={priorResolved[gpkKey] || ""}
+                                            onChange={(e) => updatePhaseFabricField(seg.phaseId!, gpkKey, e.target.value)}
+                                            onBlur={() => savePhaseFabric(seg.phaseId!)}
+                                          />
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {slotsToRender < 4 && (
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 px-1.5 text-[10px] text-muted-foreground"
+                                      onClick={() => setExtraFabricSlots((prev) => ({ ...prev, [seg.phaseId!]: slotsToRender + 1 }))}
+                                    >
+                                      + Add Fabric {slotsToRender + 1} slot
+                                    </Button>
+                                  )}
+                                </div>
+                                );
+                              })()}
+                            </div>
+                          );
+                        })}
+                        {availablePhases.length > 0 && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <Select onValueChange={(v) => { if (v) addPhaseFabricRow(String(v)); }}>
+                              <SelectTrigger className="h-7 text-xs flex-1">
+                                <span className="text-muted-foreground">+ Add fabric change…</span>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePhases.map((p) => (
+                                  <SelectItem key={p.id} value={p.id} className="text-xs">Phase {fmtNum(p.number)}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </CollapsibleSection>
               )}
 

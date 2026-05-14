@@ -9,10 +9,8 @@ import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger,
-} from "@/components/ui/select";
 import { PRODUCT_STATUS_LABELS, GENDER_LABELS } from "@/lib/constants";
+import { KIDS_SIZE_LABELS, type SizeKey } from "@/lib/size-labels";
 import {
   computeTotalGarmenting,
   computeFabricCostPerPiece,
@@ -23,12 +21,14 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/formatters";
-import { Plus, Check, FileDown, ChevronDown } from "lucide-react";
+import { Plus, Check, FileDown, ChevronDown, Info, StickyNote } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ProductOrderSheet } from "./product-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { ExportExcelButton } from "@/components/ag-grid/export-excel-button";
+import { FilterPopover } from "@/components/ag-grid/filter-popover";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +81,7 @@ function toRow(p: any): Record<string, unknown> {
     packagingCost: toNum(p.packagingCost), outwardShippingCost: toNum(p.outwardShippingCost),
     proposedMrp: toNum(p.proposedMrp), onlineMrp: toNum(p.onlineMrp),
     garmentingAt: s(p.garmentingAt),
+    notes: s(p.notes),
   };
 }
 
@@ -141,9 +142,37 @@ export function ProductGrid({
     }, 300);
   }, [saveColumnState]);
 
+  // Map any (current OR historical) skuCode → live master values, so the grid
+  // can show current productName/type/skuCode for orders placed before a rename
+  // and flag stale type/code values inline.
+  const skuToLive = useMemo(() => {
+    const map = new Map<string, { skuCode: string; productName: string; type: string }>();
+    for (const m of productMasters as unknown as Array<Record<string, unknown>>) {
+      const live = {
+        skuCode: String(m.skuCode ?? ""),
+        productName: String(m.productName ?? ""),
+        type: String(m.type ?? ""),
+      };
+      if (live.skuCode) map.set(live.skuCode, live);
+      const prev = (m.previousSkuCodes as string[] | undefined) ?? [];
+      for (const old of prev) if (old) map.set(old, live);
+    }
+    return map;
+  }, [productMasters]);
+
   const rowData = useMemo((): Record<string, unknown>[] => {
-    return (products as Record<string, unknown>[]).map((p) => toRow(p));
-  }, [products]);
+    return (products as Record<string, unknown>[]).map((p) => {
+      const row = toRow(p);
+      const sku = String(row.skuCode ?? "");
+      const live = sku ? skuToLive.get(sku) : undefined;
+      if (live) {
+        if (live.productName) row.productName = live.productName;
+        row.__liveSkuCode = live.skuCode;
+        row.__liveType = live.type;
+      }
+      return row;
+    });
+  }, [products, skuToLive]);
 
   const vendorLabels: Record<string, string> = {};
   vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
@@ -179,27 +208,158 @@ export function ProductGrid({
     return Math.round((total * pct) / 100);
   };
 
+  // For kids articles, the canonical S/M/L/XL/XXL columns physically
+  // correspond to age bands (6-7Y / 8-9Y / 10-11Y / 12-13Y / 14-15Y). The
+  // header stays generic; this renderer adds an info icon to the cell with
+  // a tooltip showing the kids size for that row.
+  const expectedSizeCellRenderer = (sizeKey: SizeKey) => (p: { value: number; data?: { gender?: string } }) => {
+    const v = p.value ?? 0;
+    if (p.data?.gender !== "KIDS") return v;
+    return (
+      <span className="inline-flex items-center gap-1 justify-end w-full">
+        <span>{v}</span>
+        <TooltipProvider delay={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="h-3 w-3 text-muted-foreground cursor-help" />
+            </TooltipTrigger>
+            <TooltipContent>Size: {KIDS_SIZE_LABELS[sizeKey]}</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </span>
+    );
+  };
+
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     // Pinned identity columns (default order)
+    {
+      field: "id",
+      headerName: "ID",
+      pinned: "left",
+      width: 110,
+      minWidth: 90,
+      editable: false,
+      cellClass: "font-mono text-[10px]",
+      tooltipField: "id",
+      valueFormatter: (p) => (typeof p.value === "string" ? p.value.slice(-8) : ""),
+    },
     { field: "fabricVendorId", headerName: "Fabric 1 Vendor", pinned: "left", minWidth: 110, editable: false, valueFormatter: (p) => vendorLabels[p.value] || p.value || "" },
-    { field: "fabricName", headerName: "Fabric 1", pinned: "left", minWidth: 110, editable: false },
-    { field: "fabric2Name", headerName: "Fabric 2", pinned: "left", minWidth: 110, editable: false },
+    {
+      field: "fabricName", headerName: "Fabric 1", pinned: "left", minWidth: 110, editable: false,
+      cellRenderer: (params: { data?: Record<string, unknown>; value?: unknown }) => {
+        const value = params.value == null ? "" : String(params.value);
+        const live = params.data?.__currentFabricName ? String(params.data.__currentFabricName) : "";
+        const stale = !!live && !!value && live !== value;
+        if (!stale) return value;
+        return (
+          <span className="inline-flex items-center gap-1 italic text-muted-foreground">
+            {value}
+            <TooltipProvider delay={150}>
+              <Tooltip>
+                <TooltipTrigger render={<Info className="h-3 w-3 cursor-help shrink-0" />} />
+                <TooltipContent>Now: {live}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
+        );
+      },
+    },
+    {
+      field: "fabric2Name", headerName: "Fabric 2", pinned: "left", minWidth: 110, editable: false,
+      cellRenderer: (params: { data?: Record<string, unknown>; value?: unknown }) => {
+        const value = params.value == null ? "" : String(params.value);
+        const live = params.data?.__currentFabric2Name ? String(params.data.__currentFabric2Name) : "";
+        const stale = !!live && !!value && live !== value;
+        if (!stale) return value;
+        return (
+          <span className="inline-flex items-center gap-1 italic text-muted-foreground">
+            {value}
+            <TooltipProvider delay={150}>
+              <Tooltip>
+                <TooltipTrigger render={<Info className="h-3 w-3 cursor-help shrink-0" />} />
+                <TooltipContent>Now: {live}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
+        );
+      },
+    },
     { field: "productName", headerName: "Product Name", pinned: "left", minWidth: 110, editable: false },
     // Visible main columns
-    { field: "type", headerName: "Type", minWidth: 90, editable: false },
+    {
+      field: "type", headerName: "Type", minWidth: 90, editable: false,
+      cellRenderer: (params: { data?: Record<string, unknown>; value?: unknown }) => {
+        const value = params.value == null ? "" : String(params.value);
+        const live = params.data?.__liveType ? String(params.data.__liveType) : "";
+        const stale = !!live && !!value && live !== value;
+        if (!stale) return value;
+        return (
+          <span className="inline-flex items-center gap-1 italic text-muted-foreground">
+            {value}
+            <TooltipProvider delay={150}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<Info className="h-3 w-3 cursor-help shrink-0" />}
+                />
+                <TooltipContent>Now: {live}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
+        );
+      },
+    },
     { field: "colourOrdered", headerName: "Colour", minWidth: 100, editable: false },
-    { field: "skuCode", headerName: "Article Code", minWidth: 90, editable: false },
-    { field: "articleNumber", headerName: "Article Number", minWidth: 80, editable: false },
+    {
+      field: "skuCode", headerName: "Article Code", minWidth: 90, editable: false,
+      cellRenderer: (params: { data?: Record<string, unknown>; value?: unknown }) => {
+        const value = params.value == null ? "" : String(params.value);
+        const live = params.data?.__liveSkuCode ? String(params.data.__liveSkuCode) : "";
+        const stale = !!live && !!value && live !== value;
+        if (!stale) return value;
+        return (
+          <span className="inline-flex items-center gap-1 italic text-muted-foreground">
+            {value}
+            <TooltipProvider delay={150}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={<Info className="h-3 w-3 cursor-help shrink-0" />}
+                />
+                <TooltipContent>Now: {live}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </span>
+        );
+      },
+    },
+    {
+      field: "articleNumber",
+      headerName: "Article Number",
+      minWidth: 80,
+      editable: false,
+      cellRenderer: (params: { value?: string; data?: Record<string, unknown> }) => {
+        const v = String(params.value ?? "");
+        const notes = String(params.data?.notes ?? "").trim();
+        if (!notes) return v;
+        return (
+          <span className="inline-flex items-center gap-1">
+            <span>{v}</span>
+            <span title={notes} className="inline-flex items-center text-amber-600">
+              <StickyNote className="h-3 w-3" />
+            </span>
+          </span>
+        );
+      },
+    },
     { field: "garmentingAt", headerName: "Garmenting At", minWidth: 110, editable: false },
     numCol("assumedFabricGarmentsPerKg", "Fabric 1 Garments/Kg", 130),
     numCol("fabricOrderedQuantityKg", "Fabric 1 Quantity", 110),
     numCol("fabric2OrderedQuantityKg", "Fabric 2 Quantity", 110),
     { headerName: "Expected FG", minWidth: 100, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedGarments(p.data) : 0 },
-    { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "S") : 0 },
-    { headerName: "Expected M", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "M") : 0 },
-    { headerName: "Expected L", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "L") : 0 },
-    { headerName: "Expected XL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XL") : 0 },
-    { headerName: "Expected XXL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XXL") : 0 },
+    { headerName: "Expected S", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "S") : 0, cellRenderer: expectedSizeCellRenderer("S") },
+    { headerName: "Expected M", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "M") : 0, cellRenderer: expectedSizeCellRenderer("M") },
+    { headerName: "Expected L", minWidth: 75, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "L") : 0, cellRenderer: expectedSizeCellRenderer("L") },
+    { headerName: "Expected XL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XL") : 0, cellRenderer: expectedSizeCellRenderer("XL") },
+    { headerName: "Expected XXL", minWidth: 80, editable: false, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XXL") : 0, cellRenderer: expectedSizeCellRenderer("XXL") },
     numCol("stitchingCost", "Stitching Cost", 110),
     numCol("brandLogoCost", "Logo Cost", 95),
     numCol("neckTwillCost", "Neck Twill", 100),
@@ -266,7 +426,7 @@ export function ProductGrid({
     { ...numCol("fabric2ShippedQuantityKg", "Fabric 2 Shipped Qty (kg)", 140), hide: true },
     { field: "invoiceNumber", headerName: "Invoice Number", minWidth: 110, editable: false, hide: true },
     { headerName: "Actual No. of Garments Stitched", minWidth: 140, editable: false, hide: true, cellClass: "computed-cell", valueGetter: (p) => p.data ? computeTotalSizeCount(p.data) : 0 },
-    { headerName: "Expected XS", minWidth: 75, editable: false, hide: true, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XS") : 0 },
+    { headerName: "Expected XS", minWidth: 75, editable: false, hide: true, cellClass: "computed-cell", type: "numericColumn", valueGetter: (p) => p.data ? expectedForSize(p.data, "XS") : 0, cellRenderer: expectedSizeCellRenderer("XS") },
     { ...numCol("actualStitchedXS", "Actual Stitched - XS", 85), hide: true },
     { ...numCol("actualStitchedS", "Actual Stitched - S", 85), hide: true },
     { ...numCol("actualStitchedM", "Actual Stitched - M", 85), hide: true },
@@ -358,6 +518,16 @@ export function ProductGrid({
     router.push(`/products?${params.toString()}`);
   }
 
+  function applyMultiFilter(key: string, values: string[]) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (values.length > 0) params.set(key, values.join(","));
+    else params.delete(key);
+    router.push(`/products?${params.toString()}`);
+  }
+
+  const selectedVendorIds = (searchParams.get("vendor") || "").split(",").filter(Boolean);
+  const selectedStatuses = (searchParams.get("status") || "").split(",").filter(Boolean);
+
   function handleSearch(e: React.FormEvent) { e.preventDefault(); applyFilter("search", search); }
 
   const tabs = [
@@ -373,42 +543,32 @@ export function ProductGrid({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {tabs.map((tab) => (
-          <Button key={tab.key} variant={currentTab === tab.key ? "default" : "outline"} size="sm" onClick={() => applyFilter("tab", tab.key)}>
-            {tab.label}
-          </Button>
-        ))}
-        <div className="ml-auto" />
-        <form onSubmit={handleSearch} className="flex gap-2">
-          <Input placeholder="Search article, code, name..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[200px]" />
-        </form>
-        <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
-          <SelectTrigger className="w-[150px]">
-            <span className="truncate">{vendorLabels[searchParams.get("vendor") || ""] || "All Vendors"}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Vendors</SelectItem>
-            {vendors
-              .filter((v) => v.type === "FABRIC_SUPPLIER")
-              .map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
-          </SelectContent>
-        </Select>
-        <Select value={searchParams.get("status") || "all"} onValueChange={(v) => applyFilter("status", v)}>
-          <SelectTrigger className="w-[170px]">
-            <span className="truncate">{PRODUCT_STATUS_LABELS[searchParams.get("status") || ""] || "All Statuses"}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Statuses</SelectItem>
-            {Object.entries(PRODUCT_STATUS_LABELS).map(([k, v]) => (<SelectItem key={k} value={k}>{v}</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Article Order
         </Button>
+        <FilterPopover
+          tabKey={currentTab}
+          tabs={tabs}
+          onTabChange={(k) => applyFilter("tab", k)}
+          vendors={vendors.filter((v) => v.type === "FABRIC_SUPPLIER").map((v) => ({ id: v.id, name: v.name }))}
+          selectedVendors={selectedVendorIds}
+          onVendorsChange={(ids) => applyMultiFilter("vendor", ids)}
+          statuses={Object.entries(PRODUCT_STATUS_LABELS).map(([key, label]) => ({ key, label }))}
+          selectedStatuses={selectedStatuses}
+          onStatusesChange={(keys) => applyMultiFilter("status", keys)}
+          onClearAll={() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("tab");
+            params.delete("vendor");
+            params.delete("status");
+            router.push(`/products?${params.toString()}`);
+          }}
+        />
+        <form onSubmit={handleSearch} className="flex gap-2">
+          <Input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-[200px] h-7 text-[12.8px]" />
+        </form>
+        <div className="ml-auto flex items-center gap-2">
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -459,11 +619,13 @@ export function ProductGrid({
             })()}
           </DropdownMenuContent>
         </DropdownMenu>
-        <ExportExcelButton gridApiRef={gridApiRef} fileName="article-orders" sheetName="Article Orders" />
+        <ExportExcelButton gridApiRef={gridApiRef} fileName="article-orders" sheetName="Article Orders" iconOnly />
         <ManageColumnsDialog
           gridApiRef={gridApiRef}
           colStateKey={COL_STATE_KEY}
+          iconOnly
         />
+        </div>
       </div>
 
       <ProductOrderSheet

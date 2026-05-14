@@ -44,7 +44,7 @@ enum SourcingRole {
 model Phase {
   id                   String              @id @default(cuid())
   name                 String
-  number               Int                 @unique
+  number               Float               @unique
   startDate            DateTime?
   endDate              DateTime?
   isCurrent            Boolean             @default(false)
@@ -83,6 +83,8 @@ model Vendor {
   updatedAt               DateTime            @updatedAt
   productsByFabricVendor  Product[]           @relation("ProductFabricVendor")
   productsByFabric2Vendor Product[]           @relation("ProductFabric2Vendor")
+  productsByFabric3Vendor Product[]           @relation("ProductFabric3Vendor")
+  productsByFabric4Vendor Product[]           @relation("ProductFabric4Vendor")
   fabricOrders            FabricOrder[]       @relation("FabricOrderVendor")
   expenses                Expense[]           @relation("ExpenseVendor")
   fabricMasters           FabricMaster[]      @relation("FabricMasterVendor")
@@ -153,15 +155,35 @@ model Product {
   fabric2VendorId             String?
   fabric2Vendor               Vendor?  @relation("ProductFabric2Vendor", fields: [fabric2VendorId], references: [id])
 
+  // Tertiary Fabric
+  fabric3Name                 String?
+  fabric3CostPerKg            Decimal? @db.Decimal(10, 2)
+  assumedFabric3GarmentsPerKg Decimal? @db.Decimal(10, 2)
+  fabric3VendorId             String?
+  fabric3Vendor               Vendor?  @relation("ProductFabric3Vendor", fields: [fabric3VendorId], references: [id])
+
+  // Quaternary Fabric
+  fabric4Name                 String?
+  fabric4CostPerKg            Decimal? @db.Decimal(10, 2)
+  assumedFabric4GarmentsPerKg Decimal? @db.Decimal(10, 2)
+  fabric4VendorId             String?
+  fabric4Vendor               Vendor?  @relation("ProductFabric4Vendor", fields: [fabric4VendorId], references: [id])
+
   // Cutting report - actual garments per kg measured after cutting
   cuttingReportGarmentsPerKg  Decimal? @db.Decimal(10, 2)
   cuttingReportGarmentsPerKg2 Decimal? @db.Decimal(10, 2)
+  cuttingReportGarmentsPerKg3 Decimal? @db.Decimal(10, 2)
+  cuttingReportGarmentsPerKg4 Decimal? @db.Decimal(10, 2)
 
   // Quantities
   fabricOrderedQuantityKg  Decimal? @db.Decimal(10, 2)
   fabricShippedQuantityKg  Decimal? @db.Decimal(10, 2)
   fabric2OrderedQuantityKg Decimal? @db.Decimal(10, 2)
   fabric2ShippedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabric3OrderedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabric3ShippedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabric4OrderedQuantityKg Decimal? @db.Decimal(10, 2)
+  fabric4ShippedQuantityKg Decimal? @db.Decimal(10, 2)
   garmentNumber            Int?
 
   // Actual Stitched Size Breakdown
@@ -209,6 +231,8 @@ model Product {
   expenseId String?
   expense   Expense? @relation("ProductExpense", fields: [expenseId], references: [id])
 
+  notes String?
+
   isStrikedThrough Boolean @default(false)
 
   createdAt DateTime @default(now())
@@ -221,6 +245,8 @@ model Product {
   @@index([styleNumber])
   @@index([fabricVendorId])
   @@index([fabric2VendorId])
+  @@index([fabric3VendorId])
+  @@index([fabric4VendorId])
   @@index([isRepeat])
   @@index([invoiceNumber])
   @@index([colourOrderedId])
@@ -298,6 +324,8 @@ model FabricOrder {
   // Link to auto-created expense
   expenseId String?
   expense   Expense? @relation("FabricOrderExpense", fields: [expenseId], references: [id])
+
+  notes String?
 
   isStrikedThrough Boolean @default(false)
 
@@ -584,6 +612,38 @@ model PhaseCost {
   @@index([entityType, entityId])
 }
 
+model PhaseFabric {
+  id              String @id @default(cuid())
+  phaseId         String
+  productMasterId String
+
+  fabricName       String?
+  fabricVendorId   String?
+  fabricCostPerKg  Decimal? @db.Decimal(10, 2)
+  garmentsPerKg    Decimal? @db.Decimal(10, 2)
+
+  fabric2Name      String?
+  fabric2VendorId  String?
+  fabric2CostPerKg Decimal? @db.Decimal(10, 2)
+  garmentsPerKg2   Decimal? @db.Decimal(10, 2)
+
+  fabric3Name      String?
+  fabric3VendorId  String?
+  fabric3CostPerKg Decimal? @db.Decimal(10, 2)
+  garmentsPerKg3   Decimal? @db.Decimal(10, 2)
+
+  fabric4Name      String?
+  fabric4VendorId  String?
+  fabric4CostPerKg Decimal? @db.Decimal(10, 2)
+  garmentsPerKg4   Decimal? @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([phaseId, productMasterId])
+  @@index([productMasterId])
+}
+
 model AlertRule {
   id                    String   @id // matches the rule id in src/lib/alert-rules-catalog.ts
   enabled               Boolean  @default(true)
@@ -655,6 +715,7 @@ model ProductMaster {
   garmentingAtRef             GarmentingLocation? @relation("ProductMasterGarmentingAt", fields: [garmentingAtId], references: [id])
   isStrikedThrough            Boolean  @default(false)
   manuallyCleanedAt           DateTime?
+  previousSkuCodes            String[] @default([])
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 
@@ -665,6 +726,13 @@ model ProductMaster {
   @@index([styleNumber])
   @@index([typeRefId])
   @@index([garmentingAtId])
+}
+
+model ArticleHistory {
+  articleNumber String   @id
+  previousTypes String[] @default([])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ─── ACCESSORIES ─────────────────────────────────────────────────
@@ -715,6 +783,7 @@ model AccessoryMaster {
   purchases    AccessoryPurchase[]
   dispatches   AccessoryDispatch[]
   productLinks ProductMasterAccessory[]
+  articleLinks ArticleAccessory[]
 
   @@index([category])
   @@index([vendorId])
@@ -743,6 +812,8 @@ model AccessoryPurchase {
 
   shipToVendorId String?
   shipToVendor   Vendor? @relation("AccessoryPurchaseShipTo", fields: [shipToVendorId], references: [id])
+
+  advancePercentage Decimal? @db.Decimal(5, 2)
 
   isStrikedThrough Boolean  @default(false)
   createdAt        DateTime @default(now())
@@ -818,9 +889,39 @@ model ProductMasterAccessory {
   quantityPerPiece Decimal @db.Decimal(10, 4)
   notes            String?
 
+  // Garment sizes this BOM line applies to (e.g. ["S","M"]). Empty array means
+  // it applies to every size. Used to model size-dependent accessories like
+  // elastics where the variant differs by garment size: one BOM row per
+  // size-bucket, each pointing to its own AccessoryMaster variant.
+  applicableSizes String[] @default([])
+
   createdAt DateTime @default(now())
 
   @@unique([productMasterId, accessoryId])
   @@index([productMasterId])
+  @@index([accessoryId])
+}
+
+/// Article-level BOM. One row per (articleNumber, accessory). Replaces the
+/// older per-SKU ProductMasterAccessory model — a BOM is a property of the
+/// article design, not its colour variants. If per-SKU divergence is ever
+/// needed (e.g. colour-matched buttons), add a sibling override table on top.
+model ArticleAccessory {
+  id            String          @id @default(cuid())
+  articleNumber String
+  accessoryId   String
+  accessory     AccessoryMaster @relation(fields: [accessoryId], references: [id])
+
+  quantityPerPiece Decimal @db.Decimal(10, 4)
+  notes            String?
+
+  // Garment sizes this BOM line applies to (e.g. ["S","M"]). Empty = all sizes.
+  applicableSizes String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([articleNumber, accessoryId])
+  @@index([articleNumber])
   @@index([accessoryId])
 }

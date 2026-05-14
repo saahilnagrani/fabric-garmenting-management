@@ -12,8 +12,10 @@ import {
   Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
 } from "@/components/ui/sheet";
 import { createProduct, updateProduct, deleteProduct, getProductLinkedFabricOrders } from "@/actions/products";
+import { getPhaseInheritanceForOrder } from "@/actions/phase-fabrics";
 import { getBomForProduct } from "@/actions/accessory-dispatches";
 import { accessoryDisplayName } from "@/lib/accessory-display";
+import { sizeLabelForGender } from "@/lib/size-labels";
 import { GENDER_LABELS, PRODUCT_STATUS_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { showAutoAdvanceToast } from "@/lib/toast-helpers";
 import { Combobox } from "@/components/ui/combobox";
@@ -27,7 +29,9 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
 import { toast } from "sonner";
-import { Loader2, Trash2, ChevronsUpDown } from "lucide-react";
+import { Loader2, Trash2, ChevronsUpDown, Info, StickyNote } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 
 type Vendor = { id: string; name: string; type?: string };
@@ -42,8 +46,8 @@ function toNum(v: unknown): number | null {
 /** Sheet title that shrinks from 20px down to 12px so it fits on one row. */
 function AutoFitOrderTitle({ text }: { text: string }) {
   const ref = useRef<HTMLHeadingElement | null>(null);
-  const [fontPx, setFontPx] = useState(20);
-  useLayoutEffect(() => { setFontPx(20); }, [text]);
+  const [fontPx, setFontPx] = useState(16);
+  useLayoutEffect(() => { setFontPx(16); }, [text]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -132,6 +136,7 @@ type FormData = {
   actualInwardXL: string;
   actualInwardXXL: string;
   actualInwardTotal: string;
+  notes: string;
 };
 
 const emptyForm: FormData = {
@@ -188,6 +193,7 @@ const emptyForm: FormData = {
   actualInwardXL: "",
   actualInwardXXL: "",
   actualInwardTotal: "",
+  notes: "",
 };
 
 function rowToForm(row: Record<string, unknown>): FormData {
@@ -247,6 +253,7 @@ function rowToForm(row: Record<string, unknown>): FormData {
     actualInwardXL: sNum(row.actualInwardXL),
     actualInwardXXL: sNum(row.actualInwardXXL),
     actualInwardTotal: sNum(row.actualInwardTotal),
+    notes: s(row.notes),
   };
 }
 
@@ -302,6 +309,7 @@ export function ProductOrderSheet({
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   // Collapsible section state - all expanded by default
   const [expandedSections, setExpandedSections] = useState<Record<SectionName, boolean>>(() =>
@@ -370,6 +378,7 @@ export function ProductOrderSheet({
         setForm({ ...emptyForm, isRepeat: isRepeatTab, fabricVendorId: vendors.find((v) => v.type === "FABRIC_SUPPLIER")?.id || "" });
       }
       setShowDeleteConfirm(false);
+      setShowNotes(Boolean(editingRow?.notes && String(editingRow.notes).trim()));
       // All sections expanded by default, EXCEPT Fabric 2 which starts collapsed
       // when creating a new order or editing an existing one with no fabric 2 data.
       setExpandedSections(
@@ -414,29 +423,75 @@ export function ProductOrderSheet({
     }
   }, [open, editingRowId]);
 
+  // PhaseFabric override for the order's current (master, phase). Used to make
+  // the live-master fabric display phase-aware. Null = no override row exists.
+  const [phaseFabricForOrder, setPhaseFabricForOrder] = useState<Record<string, unknown> | null>(null);
+  const orderPhaseId = isEditing ? (editingRow?.phaseId as string | undefined) : phaseId;
+  useEffect(() => {
+    if (!open) { setPhaseFabricForOrder(null); return; }
+    const skuCode = (editingRow?.skuCode as string | undefined) ?? form.skuCode;
+    if (!skuCode || !orderPhaseId) { setPhaseFabricForOrder(null); return; }
+    const master = productMasters.find((m) => {
+      const cur = String((m as Record<string, unknown>).skuCode ?? "");
+      const prev = ((m as Record<string, unknown>).previousSkuCodes as string[] | undefined) ?? [];
+      return cur === skuCode || prev.includes(skuCode);
+    }) as Record<string, unknown> | undefined;
+    const masterId = master ? String(master.id ?? "") : "";
+    if (!masterId) { setPhaseFabricForOrder(null); return; }
+    // Resolve fabric via changelog walk (latest changelog row <= order phase),
+    // with master defaults as fallback. The returned object is a "resolved
+    // spec" — already merged with master — so the live-master display uses
+    // it directly without further fallback.
+    getPhaseInheritanceForOrder(masterId, orderPhaseId)
+      .then((inh) => setPhaseFabricForOrder(((inh as { fabric: Record<string, unknown> | null }).fabric) ?? null))
+      .catch(() => setPhaseFabricForOrder(null));
+  }, [open, editingRow, orderPhaseId, form.skuCode, productMasters]);
+
   function updateField(field: keyof FormData, value: string | boolean) {
     setForm((prev) => ({ ...prev, [field]: value }));
   }
 
-  function handleSkuSelect(skuCode: string) {
+  async function handleSkuSelect(skuCode: string) {
     const master = productMasters.find((m) => String(m.skuCode) === skuCode);
-    if (master) {
-      selectProductMaster(master);
+    if (!master) return;
+    const masterId = String((master as Record<string, unknown>).id ?? "");
+    const effectivePhaseId = isEditing ? (editingRow?.phaseId as string) : phaseId;
+    let inheritance: { fabric: Record<string, unknown> | null; cost: Record<string, unknown> | null } = { fabric: null, cost: null };
+    if (masterId && effectivePhaseId) {
+      try {
+        inheritance = (await getPhaseInheritanceForOrder(masterId, effectivePhaseId)) as typeof inheritance;
+      } catch {
+        // Fall back to master-only on permission/network failure.
+      }
     }
+    selectProductMaster(master, inheritance);
   }
 
-  function selectProductMaster(master: ProductMasterType) {
+  function selectProductMaster(
+    master: ProductMasterType,
+    inheritance: { fabric: Record<string, unknown> | null; cost: Record<string, unknown> | null } = { fabric: null, cost: null },
+  ) {
     const s = (v: unknown) => (v !== null && v !== undefined ? String(v) : "");
+    // Per-field override helper: prefer phase value when not null/undefined,
+    // else master value. Treats null/undefined as "no override" (0 is kept).
+    const pick = (phaseVal: unknown, masterVal: unknown) =>
+      phaseVal !== null && phaseVal !== undefined ? s(phaseVal) : s(masterVal);
+    const pf = inheritance.fabric ?? {};
+    const pc = inheritance.cost ?? {};
     const coloursAvailable = Array.isArray(master.coloursAvailable)
       ? (master.coloursAvailable as string[])
       : [];
     const colour = coloursAvailable[0] || "";
-    // Resolve fabric vendor ids from the fabricName → vendorId lookup (built
-    // from FabricMaster records passed to the sheet).
-    const fabricName = s(master.fabricName);
-    const fabric2Name = s(master.fabric2Name);
-    const resolvedFabricVendor = fabricName ? fabricNameToVendorId.get(fabricName) : undefined;
-    const resolvedFabric2Vendor = fabric2Name ? fabricNameToVendorId.get(fabric2Name) : undefined;
+    // Resolve fabric names from PhaseFabric override first, then master.
+    const fabricName = pick(pf.fabricName, master.fabricName);
+    const fabric2Name = pick(pf.fabric2Name, master.fabric2Name);
+    // Vendor id: prefer phase override, else look up by fabric name.
+    const resolvedFabricVendor = pf.fabricVendorId
+      ? s(pf.fabricVendorId)
+      : (fabricName ? fabricNameToVendorId.get(fabricName) : undefined);
+    const resolvedFabric2Vendor = pf.fabric2VendorId
+      ? s(pf.fabric2VendorId)
+      : (fabric2Name ? fabricNameToVendorId.get(fabric2Name) : undefined);
     setForm((prev) => ({
       ...prev,
       styleNumber: s(master.styleNumber),
@@ -450,22 +505,22 @@ export function ProductOrderSheet({
       type: s(master.type) || prev.type,
       gender: s(master.gender) || prev.gender,
       productName: s(master.productName) || prev.productName,
-      assumedFabricGarmentsPerKg: s(master.garmentsPerKg) || prev.assumedFabricGarmentsPerKg,
-      assumedFabric2GarmentsPerKg: s(master.garmentsPerKg2) || prev.assumedFabric2GarmentsPerKg,
+      assumedFabricGarmentsPerKg: pick(pf.garmentsPerKg, master.garmentsPerKg) || prev.assumedFabricGarmentsPerKg,
+      assumedFabric2GarmentsPerKg: pick(pf.garmentsPerKg2, master.garmentsPerKg2) || prev.assumedFabric2GarmentsPerKg,
       cuttingReportGarmentsPerKg: s(master.cuttingReportGarmentsPerKg) || prev.cuttingReportGarmentsPerKg,
       cuttingReportGarmentsPerKg2: s(master.cuttingReportGarmentsPerKg2) || prev.cuttingReportGarmentsPerKg2,
-      fabricCostPerKg: s(master.fabricCostPerKg) || prev.fabricCostPerKg,
-      fabric2CostPerKg: s(master.fabric2CostPerKg) || prev.fabric2CostPerKg,
-      stitchingCost: s(master.stitchingCost) || prev.stitchingCost,
-      brandLogoCost: s(master.brandLogoCost) || prev.brandLogoCost,
-      neckTwillCost: s(master.neckTwillCost) || prev.neckTwillCost,
-      reflectorsCost: s(master.reflectorsCost) || prev.reflectorsCost,
-      fusingCost: s(master.fusingCost) || prev.fusingCost,
-      accessoriesCost: s(master.accessoriesCost) || prev.accessoriesCost,
-      brandTagCost: s(master.brandTagCost) || prev.brandTagCost,
-      sizeTagCost: s(master.sizeTagCost) || prev.sizeTagCost,
-      packagingCost: s(master.packagingCost) || prev.packagingCost,
-      outwardShippingCost: s(master.inwardShipping) || prev.outwardShippingCost,
+      fabricCostPerKg: pick(pf.fabricCostPerKg ?? pc.fabricCostPerKg, master.fabricCostPerKg) || prev.fabricCostPerKg,
+      fabric2CostPerKg: pick(pf.fabric2CostPerKg ?? pc.fabric2CostPerKg, master.fabric2CostPerKg) || prev.fabric2CostPerKg,
+      stitchingCost: pick(pc.stitchingCost, master.stitchingCost) || prev.stitchingCost,
+      brandLogoCost: pick(pc.brandLogoCost, master.brandLogoCost) || prev.brandLogoCost,
+      neckTwillCost: pick(pc.neckTwillCost, master.neckTwillCost) || prev.neckTwillCost,
+      reflectorsCost: pick(pc.reflectorsCost, master.reflectorsCost) || prev.reflectorsCost,
+      fusingCost: pick(pc.fusingCost, master.fusingCost) || prev.fusingCost,
+      accessoriesCost: pick(pc.accessoriesCost, master.accessoriesCost) || prev.accessoriesCost,
+      brandTagCost: pick(pc.brandTagCost, master.brandTagCost) || prev.brandTagCost,
+      sizeTagCost: pick(pc.sizeTagCost, master.sizeTagCost) || prev.sizeTagCost,
+      packagingCost: pick(pc.packagingCost, master.packagingCost) || prev.packagingCost,
+      outwardShippingCost: pick(pc.inwardShipping, master.inwardShipping) || prev.outwardShippingCost,
       proposedMrp: s(master.proposedMrp) || prev.proposedMrp,
       onlineMrp: s(master.onlineMrp) || prev.onlineMrp,
     }));
@@ -621,6 +676,7 @@ export function ProductOrderSheet({
         onlineMrp: numOrNull(form.onlineMrp),
         garmentingAt: form.garmentingAt || null,
         isStrikedThrough: isEditing ? Boolean(editingRow.isStrikedThrough) : false,
+        notes: form.notes.trim() || null,
       };
 
       if (isEditing && editingRow.id) {
@@ -727,50 +783,97 @@ export function ProductOrderSheet({
   const allExpanded = SECTIONS.every((s) => expandedSections[s]);
   const allCollapsed = SECTIONS.every((s) => !expandedSections[s]);
 
+  // Resolve the live master for this order, allowing the order's stored skuCode
+  // to be a historical one (matches via previousSkuCodes).
+  const liveMaster = (() => {
+    if (!form.skuCode) return undefined;
+    return productMasters.find((m) => {
+      const cur = String((m as Record<string, unknown>).skuCode ?? "");
+      const prev = ((m as Record<string, unknown>).previousSkuCodes as string[] | undefined) ?? [];
+      return cur === form.skuCode || prev.includes(form.skuCode);
+    }) as Record<string, unknown> | undefined;
+  })();
+  const liveProductName = (liveMaster?.productName as string | null | undefined) || form.productName;
+  const liveType = (liveMaster?.type as string | null | undefined) || form.type;
+  const liveSkuCode = (liveMaster?.skuCode as string | null | undefined) || form.skuCode;
+  const typeChanged = !!liveMaster && liveType && form.type && liveType !== form.type;
+  const skuChanged = !!liveMaster && liveSkuCode && form.skuCode && liveSkuCode !== form.skuCode;
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-blue-500">
-        <SheetHeader className="pr-12">
-          <div className="flex items-center justify-between gap-2">
+        <SheetHeader className="pr-12 pb-0">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap min-w-0">
-                <AutoFitOrderTitle
-                  text={(() => {
-                    if (!isEditing && !form.articleNumber.trim()) return "New Article Order";
-                    const parts = [
-                      form.articleNumber,
-                      form.type,
-                      form.productName,
-                      GENDER_LABELS[form.gender] || form.gender,
-                    ].filter((p) => p && String(p).trim());
-                    if (parts.length > 0) return parts.join(" - ");
-                    return isEditing ? "Article Order" : "New Article Order";
-                  })()}
-                />
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Order</span>
-              </div>
-              <SheetDescription className="sr-only">
-                {isEditing ? "Edit article order" : "Create article order"}
-              </SheetDescription>
+              <AutoFitOrderTitle
+                text={(() => {
+                  if (!isEditing && !form.articleNumber.trim()) return "New Article Order";
+                  const parts = [
+                    form.articleNumber,
+                    liveType,
+                    liveProductName,
+                    GENDER_LABELS[form.gender] || form.gender,
+                  ].filter((p) => p && String(p).trim());
+                  if (parts.length > 0) return parts.join(" - ");
+                  return isEditing ? "Article Order" : "New Article Order";
+                })()}
+              />
             </div>
-            <button
-              type="button"
-              onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
-            >
-              <ChevronsUpDown className="h-3 w-3" />
-              {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
-            </button>
+            <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Order</span>
           </div>
+          <SheetDescription className="sr-only">
+            {isEditing ? "Edit article order" : "Create article order"}
+          </SheetDescription>
         </SheetHeader>
+        <div className="flex items-center gap-1.5 px-4 pb-1 -mt-1">
+          <button
+            type="button"
+            onClick={() => setAllSections(allExpanded ? false : true)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+            {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNotes((v) => !v)}
+            className={`relative flex items-center gap-1 text-xs transition-colors px-2 py-1 rounded border shrink-0 ${
+              showNotes
+                ? "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200"
+                : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+            title="Notes"
+            aria-label="Toggle notes"
+          >
+            <StickyNote className="h-3 w-3" />
+            Notes
+            {form.notes.trim() && (
+              <span className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+            )}
+          </button>
+        </div>
 
         <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
+          {showNotes && (
+            <div className="rounded border border-amber-200 bg-amber-50/60 p-2 dark:border-amber-800 dark:bg-amber-900/20">
+              <div className="flex items-center gap-1.5 mb-1">
+                <StickyNote className="h-3 w-3 text-amber-700 dark:text-amber-300" />
+                <Label className="text-[11px] text-amber-900 dark:text-amber-200">Notes</Label>
+              </div>
+              <Textarea
+                value={form.notes}
+                onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                placeholder="Optional notes..."
+                className="min-h-[60px] resize-none text-xs bg-background"
+              />
+            </div>
+          )}
           {/* Primary field - SKU search + Target Quantity (always visible, not collapsible) */}
           <div className="grid grid-cols-[1fr_120px] gap-2">
             <div className="space-y-0.5">
               <Label className="text-[11px] font-semibold">Article # *</Label>
               <Combobox
-                value={form.skuCode}
+                value={liveSkuCode || form.skuCode}
                 onValueChange={handleSkuSelect}
                 options={skuOptions}
                 placeholder="Search article number, article code, product name, colour"
@@ -803,11 +906,23 @@ export function ProductOrderSheet({
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Article Code</span>
-                <span className="font-medium truncate">{form.skuCode || "—"}</span>
+                <span className="font-medium truncate flex items-center gap-1 justify-end">
+                  {form.skuCode || "—"}
+                  {skuChanged && (
+                    <TooltipProvider delay={150}>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<Info className="h-3 w-3 text-muted-foreground cursor-help shrink-0" />}
+                        />
+                        <TooltipContent>Now: {liveSkuCode}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </span>
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Product Name</span>
-                <span className="font-medium truncate">{form.productName || "—"}</span>
+                <span className="font-medium truncate">{liveProductName || "—"}</span>
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Colour</span>
@@ -815,7 +930,19 @@ export function ProductOrderSheet({
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Type</span>
-                <span className="font-medium truncate">{form.type || "—"}</span>
+                <span className="font-medium truncate flex items-center gap-1 justify-end">
+                  {form.type || "—"}
+                  {typeChanged && (
+                    <TooltipProvider delay={150}>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<Info className="h-3 w-3 text-muted-foreground cursor-help shrink-0" />}
+                        />
+                        <TooltipContent>Now: {liveType}</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </span>
               </div>
               <div className="flex justify-between gap-2">
                 <span className="text-muted-foreground">Gender</span>
@@ -925,10 +1052,17 @@ export function ProductOrderSheet({
               };
               const slots: Slot[] = [];
               if (master) {
-                const f1 = String(master.fabricName || form.fabricName || "");
-                if (f1) slots.push({ num: 1, name: f1, gpk: form.assumedFabricGarmentsPerKg || String(master.garmentsPerKg ?? ""), editable: true, cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg, costKey: "fabricCostPerKg", orderedKey: "fabricOrderedQuantityKg", shippedKey: "fabricShippedQuantityKg" });
-                const f2 = String(master.fabric2Name || form.fabric2Name || "");
-                if (f2) slots.push({ num: 2, name: f2, gpk: form.assumedFabric2GarmentsPerKg || String(master.garmentsPerKg2 ?? ""), editable: true, cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg, costKey: "fabric2CostPerKg", orderedKey: "fabric2OrderedQuantityKg", shippedKey: "fabric2ShippedQuantityKg" });
+                // Live master values, with PhaseFabric overrides for the order's phase
+                // taking precedence over the master defaults.
+                const pf = phaseFabricForOrder ?? {};
+                const phaseF1 = pf.fabricName as string | undefined;
+                const phaseF2 = pf.fabric2Name as string | undefined;
+                const phaseG1 = pf.garmentsPerKg as unknown;
+                const phaseG2 = pf.garmentsPerKg2 as unknown;
+                const f1 = String((phaseF1 ?? master.fabricName) || form.fabricName || "");
+                if (f1) slots.push({ num: 1, name: f1, gpk: form.assumedFabricGarmentsPerKg || String(phaseG1 ?? master.garmentsPerKg ?? ""), editable: true, cost: form.fabricCostPerKg, ordered: form.fabricOrderedQuantityKg, shipped: form.fabricShippedQuantityKg, costKey: "fabricCostPerKg", orderedKey: "fabricOrderedQuantityKg", shippedKey: "fabricShippedQuantityKg" });
+                const f2 = String((phaseF2 ?? master.fabric2Name) || form.fabric2Name || "");
+                if (f2) slots.push({ num: 2, name: f2, gpk: form.assumedFabric2GarmentsPerKg || String(phaseG2 ?? master.garmentsPerKg2 ?? ""), editable: true, cost: form.fabric2CostPerKg, ordered: form.fabric2OrderedQuantityKg, shipped: form.fabric2ShippedQuantityKg, costKey: "fabric2CostPerKg", orderedKey: "fabric2OrderedQuantityKg", shippedKey: "fabric2ShippedQuantityKg" });
                 const f3 = String(master.fabric3Name || "");
                 if (f3) slots.push({ num: 3, name: f3, gpk: String(master.garmentsPerKg3 ?? ""), editable: false });
                 const f4 = String(master.fabric4Name || "");
@@ -1038,46 +1172,103 @@ export function ProductOrderSheet({
                   This article&apos;s ProductMaster has no accessory BOM configured.
                 </p>
               ) : (
-                <>
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
-                    <span>
-                      {bom.lines.length} accessor{bom.lines.length === 1 ? "y" : "ies"} ·{" "}
-                      {bom.pieces > 0
-                        ? `${bom.pieces} pcs`
-                        : "no piece count set — totals will be 0"}
-                    </span>
-                  </div>
-                  <div className="border rounded divide-y">
-                    {bom.lines.map((line) => (
-                      <div
-                        key={line.accessoryId}
-                        className="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-[9px] text-muted-foreground px-1 py-0.5 rounded bg-muted shrink-0">
-                            {line.category}
-                          </span>
-                          <span className="font-medium truncate">
-                            {accessoryDisplayName({
-                              baseName: line.baseName,
-                              colour: line.colour,
-                              size: line.size,
-                            })}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 text-[10px]">
-                          <span className="text-muted-foreground">
-                            {line.quantityPerPiece} {line.unit.toLowerCase()}/pc
-                          </span>
-                          <span className="font-semibold tabular-nums">
-                            = {line.totalQuantity.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{" "}
-                            {line.unit.toLowerCase()}
-                          </span>
-                        </div>
+                (() => {
+                  // Pieces basis precedence: actual inward (post-receipt) → actual stitched
+                  // (post-cutting) → expected (planning). Use whichever is non-zero so the
+                  // BOM totals stay useful at every stage of the order's life.
+                  const inwardBySize: Record<string, number> = {
+                    XS: toNum(form.actualInwardXS) || 0,
+                    S: toNum(form.actualInwardS) || 0,
+                    M: toNum(form.actualInwardM) || 0,
+                    L: toNum(form.actualInwardL) || 0,
+                    XL: toNum(form.actualInwardXL) || 0,
+                    XXL: toNum(form.actualInwardXXL) || 0,
+                  };
+                  const stitchedBySize: Record<string, number> = {
+                    XS: toNum(form.actualStitchedXS) || 0,
+                    S: toNum(form.actualStitchedS) || 0,
+                    M: toNum(form.actualStitchedM) || 0,
+                    L: toNum(form.actualStitchedL) || 0,
+                    XL: toNum(form.actualStitchedXL) || 0,
+                    XXL: toNum(form.actualStitchedXXL) || 0,
+                  };
+                  const inwardSum = Object.values(inwardBySize).reduce((a, b) => a + b, 0);
+                  const stitchedSum = Object.values(stitchedBySize).reduce((a, b) => a + b, 0);
+                  let basis: "inward" | "stitched" | "expected";
+                  let totalPieces: number;
+                  let bySize: Record<string, number>;
+                  if (inwardSum > 0) {
+                    basis = "inward";
+                    totalPieces = inwardSum;
+                    bySize = inwardBySize;
+                  } else if (stitchedSum > 0) {
+                    basis = "stitched";
+                    totalPieces = stitchedSum;
+                    bySize = stitchedBySize;
+                  } else {
+                    basis = "expected";
+                    totalPieces = expectedTotal;
+                    bySize = expectedPerSize;
+                  }
+                  const basisLabel =
+                    basis === "inward" ? "actual inward" : basis === "stitched" ? "stitched" : "expected";
+
+                  function piecesForLine(applicableSizes: string[]): number {
+                    if (applicableSizes.length === 0) return totalPieces;
+                    return applicableSizes.reduce((sum, s) => sum + (bySize[s] || 0), 0);
+                  }
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-1">
+                        <span>
+                          {bom.lines.length} accessor{bom.lines.length === 1 ? "y" : "ies"} ·{" "}
+                          {totalPieces > 0
+                            ? `${totalPieces} pcs (${basisLabel})`
+                            : "no piece count set — totals will be 0"}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                </>
+                      <div className="border rounded divide-y">
+                        {bom.lines.map((line) => {
+                          const linePieces = piecesForLine(line.applicableSizes);
+                          const lineTotal = linePieces * line.quantityPerPiece;
+                          return (
+                            <div
+                              key={line.accessoryId}
+                              className="flex items-center justify-between gap-2 px-2 py-1.5 text-[11px]"
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-[9px] text-muted-foreground px-1 py-0.5 rounded bg-muted shrink-0">
+                                  {line.category}
+                                </span>
+                                <span className="font-medium truncate">
+                                  {accessoryDisplayName(line)}
+                                </span>
+                                {line.applicableSizes.length > 0 && (
+                                  <span
+                                    className="text-[9px] text-blue-700 dark:text-blue-400 px-1 py-0.5 rounded bg-blue-50 dark:bg-blue-950 shrink-0"
+                                    title={`Applies only to: ${line.applicableSizes.map((s) => sizeLabelForGender(form.gender, s)).join(", ")}`}
+                                  >
+                                    {line.applicableSizes.map((s) => sizeLabelForGender(form.gender, s)).join("/")}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 text-[10px]">
+                                <span className="text-muted-foreground">
+                                  {linePieces} pcs × {line.quantityPerPiece} {line.unit.toLowerCase()}/pc
+                                </span>
+                                <span className="font-semibold tabular-nums">
+                                  = {lineTotal.toLocaleString("en-IN", { maximumFractionDigits: 2 })}{" "}
+                                  {line.unit.toLowerCase()}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()
               )}
             </CollapsibleSection>
           )}
@@ -1093,7 +1284,7 @@ export function ProductOrderSheet({
               <div className="grid grid-cols-7 gap-2">
                 {["XS", "S", "M", "L", "XL", "XXL"].map((size) => (
                   <div key={size} className="space-y-0.5">
-                    <Label className="text-[10px] text-center block">{size}</Label>
+                    <Label className="text-[10px] text-center block">{sizeLabelForGender(form.gender, size)}</Label>
                     <div className="h-8 flex items-center justify-center text-sm bg-blue-50 rounded border border-blue-200 text-blue-700">
                       {expectedTotal > 0 ? expectedPerSize[size] : "-"}
                     </div>
@@ -1124,7 +1315,7 @@ export function ProductOrderSheet({
                   { key: "actualStitchedXXL", label: "XXL" },
                 ].map(({ key, label }) => (
                   <div key={key} className="space-y-0.5">
-                    <Label className="text-[10px] text-center block">{label}</Label>
+                    <Label className="text-[10px] text-center block">{sizeLabelForGender(form.gender, label)}</Label>
                     <Input
                       type="number"
                       className="h-8 text-xs md:text-xs text-center px-1"
@@ -1153,7 +1344,7 @@ export function ProductOrderSheet({
                   { key: "actualInwardXXL", label: "XXL" },
                 ].map(({ key, label }) => (
                   <div key={key} className="space-y-0.5">
-                    <Label className="text-[10px] text-center block">{label}</Label>
+                    <Label className="text-[10px] text-center block">{sizeLabelForGender(form.gender, label)}</Label>
                     <Input
                       type="number"
                       className="h-8 text-xs md:text-xs text-center px-1"

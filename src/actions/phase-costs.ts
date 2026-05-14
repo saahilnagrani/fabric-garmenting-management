@@ -14,6 +14,21 @@ export async function getPhaseCosts(entityType: string, entityId: string) {
   return costs;
 }
 
+export async function deletePhaseCost(phaseId: string, entityType: string, entityId: string) {
+  const session = await requirePermission("inventory:masters:edit");
+  const existing = await db.phaseCost.findUnique({
+    where: { phaseId_entityType_entityId: { phaseId, entityType, entityId } },
+  });
+  if (!existing) return null;
+  await db.phaseCost.delete({
+    where: { phaseId_entityType_entityId: { phaseId, entityType, entityId } },
+  });
+  logAction(session.user!.id!, session.user!.name!, "DELETE", "PhaseCost", existing.id);
+  revalidatePath("/fabric-masters");
+  revalidatePath("/product-masters");
+  return existing;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function upsertPhaseCost(phaseId: string, entityType: string, entityId: string, data: any) {
   const session = await requirePermission("inventory:masters:edit");

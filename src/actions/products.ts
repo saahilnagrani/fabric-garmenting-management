@@ -119,7 +119,9 @@ export type ProductFilters = {
   isRepeat?: boolean;
   gender?: Gender;
   status?: ProductStatus;
+  statuses?: ProductStatus[];
   fabricVendorId?: string;
+  fabricVendorIds?: string[];
   search?: string;
   /**
    * Alert-driven filter. When set, the page was reached by clicking a
@@ -139,8 +141,10 @@ export async function getProducts(phaseId: string, filters?: ProductFilters) {
 
   if (filters?.isRepeat !== undefined) where.isRepeat = filters.isRepeat;
   if (filters?.gender) where.gender = filters.gender;
-  if (filters?.status) where.status = filters.status;
-  if (filters?.fabricVendorId) where.fabricVendorId = filters.fabricVendorId;
+  if (filters?.statuses && filters.statuses.length > 0) where.status = { in: filters.statuses };
+  else if (filters?.status) where.status = filters.status;
+  if (filters?.fabricVendorIds && filters.fabricVendorIds.length > 0) where.fabricVendorId = { in: filters.fabricVendorIds };
+  else if (filters?.fabricVendorId) where.fabricVendorId = filters.fabricVendorId;
   if (filters?.search) {
     where.OR = [
       { styleNumber: { contains: filters.search, mode: "insensitive" } },
@@ -169,11 +173,76 @@ export async function getProducts(phaseId: string, filters?: ProductFilters) {
     where.fabricOrderLinks = { none: {} };
   }
 
-  return db.product.findMany({
+  const products = await db.product.findMany({
     where,
     include: { fabricVendor: true, fabric2Vendor: true },
     orderBy: [{ styleNumber: "asc" }, { colourOrdered: "asc" }],
   });
+
+  // Attach `__currentFabricName` / `__currentFabric2Name` per row: the
+  // changelog-resolved fabric for the order's phase. Used by the grid to
+  // surface "now: X" drift tooltips when the order's stored snapshot
+  // disagrees with the master-side history.
+  if (products.length > 0) {
+    const skuCodes = Array.from(new Set(products.map((p) => p.skuCode).filter(Boolean) as string[]));
+    const masters = skuCodes.length
+      ? await db.productMaster.findMany({
+          where: {
+            OR: [
+              { skuCode: { in: skuCodes } },
+              { previousSkuCodes: { hasSome: skuCodes } },
+            ],
+          },
+          select: {
+            id: true, skuCode: true, previousSkuCodes: true,
+            fabricName: true, fabric2Name: true,
+          },
+        })
+      : [];
+    const masterBySku = new Map<string, { id: string; fabricName: string | null; fabric2Name: string | null }>();
+    for (const m of masters) {
+      masterBySku.set(m.skuCode, { id: m.id, fabricName: m.fabricName, fabric2Name: m.fabric2Name });
+      for (const prev of m.previousSkuCodes ?? []) {
+        masterBySku.set(prev, { id: m.id, fabricName: m.fabricName, fabric2Name: m.fabric2Name });
+      }
+    }
+    const masterIds = masters.map((m) => m.id);
+    const [phaseFabricRows, phaseRows, targetPhase] = await Promise.all([
+      masterIds.length
+        ? db.phaseFabric.findMany({
+            where: { productMasterId: { in: masterIds } },
+            select: { productMasterId: true, phaseId: true, fabricName: true, fabric2Name: true },
+          })
+        : Promise.resolve([] as Array<{ productMasterId: string; phaseId: string; fabricName: string | null; fabric2Name: string | null }>),
+      db.phase.findMany({ select: { id: true, number: true } }),
+      db.phase.findUnique({ where: { id: phaseId }, select: { number: true } }),
+    ]);
+    const phaseNumberById = new Map<string, number>(phaseRows.map((p) => [p.id, p.number]));
+    const targetNumber = targetPhase?.number ?? -Infinity;
+    const resolvedByMasterId = new Map<string, { fabricName: string | null; fabric2Name: string | null }>();
+    for (const master of masters) {
+      const rows = phaseFabricRows
+        .filter((r) => r.productMasterId === master.id && (phaseNumberById.get(r.phaseId) ?? Infinity) <= targetNumber)
+        .sort((a, b) => (phaseNumberById.get(a.phaseId) ?? 0) - (phaseNumberById.get(b.phaseId) ?? 0));
+      let f1: string | null = master.fabricName;
+      let f2: string | null = master.fabric2Name;
+      for (const r of rows) {
+        if (r.fabricName != null) f1 = r.fabricName;
+        if (r.fabric2Name != null) f2 = r.fabric2Name;
+      }
+      resolvedByMasterId.set(master.id, { fabricName: f1, fabric2Name: f2 });
+    }
+    return products.map((p) => {
+      const master = masterBySku.get(p.skuCode);
+      const resolved = master ? resolvedByMasterId.get(master.id) : null;
+      return {
+        ...p,
+        __currentFabricName: resolved?.fabricName ?? null,
+        __currentFabric2Name: resolved?.fabric2Name ?? null,
+      };
+    });
+  }
+  return products;
 }
 
 /**
@@ -187,7 +256,7 @@ export async function getProductsCountForPhase(phaseId: string): Promise<number>
 
 /**
  * Returns a map of articleNumber to profit margin (decimal, e.g. 0.42)
- * from the phase immediately before the given phase (by phase.number - 1).
+ * from the phase immediately before the given phase (largest number < current).
  * If multiple products in the previous phase share an articleNumber, the
  * one with the highest profit margin wins (so a representative SKU is used).
  */
@@ -197,7 +266,10 @@ export async function getPreviousPhaseProfitMarginsByArticle(
   await requirePermission("inventory:products:view");
   const current = await db.phase.findUnique({ where: { id: currentPhaseId } });
   if (!current) return {};
-  const prev = await db.phase.findFirst({ where: { number: current.number - 1 } });
+  const prev = await db.phase.findFirst({
+    where: { number: { lt: current.number } },
+    orderBy: { number: "desc" },
+  });
   if (!prev) return {};
   const products = await db.product.findMany({
     where: { phaseId: prev.id, articleNumber: { not: null } },

@@ -16,7 +16,8 @@ import {
 } from "@/lib/computations";
 import { formatCurrency, formatPercent, formatNumber } from "@/lib/formatters";
 import { Button } from "@/components/ui/button";
-import { Plus, Eye, EyeOff } from "lucide-react";
+import { Plus, Eye, EyeOff, History } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { ProductMasterSheet, type GroupedStyleRow } from "./product-master-sheet";
 
@@ -70,10 +71,46 @@ export function ProductMasterGrid({
   const columnDefs = useMemo<ColDef<GroupedStyleRow>[]>(
     () => [
       // Pinned identity columns (mirrors Article Orders pin convention)
-      { field: "articleNumber", headerName: "Article Number", pinned: "left", minWidth: 100, editable: false },
+      {
+        field: "articleNumber",
+        headerName: "Article Number",
+        pinned: "left",
+        minWidth: 110,
+        editable: false,
+        cellRenderer: (params: { data?: GroupedStyleRow; value?: unknown }) => {
+          const value = params.value == null ? "" : String(params.value);
+          const prevTypes = params.data?.previousTypes ?? [];
+          const skuRenames = (params.data?.skus ?? []).filter((s) => (s.previousSkuCodes ?? []).length > 0).length;
+          const data = params.data as (GroupedStyleRow & { hasFabricHistory?: boolean; hasCostHistory?: boolean }) | undefined;
+          const hasFabricHistory = !!data?.hasFabricHistory;
+          const hasCostHistory = !!data?.hasCostHistory;
+          const hasHistory = prevTypes.length > 0 || skuRenames > 0 || hasFabricHistory || hasCostHistory;
+          if (!hasHistory) return value;
+          const parts: string[] = [];
+          if (prevTypes.length > 0) parts.push(`Renamed type${prevTypes.length > 1 ? "s" : ""}: ${prevTypes.join(", ")}`);
+          if (skuRenames > 0) parts.push(`${skuRenames} SKU rename${skuRenames > 1 ? "s" : ""}`);
+          if (hasFabricHistory) parts.push("Fabric changes recorded across phases");
+          if (hasCostHistory) parts.push("Cost changes recorded across phases");
+          const tooltipText = parts.join(" · ");
+          return (
+            <span className="inline-flex items-center gap-1">
+              {value}
+              <TooltipProvider delay={150}>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={<History className="h-3 w-3 text-muted-foreground cursor-help shrink-0" />}
+                  />
+                  <TooltipContent>{tooltipText}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </span>
+          );
+        },
+      },
       { field: "fabricName", headerName: "Fabric 1", pinned: "left", minWidth: 110, editable: false },
       { field: "productName", headerName: "Product Name", pinned: "left", minWidth: 110, editable: false },
-      // Visible columns aligned with Article Orders order
+      // Under option B the master row holds the article's CURRENT state, so
+      // these columns display "current" values directly from the master.
       {
         colId: "fabric1Vendor",
         headerName: "Fabric 1 Vendor",

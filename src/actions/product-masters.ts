@@ -5,6 +5,12 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction, computeDiff } from "@/lib/audit";
+import { articleIntroductionPhaseNumber } from "@/lib/article-history";
+import {
+  writePhaseSpecAtIntroduction,
+  writePhaseSpecAtCurrentPhase,
+  diffSpecFields,
+} from "@/lib/phase-spec-writer";
 import { createLookupResolver, type LookupResolver } from "@/lib/lookups";
 
 async function attachProductMasterScalarLookups<T extends Record<string, unknown>>(
@@ -64,11 +70,16 @@ export const getProductMasters = cache(async (includeArchived = false) => {
   });
 });
 
-/** Fetch a single ProductMaster with its BOM lines and joined accessory rows. */
-export async function getProductMasterBom(id: string) {
+/**
+ * Fetch the BOM for an article. Returns ArticleAccessory rows with the
+ * joined AccessoryMaster. BOM is keyed at article level — every SKU of the
+ * article shares the same BOM.
+ */
+export async function getArticleBom(articleNumber: string) {
   await requirePermission("inventory:masters:view");
-  const links = await db.productMasterAccessory.findMany({
-    where: { productMasterId: id },
+  if (!articleNumber) return [];
+  const links = await db.articleAccessory.findMany({
+    where: { articleNumber },
     include: { accessory: true },
     orderBy: { createdAt: "asc" },
   });
@@ -116,16 +127,23 @@ async function unlinkArticleFromFabricMaster(fabricName: string | null | undefin
   }
 }
 
-type BomLine = { accessoryId: string; quantityPerPiece: number; notes?: string | null };
+type BomLine = {
+  accessoryId: string;
+  quantityPerPiece: number;
+  applicableSizes?: string[];
+  notes?: string | null;
+};
 
-async function syncBomLines(productMasterId: string, lines: BomLine[]) {
-  await db.productMasterAccessory.deleteMany({ where: { productMasterId } });
+async function syncBomLines(articleNumber: string | null | undefined, lines: BomLine[]) {
+  if (!articleNumber) return; // Article-level BOM requires an article number.
+  await db.articleAccessory.deleteMany({ where: { articleNumber } });
   if (lines.length > 0) {
-    await db.productMasterAccessory.createMany({
+    await db.articleAccessory.createMany({
       data: lines.map((l) => ({
-        productMasterId,
+        articleNumber,
         accessoryId: l.accessoryId,
         quantityPerPiece: l.quantityPerPiece,
+        applicableSizes: l.applicableSizes ?? [],
         notes: l.notes ?? null,
       })),
       skipDuplicates: true,
@@ -155,9 +173,18 @@ export async function createProductMaster(data: any) {
   await attachProductMasterScalarLookups(createData);
   const master = await db.productMaster.create({ data: createData });
   await syncProductMasterColourLinks(master.id, createData);
-  if (bomLines) await syncBomLines(master.id, bomLines);
+  if (bomLines) await syncBomLines(master.articleNumber, bomLines);
   await linkArticleToFabricMaster(data.fabricName, data.articleNumber);
   await linkArticleToFabricMaster(data.fabric2Name, data.articleNumber);
+  // Lock in the article's starting state by writing a changelog row at its
+  // introduction phase (derived from articleNumber's leading digit). Captures
+  // every fabric + cost field the user supplied.
+  await writePhaseSpecAtIntroduction(
+    db,
+    master.id,
+    master.articleNumber,
+    master as unknown as Record<string, unknown>,
+  );
   logAction(session.user!.id!, session.user!.name!, "CREATE", "ProductMaster", master.id);
   revalidatePath("/product-masters");
   return JSON.parse(JSON.stringify(master));
@@ -179,11 +206,15 @@ export async function updateProductMaster(id: string, data: any) {
   await attachProductMasterScalarLookups(updateData);
   const master = await db.productMaster.update({ where: { id }, data: updateData });
   await syncProductMasterColourLinks(id, updateData);
-  if (bomLines !== undefined) await syncBomLines(id, bomLines);
+  if (bomLines !== undefined) await syncBomLines(master.articleNumber, bomLines);
   // Reverse sync: if article number changed (renamed), unlink old without marking as deleted
   if (previous && previous.articleNumber && previous.articleNumber !== master.articleNumber) {
     await unlinkArticleFromFabricMaster(previous.fabricName, previous.articleNumber, false);
     if (previous.fabric2Name) await unlinkArticleFromFabricMaster(previous.fabric2Name, previous.articleNumber, false);
+    // Drop orphaned ArticleAccessory rows under the old article number; they
+    // will be re-written under the new number via syncBomLines above (or on
+    // a sibling SKU's save).
+    await db.articleAccessory.deleteMany({ where: { articleNumber: previous.articleNumber } });
   }
   // Forward sync: link new article number to fabric master
   if (data.fabricName && master.articleNumber) {
@@ -191,6 +222,18 @@ export async function updateProductMaster(id: string, data: any) {
   }
   if (data.fabric2Name && master.articleNumber) {
     await linkArticleToFabricMaster(data.fabric2Name, master.articleNumber);
+  }
+  // Record fabric/cost edits to the changelog at the current phase. Skips
+  // when no fabric/cost fields actually changed, or when no phase is marked
+  // as current.
+  if (previous) {
+    const specChanges = diffSpecFields(
+      previous as unknown as Record<string, unknown>,
+      master as unknown as Record<string, unknown>,
+    );
+    if (Object.keys(specChanges).length > 0) {
+      await writePhaseSpecAtCurrentPhase(db, id, specChanges);
+    }
   }
   const action = data.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
   const changes = previous ? computeDiff(previous as unknown as Record<string, unknown>, master as unknown as Record<string, unknown>) : undefined;
@@ -298,6 +341,13 @@ export async function batchCreateProductMasters(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const master = await db.productMaster.create({ data: createData as any });
     await syncProductMasterColourLinks(master.id, createData, resolver);
+    // Lock in starting state at the article's introduction phase.
+    await writePhaseSpecAtIntroduction(
+      db,
+      master.id,
+      master.articleNumber,
+      master as unknown as Record<string, unknown>,
+    );
     created.push(master);
     logAction(session.user!.id!, session.user!.name!, "CREATE", "ProductMaster", master.id);
   }
@@ -330,6 +380,33 @@ export const getProductMastersGrouped = cache(async (includeArchived = false) =>
     where: includeArchived ? {} : { isStrikedThrough: false },
     orderBy: [{ articleNumber: "asc" }, { skuCode: "asc" }],
   });
+  // Load changelog rows for every master in the result so we can flag which
+  // articles have history (more than just the introduction row). Under
+  // option B master columns ARE current, so no resolver work is needed here.
+  const masterIds = all.map((m: { id: string }) => m.id);
+  const [phaseFabricRows, phaseCostRows] = await Promise.all([
+    masterIds.length
+      ? db.phaseFabric.findMany({ where: { productMasterId: { in: masterIds } }, select: { productMasterId: true } })
+      : Promise.resolve([] as Array<{ productMasterId: string }>),
+    masterIds.length
+      ? db.phaseCost.findMany({
+          where: { entityType: "PRODUCT_MASTER", entityId: { in: masterIds } },
+          select: { entityId: true },
+        })
+      : Promise.resolve([] as Array<{ entityId: string }>),
+  ]);
+  const fabricByMaster = new Map<string, Array<Record<string, unknown>>>();
+  for (const r of phaseFabricRows as Array<Record<string, unknown>>) {
+    const k = String(r.productMasterId);
+    if (!fabricByMaster.has(k)) fabricByMaster.set(k, []);
+    fabricByMaster.get(k)!.push(r);
+  }
+  const costByMaster = new Map<string, Array<Record<string, unknown>>>();
+  for (const r of phaseCostRows as Array<Record<string, unknown>>) {
+    const k = String(r.entityId);
+    if (!costByMaster.has(k)) costByMaster.set(k, []);
+    costByMaster.get(k)!.push(r);
+  }
 
   // Group by articleNumber (fallback to styleNumber if no articleNumber)
   const groups = new Map<string, typeof all>();
@@ -371,6 +448,14 @@ export const getProductMastersGrouped = cache(async (includeArchived = false) =>
     }
   }
 
+  // Fetch ArticleHistory for any (articleNumber → previousTypes) shown in this view.
+  const articleNumbers = Array.from(groups.keys()).filter(Boolean);
+  const histories = articleNumbers.length
+    ? await db.articleHistory.findMany({ where: { articleNumber: { in: articleNumbers } } })
+    : [];
+  const previousTypesByArticle = new Map<string, string[]>();
+  for (const h of histories) previousTypesByArticle.set(h.articleNumber, h.previousTypes);
+
   const result = Array.from(groups.entries()).map(([articleNumber, rows]) => {
     const first = rows[0];
     // Build one label per SKU — full combo for multi-fabric variants (e.g. "Black / Lime / Red")
@@ -384,13 +469,30 @@ export const getProductMastersGrouped = cache(async (includeArchived = false) =>
       return parts.join(" / ");
     }).filter(Boolean);
     const n = (v: unknown) => (v != null ? Number(v) : null);
+    // Under option B, master columns are CURRENT (latest-phase) values, so
+    // the grid uses them directly. History indicator: are there changelog
+    // rows beyond the introduction row? (Every article has at least one
+    // changelog row at the introduction phase, so "any history" = >1 rows.)
+    const hasFabricHistory = (fabricByMaster.get(first.id) ?? []).length > 1;
+    const hasCostHistory = (costByMaster.get(first.id) ?? []).length > 1;
+    // Convention: leading digit of articleNumber = phase the article was
+    // introduced in (e.g. "2222" → Phase 2). Used by the master sheet to
+    // start the segments view at the introduction phase rather than at the
+    // earliest phase in the system.
+    const introducedAtPhaseNumber = articleIntroductionPhaseNumber(articleNumber);
     return {
       articleNumber,
+      introducedAtPhaseNumber,
       styleNumber: first.styleNumber,
+      // Master columns hold the article's CURRENT (latest-phase) state under
+      // option B. Both the grid and the master sheet form load from these
+      // directly. History lives in the PhaseFabric / PhaseCost changelog.
       fabricName: first.fabricName,
       fabric2Name: first.fabric2Name,
       fabric3Name: first.fabric3Name,
       fabric4Name: first.fabric4Name,
+      hasFabricHistory,
+      hasCostHistory,
       type: first.type,
       gender: first.gender,
       productName: first.productName,
@@ -404,9 +506,11 @@ export const getProductMastersGrouped = cache(async (includeArchived = false) =>
         colour3: r.colours3Available?.[0] || "",
         colour4: r.colours4Available?.[0] || "",
         isStrikedThrough: r.isStrikedThrough,
+        previousSkuCodes: r.previousSkuCodes ?? [],
       })),
+      previousTypes: previousTypesByArticle.get(articleNumber) ?? [],
       archivedSkus: archivedByArticle.get(articleNumber) || [],
-      // Use first row for shared cost data — force plain numbers
+      // Master columns hold CURRENT (latest-phase) values under option B.
       garmentsPerKg: n(first.garmentsPerKg),
       garmentsPerKg2: n(first.garmentsPerKg2),
       garmentsPerKg3: n(first.garmentsPerKg3),
