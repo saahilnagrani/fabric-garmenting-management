@@ -17,8 +17,9 @@ import { createFabricOrder, updateFabricOrder, deleteFabricOrder, findExistingOr
 import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS, PRODUCT_STATUS_LABELS } from "@/lib/constants";
 import { showAutoAdvanceToast } from "@/lib/toast-helpers";
 import { toast } from "sonner";
-import { Loader2, Trash2, ChevronRight, ChevronLeft, ChevronsUpDown } from "lucide-react";
+import { Loader2, Trash2, ChevronRight, ChevronLeft, ChevronsUpDown, StickyNote } from "lucide-react";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import { Textarea } from "@/components/ui/textarea";
 import React from "react";
 
 type Vendor = { id: string; name: string };
@@ -74,6 +75,7 @@ type FormData = {
   poNumber: string;
   piReceivedAt: string;
   advancePaidAt: string;
+  notes: string;
 };
 
 const emptyForm: FormData = {
@@ -95,6 +97,7 @@ const emptyForm: FormData = {
   poNumber: "",
   piReceivedAt: "",
   advancePaidAt: "",
+  notes: "",
 };
 
 function awaitingTag(orderStatus: string, piReceivedAt: string, advancePaidAt: string): string {
@@ -146,6 +149,7 @@ export function FabricOrderSheet({
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   // Multi-order navigation
   const [navIndex, setNavIndex] = useState(0);
@@ -249,6 +253,7 @@ export function FabricOrderSheet({
         poNumber: String(row.poNumber ?? ""),
         piReceivedAt: row.piReceivedAt ? String(row.piReceivedAt) : "",
         advancePaidAt: row.advancePaidAt ? String(row.advancePaidAt) : "",
+        notes: String(row.notes ?? ""),
       });
     } else {
       setForm({ ...emptyForm, isRepeat: isRepeatTab });
@@ -262,6 +267,7 @@ export function FabricOrderSheet({
       loadRowIntoForm(activeRow);
       setShowDeleteConfirm(false);
       setAllSections(true);
+      setShowNotes(Boolean(activeRow?.notes && String(activeRow.notes).trim()));
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, isRepeatTab]);
@@ -369,6 +375,7 @@ export function FabricOrderSheet({
         isStrikedThrough: false,
         orderStatus: form.orderStatus || "DRAFT_ORDER",
         garmentingAt: form.garmentingAt || null,
+        notes: form.notes.trim() || null,
       };
 
       if (isEditing && activeRow?.id) {
@@ -446,56 +453,87 @@ export function FabricOrderSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-blue-500">
-        <SheetHeader className="pr-12 pb-1">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <SheetTitle className="text-xl font-semibold">
-                  {isEditing ? (form.fabricName.trim() || "Fabric Order") : "New Fabric Order"}
-                </SheetTitle>
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded leading-none">Order</span>
-              </div>
-              <SheetDescription className="sr-only">
-                {isEditing ? "Edit fabric order" : "Create fabric order"}
-              </SheetDescription>
-              {hasMultipleOrders && (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    disabled={navIndex === 0}
-                    onClick={() => navigateTo(navIndex - 1)}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                  </Button>
-                  <span className="text-[11px] text-muted-foreground font-medium">
-                    Order {navIndex + 1} of {editingRows.length}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-6 w-6 p-0"
-                    disabled={navIndex === editingRows.length - 1}
-                    onClick={() => navigateTo(navIndex + 1)}
-                  >
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              )}
+        <SheetHeader className="pr-12 pb-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="min-w-0 flex-1">
+              <SheetTitle className="text-xl font-semibold truncate">
+                {isEditing ? (form.fabricName.trim() || "Fabric Order") : "New Fabric Order"}
+              </SheetTitle>
             </div>
-            <button
-              type="button"
-              onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded border border-border hover:bg-muted/50 shrink-0"
-            >
-              <ChevronsUpDown className="h-3 w-3" />
-              {allExpanded ? "Collapse" : "Expand"}
-            </button>
+            <span className="text-[9px] font-semibold uppercase tracking-wider bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded shrink-0">Order</span>
           </div>
+          <SheetDescription className="sr-only">
+            {isEditing ? "Edit fabric order" : "Create fabric order"}
+          </SheetDescription>
+          {hasMultipleOrders && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 w-6 p-0"
+                disabled={navIndex === 0}
+                onClick={() => navigateTo(navIndex - 1)}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </Button>
+              <span className="text-[11px] text-muted-foreground font-medium">
+                Order {navIndex + 1} of {editingRows.length}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 w-6 p-0"
+                disabled={navIndex === editingRows.length - 1}
+                onClick={() => navigateTo(navIndex + 1)}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
         </SheetHeader>
+        <div className="flex items-center gap-1.5 px-4 pb-1 -mt-1">
+          <button
+            type="button"
+            onClick={() => setAllSections(allExpanded ? false : true)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+            {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNotes((v) => !v)}
+            className={`relative flex items-center gap-1 text-xs transition-colors px-2 py-1 rounded border shrink-0 ${
+              showNotes
+                ? "border-amber-400 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200"
+                : "border-border text-muted-foreground hover:text-foreground hover:bg-muted/50"
+            }`}
+            title="Notes"
+            aria-label="Toggle notes"
+          >
+            <StickyNote className="h-3 w-3" />
+            Notes
+            {form.notes.trim() && (
+              <span className="absolute -top-1 -right-1 h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
+            )}
+          </button>
+        </div>
 
         <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
+          {showNotes && (
+            <div className="rounded border border-amber-200 bg-amber-50/60 p-2 dark:border-amber-800 dark:bg-amber-900/20">
+              <div className="flex items-center gap-1.5 mb-1">
+                <StickyNote className="h-3 w-3 text-amber-700 dark:text-amber-300" />
+                <Label className="text-[11px] text-amber-900 dark:text-amber-200">Notes</Label>
+              </div>
+              <Textarea
+                value={form.notes}
+                onChange={(e) => updateField("notes", e.target.value)}
+                placeholder="Optional notes..."
+                className="min-h-[60px] resize-none text-xs bg-background"
+              />
+            </div>
+          )}
           {/* Fabric Info */}
           <CollapsibleSection
             title="Fabric Info"

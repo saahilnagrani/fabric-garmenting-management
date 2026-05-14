@@ -4,6 +4,7 @@ import { type RefObject } from "react";
 import type { GridApi, Column } from "ag-grid-community";
 import ExcelJS from "exceljs";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Download } from "lucide-react";
 
 const CENTERED_FIELDS = new Set<string>(["invoiceNumber"]);
@@ -38,10 +39,12 @@ export function ExportExcelButton({
   gridApiRef,
   fileName,
   sheetName = "Sheet1",
+  iconOnly = false,
 }: {
   gridApiRef: RefObject<GridApi | null>;
   fileName: string;
   sheetName?: string;
+  iconOnly?: boolean;
 }) {
   const handleExport = async () => {
     const api = gridApiRef.current;
@@ -165,6 +168,23 @@ export function ExportExcelButton({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
+
+  if (iconOnly) {
+    return (
+      <TooltipProvider delay={150}>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button variant="outline" size="sm" onClick={handleExport} aria-label="Export to Excel" className="px-2">
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            }
+          />
+          <TooltipContent>Export to Excel</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
 
   return (
     <Button variant="outline" size="sm" onClick={handleExport}>

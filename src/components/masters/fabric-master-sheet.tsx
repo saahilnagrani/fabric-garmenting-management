@@ -298,38 +298,36 @@ export function FabricMasterSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent side="right" className="max-w-[520px] w-full overflow-y-auto border-t-4 border-t-amber-400">
-        <SheetHeader className="pr-12">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <SheetTitle className="text-xl font-semibold">
-                  {isEdit ? (form.fabricName.trim() || "Fabric") : "New Fabric Master"}
-                </SheetTitle>
-                <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">Master</span>
-                {cleanedAt && (
-                  <span
-                    className="text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                    title={`Cleaned on ${new Date(cleanedAt).toLocaleString()}`}
-                  >
-                    <Lock className="h-2.5 w-2.5" />
-                    Cleaned
-                  </span>
-                )}
-              </div>
-              <SheetDescription className="sr-only">
-                {isEdit ? "Edit fabric master" : "Create fabric master"}
-              </SheetDescription>
-            </div>
-            <button
-              type="button"
-              onClick={() => setAllSections(allExpanded ? false : true)}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
-            >
-              <ChevronsUpDown className="h-3 w-3" />
-              {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
-            </button>
+        <SheetHeader className="pr-12 pb-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <SheetTitle className="text-base font-semibold truncate min-w-0 flex-1">
+              {isEdit ? (form.fabricName.trim() || "Fabric") : "New Fabric Master"}
+            </SheetTitle>
+            <span className="text-[9px] font-semibold uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded shrink-0">Master</span>
+            {cleanedAt && (
+              <span
+                className="text-[9px] font-semibold uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded inline-flex items-center gap-1 shrink-0"
+                title={`Cleaned on ${new Date(cleanedAt).toLocaleString()}`}
+              >
+                <Lock className="h-2.5 w-2.5" />
+                Cleaned
+              </span>
+            )}
           </div>
+          <SheetDescription className="sr-only">
+            {isEdit ? "Edit fabric master" : "Create fabric master"}
+          </SheetDescription>
         </SheetHeader>
+        <div className="flex items-center px-4 pb-1 -mt-1">
+          <button
+            type="button"
+            onClick={() => setAllSections(allExpanded ? false : true)}
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded border border-border hover:bg-muted/50 shrink-0"
+          >
+            <ChevronsUpDown className="h-3 w-3" />
+            {allExpanded ? "Collapse All" : allCollapsed ? "Expand All" : "Collapse All"}
+          </button>
+        </div>
 
         <div className="flex-1 space-y-5 px-4 overflow-y-auto [&>div:nth-child(even)]:bg-muted/30">
           {/* Fabric Info */}

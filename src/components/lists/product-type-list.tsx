@@ -16,6 +16,8 @@ type ProductType = {
   id: string;
   name: string;
   code: string;
+  articleMasterCount: number;
+  articleOrderCount: number;
 };
 
 export function ProductTypeList({ types }: { types: ProductType[] }) {
@@ -131,6 +133,14 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
       </div>
 
       <div className="border rounded-lg divide-y">
+        <div className="flex items-center gap-2 px-4 py-2 bg-muted/30 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          <span className="flex-1">Name</span>
+          <span className="w-[3.25rem] text-center">Code</span>
+          <span className="w-20 text-right" title="Number of Article Master rows (SKUs) using this type">Art. Masters</span>
+          <span className="w-20 text-right" title="Number of Article Orders (Products with an article number) using this type">Art. Orders</span>
+          <span className="w-8" aria-hidden />
+          <span className="w-8" aria-hidden />
+        </div>
         {types.length === 0 && (
           <div className="px-4 py-8 text-center text-muted-foreground text-sm">
             No product types yet. Click &quot;Add Type&quot; to create one.
@@ -183,8 +193,22 @@ export function ProductTypeList({ types }: { types: ProductType[] }) {
             ) : (
               <>
                 <span className="flex-1 text-sm">{t.name}</span>
-                <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-                  {t.code || "—"}
+                <span className="w-[3.25rem] flex justify-center">
+                  <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {t.code || "—"}
+                  </span>
+                </span>
+                <span
+                  className={`text-xs tabular-nums w-20 text-right ${t.articleMasterCount === 0 ? "text-muted-foreground/40" : "text-muted-foreground"}`}
+                  title={`${t.articleMasterCount} Article Master row${t.articleMasterCount === 1 ? "" : "s"} (SKUs) use this type`}
+                >
+                  {t.articleMasterCount}
+                </span>
+                <span
+                  className={`text-xs tabular-nums w-20 text-right ${t.articleOrderCount === 0 ? "text-muted-foreground/40" : "text-muted-foreground"}`}
+                  title={`${t.articleOrderCount} Article Order${t.articleOrderCount === 1 ? "" : "s"} (Product rows with an article number) use this type`}
+                >
+                  {t.articleOrderCount}
                 </span>
                 <Button
                   size="sm"

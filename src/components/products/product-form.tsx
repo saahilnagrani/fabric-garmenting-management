@@ -22,6 +22,7 @@ import {
   computeTotalSizeCount,
 } from "@/lib/computations";
 import { formatCurrency, formatPercent } from "@/lib/formatters";
+import { sizeLabelForGender } from "@/lib/size-labels";
 import { PRODUCT_STATUS_LABELS, GENDER_LABELS } from "@/lib/constants";
 import { createProduct, updateProduct } from "@/actions/products";
 
@@ -333,7 +334,7 @@ export function ProductForm({
         <CardContent className="grid grid-cols-6 gap-4">
           {(["XS", "S", "M", "L", "XL", "XXL"] as const).map((size) => (
             <div key={size} className="space-y-1">
-              <Label className="text-xs">{size}</Label>
+              <Label className="text-xs">{sizeLabelForGender(String(watched.gender || ""), size)}</Label>
               <Input
                 type="number"
                 {...register(`actualStitched${size}` as keyof FormValues, { valueAsNumber: true })}

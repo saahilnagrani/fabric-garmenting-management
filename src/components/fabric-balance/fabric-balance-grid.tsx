@@ -77,6 +77,17 @@ export function FabricBalanceGrid({
 
   const columnDefs = useMemo<ColDef<FabricBalanceRow>[]>(
     () => [
+      {
+        field: "id",
+        headerName: "ID",
+        pinned: "left",
+        width: 110,
+        minWidth: 90,
+        editable: false,
+        cellClass: "font-mono text-[10px]",
+        tooltipField: "id",
+        valueFormatter: (p) => (typeof p.value === "string" ? p.value.slice(-8) : ""),
+      },
       { field: "fabricName", headerName: "Fabric", pinned: "left", minWidth: 200, editable: false },
       { field: "vendorName", headerName: "Vendor", minWidth: 160, editable: false },
       { field: "colour", headerName: "Colour", minWidth: 120, editable: false },

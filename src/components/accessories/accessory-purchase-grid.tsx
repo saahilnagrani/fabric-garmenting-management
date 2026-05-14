@@ -80,6 +80,7 @@ export function AccessoryPurchaseGrid({
   // Ship-to dialog state
   const [shipToOpen, setShipToOpen] = useState(false);
   const [shipToVendorId, setShipToVendorId] = useState("");
+  const [advancePercentage, setAdvancePercentage] = useState("");
   const [generatingPO, setGeneratingPO] = useState(false);
   const pendingIdsRef = useRef<string[]>([]);
 
@@ -124,15 +125,21 @@ export function AccessoryPurchaseGrid({
 
     pendingIdsRef.current = [...new Set(rows.map((r) => r.id))];
     setShipToVendorId("");
+    setAdvancePercentage("");
     setShipToOpen(true);
   }
 
   async function handleConfirmGeneratePO() {
     if (!shipToVendorId) { toast.error("Select a ship-to destination"); return; }
+    const advanceNum = advancePercentage === "" ? null : Number(advancePercentage);
+    if (advanceNum !== null && (isNaN(advanceNum) || advanceNum < 0 || advanceNum > 100)) {
+      toast.error("Advance % must be between 0 and 100");
+      return;
+    }
     const ids = pendingIdsRef.current;
     setGeneratingPO(true);
     try {
-      await generateAccessoryPurchaseOrders(ids, shipToVendorId);
+      await generateAccessoryPurchaseOrders(ids, shipToVendorId, advanceNum);
       setShipToOpen(false);
       router.refresh();
       // Open ALL the stamped rows in one tab — the print page groups by vendor
@@ -333,6 +340,20 @@ export function AccessoryPurchaseGrid({
               onValueChange={setShipToVendorId}
               options={vendorOptions}
               placeholder="Select destination..."
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[11px]">Advance % paid</Label>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              max={100}
+              step="0.01"
+              value={advancePercentage}
+              onChange={(e) => setAdvancePercentage(e.target.value)}
+              placeholder="e.g. 30"
+              className="flex h-8 w-full rounded-md border border-input bg-transparent px-3 py-1 text-[12px] shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             />
           </div>
           <DialogFooter>

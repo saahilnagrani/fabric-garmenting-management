@@ -71,6 +71,7 @@ export async function deleteAccessoryPurchase(id: string) {
 export async function generateAccessoryPurchaseOrders(
   ids: string[],
   shipToVendorId: string,
+  advancePercentage: number | null = null,
 ): Promise<Record<string, string>> {
   await requirePermission("inventory:accessories:edit");
   if (!ids.length) return {};
@@ -94,10 +95,13 @@ export async function generateAccessoryPurchaseOrders(
     poNumbersByVendorId[vendorId] = poNumber;
   }
 
-  // Stamp shipToVendorId on all rows.
+  // Stamp shipToVendorId (and advancePercentage, if provided) on all rows.
   await db.accessoryPurchase.updateMany({
     where: { id: { in: ids } },
-    data: { shipToVendorId },
+    data: {
+      shipToVendorId,
+      ...(advancePercentage !== null ? { advancePercentage } : {}),
+    },
   });
 
   revalidatePath("/accessory-purchases");

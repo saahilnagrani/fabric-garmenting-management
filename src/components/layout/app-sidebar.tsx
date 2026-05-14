@@ -30,7 +30,9 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { hasPermission, type Permission, type PermissionContext } from "@/lib/permissions";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -70,7 +72,7 @@ const masterItems: NavItem[] = [
 const listItems: NavItem[] = [
   { title: "Vendors", href: "/vendors", icon: Users, permission: "inventory:vendors:view" },
   { title: "Phases", href: "/phases", icon: Layers, permission: "inventory:phases:view" },
-  { title: "Product Types", href: "/lists/types", icon: List, permission: "inventory:lists:view" },
+  { title: "Article Types", href: "/lists/types", icon: List, permission: "inventory:lists:view" },
   { title: "Colours", href: "/lists/colours", icon: List, permission: "inventory:lists:view" },
   { title: "Garmenting Locations", href: "/lists/garmenting-locations", icon: List, permission: "inventory:lists:view" },
   { title: "Size Distribution", href: "/lists/size-distribution", icon: List, permission: "inventory:lists:view" },
@@ -79,6 +81,8 @@ const listItems: NavItem[] = [
 export function AppSidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
   const contentRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<string, HTMLAnchorElement | null>>(new Map());
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
@@ -126,39 +130,47 @@ export function AppSidebar() {
 
   const renderItem = (item: NavItem) => {
     const isActive = pathname.startsWith(item.href);
+    const link = (
+      <Link
+        href={item.href}
+        ref={(el) => { itemRefs.current.set(item.href, el); }}
+        className={cn(
+          "relative z-10 flex w-full items-center gap-2 rounded-md p-2 text-sm transition-colors",
+          "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2",
+          isActive
+            ? "font-medium text-sidebar-accent-foreground"
+            : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
+        )}
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+      </Link>
+    );
     return (
       <SidebarMenuItem key={item.href}>
-        <Link
-          href={item.href}
-          ref={(el) => { itemRefs.current.set(item.href, el); }}
-          className={cn(
-            "relative z-10 flex w-full items-center gap-2 rounded-md p-2 text-sm transition-colors",
-            isActive
-              ? "font-medium text-sidebar-accent-foreground"
-              : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <item.icon className="h-4 w-4" />
-          <span>{item.title}</span>
-        </Link>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger render={link} />
+            <TooltipContent side="right" sideOffset={8}>{item.title}</TooltipContent>
+          </Tooltip>
+        ) : link}
       </SidebarMenuItem>
     );
   };
 
   return (
-    <Sidebar>
-      <SidebarHeader className="p-0">
+    <TooltipProvider delay={0} closeDelay={0}>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="p-0 overflow-hidden">
         <ModuleSwitcher />
       </SidebarHeader>
       <SidebarContent ref={contentRef} style={{ position: "relative" }}>
         {/* Global sliding indicator — pointer-events-none ensures links stay clickable */}
         {indicator && (
           <div
-            className="rounded-md bg-sidebar-accent pointer-events-none"
+            className="rounded-md bg-sidebar-accent pointer-events-none left-3 right-3 group-data-[collapsible=icon]:left-1.5 group-data-[collapsible=icon]:right-1.5"
             style={{
               position: "absolute",
-              left: 12,
-              right: 12,
               top: indicator.top,
               height: indicator.height,
               zIndex: 0,
@@ -198,5 +210,6 @@ export function AppSidebar() {
         )}
       </SidebarContent>
     </Sidebar>
+    </TooltipProvider>
   );
 }

@@ -7,9 +7,62 @@ import { logAction } from "@/lib/audit";
 
 export async function getColours() {
   await requirePermission("inventory:lists:view");
-  return db.colour.findMany({
-    orderBy: { name: "asc" },
-  });
+  const [
+    colours,
+    articleRows,
+    productRows,
+    productMasterRows,
+    fabricMasterRows,
+    productLinkRows,
+    foColourRows,
+    foAvailRows,
+    fabricBalanceRows,
+    accessoryRows,
+  ] = await Promise.all([
+    db.colour.findMany({ orderBy: { name: "asc" } }),
+    // Article numbers using this colour (name-based, slash-split for multi-colour).
+    db.$queryRaw<Array<{ colour: string; count: bigint }>>`
+      SELECT TRIM(part) AS colour, COUNT(*)::bigint AS count
+      FROM "Product",
+           unnest(string_to_array("colourOrdered", '/')) AS part
+      WHERE "articleNumber" IS NOT NULL
+      GROUP BY TRIM(part)
+    `,
+    db.product.groupBy({ by: ["colourOrderedId"], _count: { _all: true } }),
+    db.productMasterColour.groupBy({ by: ["colourId"], _count: { _all: true } }),
+    db.fabricMasterColour.groupBy({ by: ["colourId"], _count: { _all: true } }),
+    db.productColour.groupBy({ by: ["colourId"], _count: { _all: true } }),
+    db.fabricOrder.groupBy({ by: ["colourId"], _count: { _all: true } }),
+    db.fabricOrder.groupBy({ by: ["availableColourId"], _count: { _all: true } }),
+    db.fabricBalance.groupBy({ by: ["colourId"], _count: { _all: true } }),
+    db.accessoryMaster.groupBy({ by: ["colourId"], _count: { _all: true } }),
+  ]);
+
+  const articleCounts = new Map(articleRows.map((r) => [r.colour, Number(r.count)]));
+  const toIdMap = <T extends { _count: { _all: number } }>(rows: T[], key: keyof T) =>
+    new Map(rows.map((r) => [r[key] as string | null, r._count._all]));
+
+  const productMap = toIdMap(productRows, "colourOrderedId");
+  const productMasterMap = toIdMap(productMasterRows, "colourId");
+  const fabricMasterMap = toIdMap(fabricMasterRows, "colourId");
+  const productLinkMap = toIdMap(productLinkRows, "colourId");
+  const foColourMap = toIdMap(foColourRows, "colourId");
+  const foAvailMap = toIdMap(foAvailRows, "availableColourId");
+  const fabricBalanceMap = toIdMap(fabricBalanceRows, "colourId");
+  const accessoryMap = toIdMap(accessoryRows, "colourId");
+
+  return colours.map((c) => ({
+    ...c,
+    articleCount: articleCounts.get(c.name) ?? 0,
+    productCount: productMap.get(c.id) ?? 0,
+    productMasterCount: productMasterMap.get(c.id) ?? 0,
+    fabricMasterCount: fabricMasterMap.get(c.id) ?? 0,
+    productLinkCount: productLinkMap.get(c.id) ?? 0,
+    fabricOrderColourCount: foColourMap.get(c.id) ?? 0,
+    fabricOrderAvailableCount: foAvailMap.get(c.id) ?? 0,
+    fabricBalanceCount: fabricBalanceMap.get(c.id) ?? 0,
+    accessoryMasterCount: accessoryMap.get(c.id) ?? 0,
+  }));
 }
 
 export async function createColour(name: string, code: string) {

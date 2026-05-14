@@ -8,6 +8,64 @@ import { ensureDnNumberForDispatchGroup, fiscalYearFromNumber } from "@/lib/po-n
 import type { AccessoryDispatchStatus } from "@/generated/prisma/client";
 import { createLookupResolver } from "@/lib/lookups";
 
+/**
+ * Compute the piece count that should drive a BOM line, honoring per-size
+ * applicability. If `applicableSizes` is empty, this is the total piece count
+ * (inwardTotal preferred, else garmentNumber). If non-empty, it sums only the
+ * size buckets listed (using actualInward* when total > 0, else actualStitched*).
+ */
+type SizeBreakdownProduct = {
+  garmentNumber: number | null;
+  actualInwardTotal: number;
+  actualInwardXS: number;
+  actualInwardS: number;
+  actualInwardM: number;
+  actualInwardL: number;
+  actualInwardXL: number;
+  actualInwardXXL: number;
+  actualStitchedXS: number;
+  actualStitchedS: number;
+  actualStitchedM: number;
+  actualStitchedL: number;
+  actualStitchedXL: number;
+  actualStitchedXXL: number;
+};
+
+function piecesForBomLine(
+  product: SizeBreakdownProduct,
+  applicableSizes: string[],
+): number {
+  const totalInward = product.actualInwardTotal;
+  if (applicableSizes.length === 0) {
+    return totalInward > 0 ? totalInward : product.garmentNumber || 0;
+  }
+  const useInward = totalInward > 0;
+  const get = (size: string): number => {
+    const key = size.toUpperCase();
+    if (useInward) {
+      switch (key) {
+        case "XS": return product.actualInwardXS;
+        case "S": return product.actualInwardS;
+        case "M": return product.actualInwardM;
+        case "L": return product.actualInwardL;
+        case "XL": return product.actualInwardXL;
+        case "XXL": return product.actualInwardXXL;
+        default: return 0;
+      }
+    }
+    switch (key) {
+      case "XS": return product.actualStitchedXS;
+      case "S": return product.actualStitchedS;
+      case "M": return product.actualStitchedM;
+      case "L": return product.actualStitchedL;
+      case "XL": return product.actualStitchedXL;
+      case "XXL": return product.actualStitchedXXL;
+      default: return 0;
+    }
+  };
+  return applicableSizes.reduce((sum, s) => sum + get(s), 0);
+}
+
 async function attachAccessoryDispatchLookupIds<T extends Record<string, unknown>>(data: T): Promise<T> {
   if ("destinationGarmenter" in data) {
     const resolver = createLookupResolver();
@@ -94,49 +152,42 @@ export async function getDispatchSuggestionForProduct(
       articleNumber: true,
       garmentNumber: true,
       actualInwardTotal: true,
+      actualInwardXS: true,
+      actualInwardS: true,
+      actualInwardM: true,
+      actualInwardL: true,
+      actualInwardXL: true,
+      actualInwardXXL: true,
+      actualStitchedXS: true,
+      actualStitchedS: true,
+      actualStitchedM: true,
+      actualStitchedL: true,
+      actualStitchedXL: true,
+      actualStitchedXXL: true,
     },
   });
-  if (!product) return null;
+  if (!product || !product.articleNumber) return null;
 
-  // Try skuCode match first, then styleNumber+articleNumber
-  let master = product.skuCode
-    ? await db.productMaster.findUnique({
-        where: { skuCode: product.skuCode },
-        select: { id: true },
-      })
-    : null;
-
-  if (!master) {
-    master = await db.productMaster.findFirst({
-      where: {
-        styleNumber: product.styleNumber,
-        articleNumber: product.articleNumber || undefined,
-      },
-      select: { id: true },
-    });
-  }
-  if (!master) return null;
-
-  const bom = await db.productMasterAccessory.findUnique({
+  const bom = await db.articleAccessory.findUnique({
     where: {
-      productMasterId_accessoryId: {
-        productMasterId: master.id,
+      articleNumber_accessoryId: {
+        articleNumber: product.articleNumber,
         accessoryId,
       },
     },
   });
   if (!bom) return null;
 
-  const pieces =
-    product.actualInwardTotal && product.actualInwardTotal > 0
-      ? product.actualInwardTotal
-      : product.garmentNumber || 0;
+  const pieces = piecesForBomLine(product, bom.applicableSizes);
   if (pieces <= 0) return null;
 
   const perPiece = Number(bom.quantityPerPiece);
+  const sizeNote = bom.applicableSizes.length
+    ? ` (${bom.applicableSizes.join("/")})`
+    : "";
   return {
     quantity: pieces * perPiece,
-    basis: `${pieces} pcs × ${perPiece}/pc`,
+    basis: `${pieces} pcs${sizeNote} × ${perPiece}/pc`,
   };
 }
 
@@ -157,50 +208,52 @@ export async function getBomForProduct(productId: string) {
       articleNumber: true,
       garmentNumber: true,
       actualInwardTotal: true,
+      actualInwardXS: true,
+      actualInwardS: true,
+      actualInwardM: true,
+      actualInwardL: true,
+      actualInwardXL: true,
+      actualInwardXXL: true,
+      actualStitchedXS: true,
+      actualStitchedS: true,
+      actualStitchedM: true,
+      actualStitchedL: true,
+      actualStitchedXL: true,
+      actualStitchedXXL: true,
     },
   });
-  if (!product) return { lines: [], pieces: 0, masterFound: false };
+  if (!product || !product.articleNumber) return { lines: [], pieces: 0, masterFound: false };
 
-  let master = product.skuCode
-    ? await db.productMaster.findUnique({
-        where: { skuCode: product.skuCode },
-        select: { id: true },
-      })
-    : null;
-  if (!master) {
-    master = await db.productMaster.findFirst({
-      where: {
-        styleNumber: product.styleNumber,
-        articleNumber: product.articleNumber || undefined,
-      },
-      select: { id: true },
-    });
-  }
-  if (!master) return { lines: [], pieces: 0, masterFound: false };
-
-  const bom = await db.productMasterAccessory.findMany({
-    where: { productMasterId: master.id },
+  const bom = await db.articleAccessory.findMany({
+    where: { articleNumber: product.articleNumber },
     include: { accessory: true },
   });
 
-  const pieces =
+  const totalPieces =
     product.actualInwardTotal && product.actualInwardTotal > 0
       ? product.actualInwardTotal
       : product.garmentNumber || 0;
 
-  const lines = bom.map((b) => ({
-    accessoryId: b.accessoryId,
-    baseName: b.accessory.baseName,
-    colour: b.accessory.colour,
-    size: b.accessory.size,
-    category: b.accessory.category,
-    unit: b.accessory.unit,
-    quantityPerPiece: Number(b.quantityPerPiece),
-    totalQuantity: pieces * Number(b.quantityPerPiece),
-    notes: b.notes,
-  }));
+  const lines = bom.map((b) => {
+    const linePieces = piecesForBomLine(product, b.applicableSizes);
+    return {
+      accessoryId: b.accessoryId,
+      displayName: b.accessory.displayName,
+      attributes: b.accessory.attributes,
+      baseName: b.accessory.baseName,
+      colour: b.accessory.colour,
+      size: b.accessory.size,
+      category: b.accessory.category,
+      unit: b.accessory.unit,
+      quantityPerPiece: Number(b.quantityPerPiece),
+      applicableSizes: b.applicableSizes,
+      pieces: linePieces,
+      totalQuantity: linePieces * Number(b.quantityPerPiece),
+      notes: b.notes,
+    };
+  });
 
-  return { lines, pieces, masterFound: true };
+  return { lines, pieces: totalPieces, masterFound: true };
 }
 
 export type AutoDispatchResult = {
@@ -248,6 +301,18 @@ export async function autoCreateDispatchesForProduct(
       garmentingAt: true,
       garmentNumber: true,
       actualInwardTotal: true,
+      actualInwardXS: true,
+      actualInwardS: true,
+      actualInwardM: true,
+      actualInwardL: true,
+      actualInwardXL: true,
+      actualInwardXXL: true,
+      actualStitchedXS: true,
+      actualStitchedS: true,
+      actualStitchedM: true,
+      actualStitchedL: true,
+      actualStitchedXL: true,
+      actualStitchedXXL: true,
     },
   });
   if (!product) {
@@ -267,49 +332,33 @@ export async function autoCreateDispatchesForProduct(
     colour: product.colourOrdered,
   };
 
-  // Resolve the matching ProductMaster
-  let master = product.skuCode
-    ? await db.productMaster.findUnique({
-        where: { skuCode: product.skuCode },
-        select: { id: true },
-      })
-    : null;
-  if (!master) {
-    master = await db.productMaster.findFirst({
-      where: {
-        styleNumber: product.styleNumber,
-        articleNumber: product.articleNumber || undefined,
-      },
-      select: { id: true },
-    });
-  }
-  if (!master) {
+  if (!product.articleNumber) {
     return {
       ...baseResult,
       created: 0,
       skipped: 0,
-      warning: "No matching ProductMaster — cannot derive BOM",
+      warning: "Article has no article number — cannot derive BOM",
     };
   }
 
-  const bomLines = await db.productMasterAccessory.findMany({
-    where: { productMasterId: master.id },
-    select: { accessoryId: true, quantityPerPiece: true },
+  const bomLines = await db.articleAccessory.findMany({
+    where: { articleNumber: product.articleNumber },
+    select: { accessoryId: true, quantityPerPiece: true, applicableSizes: true },
   });
   if (bomLines.length === 0) {
     return {
       ...baseResult,
       created: 0,
       skipped: 0,
-      warning: "ProductMaster has no accessory BOM — nothing to dispatch",
+      warning: "Article has no accessory BOM — nothing to dispatch",
     };
   }
 
-  const pieces =
+  const totalPieces =
     product.actualInwardTotal && product.actualInwardTotal > 0
       ? product.actualInwardTotal
       : product.garmentNumber || 0;
-  if (pieces <= 0) {
+  if (totalPieces <= 0) {
     return {
       ...baseResult,
       created: 0,
@@ -334,7 +383,13 @@ export async function autoCreateDispatchesForProduct(
       skipped++;
       continue;
     }
-    const qty = pieces * Number(line.quantityPerPiece);
+    const linePieces = piecesForBomLine(product, line.applicableSizes);
+    if (linePieces <= 0) {
+      // No pieces for any size in this BOM line's applicable set — skip silently.
+      skipped++;
+      continue;
+    }
+    const qty = linePieces * Number(line.quantityPerPiece);
     const row = await db.accessoryDispatch.create({
       data: {
         phaseId: product.phaseId,

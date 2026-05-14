@@ -7,9 +7,22 @@ import { logAction } from "@/lib/audit";
 
 export async function getProductTypes() {
   await requirePermission("inventory:lists:view");
-  return db.productType.findMany({
-    orderBy: { name: "asc" },
-  });
+  const [types, masterGrouped, orderGrouped] = await Promise.all([
+    db.productType.findMany({ orderBy: { name: "asc" } }),
+    db.productMaster.groupBy({ by: ["type"], _count: { _all: true } }),
+    db.product.groupBy({
+      by: ["type"],
+      where: { articleNumber: { not: null } },
+      _count: { _all: true },
+    }),
+  ]);
+  const masterCounts = new Map(masterGrouped.map((g) => [g.type, g._count._all]));
+  const orderCounts = new Map(orderGrouped.map((g) => [g.type, g._count._all]));
+  return types.map((t) => ({
+    ...t,
+    articleMasterCount: masterCounts.get(t.name) ?? 0,
+    articleOrderCount: orderCounts.get(t.name) ?? 0,
+  }));
 }
 
 export async function createProductType(name: string, code?: string) {

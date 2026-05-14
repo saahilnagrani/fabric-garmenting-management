@@ -8,17 +8,15 @@ import type { ColDef, GridApi, GridReadyEvent, ColumnState, ColumnPinnedType, Ro
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger,
-} from "@/components/ui/select";
 import { GENDER_LABELS, FABRIC_ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatCurrency, formatNumber } from "@/lib/formatters";
-import { Plus, Check, FileText } from "lucide-react";
+import { Plus, Check, FileText, StickyNote } from "lucide-react";
 import { FabricOrderSheet } from "./fabric-order-sheet";
 import { useCustomColumns } from "@/hooks/use-custom-columns";
 import { AddColumnButton } from "@/components/ag-grid/add-column-dialog";
 import { ManageColumnsDialog } from "@/components/ag-grid/manage-columns-dialog";
 import { ExportExcelButton } from "@/components/ag-grid/export-excel-button";
+import { FilterPopover } from "@/components/ag-grid/filter-popover";
 import "../ag-grid/ag-grid-theme.css";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -57,6 +55,7 @@ function toRow(o: any): Record<string, unknown> {
     piReceivedAt: o.piReceivedAt ? new Date(o.piReceivedAt as string | Date).toISOString() : "",
     advancePaidAt: o.advancePaidAt ? new Date(o.advancePaidAt as string | Date).toISOString() : "",
     garmentingAt: s(o.garmentingAt),
+    notes: s(o.notes),
   };
 }
 
@@ -197,6 +196,7 @@ export function FabricOrderGrid({
         // awaiting tag instead of collapsing to empty.
         awaitingTag: awaitingTagForRows(rows),
         garmentingAt: concatUnique(rows, "garmentingAt"),
+        notes: rows.map((r) => String(r.notes || "").trim()).filter(Boolean).join("\n\n— — —\n\n"),
       });
     }
 
@@ -274,6 +274,17 @@ export function FabricOrderGrid({
   const baseColumnDefs = useMemo<ColDef[]>(() => [
     // Pinned identity columns
     {
+      field: "id",
+      headerName: "ID",
+      pinned: "left",
+      width: 110,
+      minWidth: 90,
+      editable: false,
+      cellClass: "font-mono text-[10px]",
+      tooltipField: "id",
+      valueFormatter: (p) => (typeof p.value === "string" ? p.value.slice(-8) : ""),
+    },
+    {
       colId: "__select",
       headerName: "",
       width: 42,
@@ -326,6 +337,19 @@ export function FabricOrderGrid({
           const idx = params.node?.rowIndex;
           return idx != null && groupStartsRef.current.has(idx) && (groupSpanMapRef.current.get(idx) || 1) > 1;
         },
+      },
+      cellRenderer: (params: { value?: string; data?: Record<string, unknown> }) => {
+        const name = String(params.value ?? "");
+        const notes = String(params.data?.notes ?? "").trim();
+        if (!notes) return name;
+        return (
+          <span className="inline-flex items-center gap-1">
+            <span>{name}</span>
+            <span title={notes} className="inline-flex items-center text-amber-600">
+              <StickyNote className="h-3 w-3" />
+            </span>
+          </span>
+        );
       },
     },
     { field: "colour", headerName: "Colour", pinned: "left", minWidth: 90, editable: false },
@@ -530,6 +554,15 @@ export function FabricOrderGrid({
     router.push(`/fabric-orders?${params.toString()}`);
   }
 
+  function applyMultiFilter(key: string, values: string[]) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (values.length > 0) params.set(key, values.join(","));
+    else params.delete(key);
+    router.push(`/fabric-orders?${params.toString()}`);
+  }
+
+  const selectedVendorIds = (searchParams.get("vendor") || "").split(",").filter(Boolean);
+
   const tabs = [
     { key: "all", label: "All" },
     { key: "new", label: "New" },
@@ -543,44 +576,41 @@ export function FabricOrderGrid({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        {tabs.map((tab) => (
-          <Button key={tab.key} variant={currentTab === tab.key ? "default" : "outline"} size="sm" onClick={() => applyFilter("tab", tab.key)}>
-            {tab.label}
-          </Button>
-        ))}
-        <div className="ml-auto" />
-        <Select value={searchParams.get("vendor") || "all"} onValueChange={(v) => applyFilter("vendor", v)}>
-          <SelectTrigger className="w-[150px]">
-            <span className="truncate">{vendorLabels[searchParams.get("vendor") || ""] || "All Vendors"}</span>
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Vendors</SelectItem>
-            {vendors
-              .filter((v) => v.type === "FABRIC_SUPPLIER")
-              .map((v) => (<SelectItem key={v.id} value={v.id}>{v.name}</SelectItem>))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={handleAddNew}>
           <Plus className="mr-1.5 h-3.5 w-3.5" />
           Add Fabric Order
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleGeneratePO}
-          disabled={selectedRows.length === 0}
-        >
-          <FileText className="mr-1.5 h-3.5 w-3.5" />
-          Generate Purchase Orders{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
-        </Button>
-        <ExportExcelButton gridApiRef={gridApiRef} fileName="fabric-orders" sheetName="Fabric Orders" />
-        <ManageColumnsDialog
-          gridApiRef={gridApiRef}
-          colStateKey={COL_STATE_KEY}
+        <FilterPopover
+          tabKey={currentTab}
+          tabs={tabs}
+          onTabChange={(k) => applyFilter("tab", k)}
+          vendors={vendors.filter((v) => v.type === "FABRIC_SUPPLIER").map((v) => ({ id: v.id, name: v.name }))}
+          selectedVendors={selectedVendorIds}
+          onVendorsChange={(ids) => applyMultiFilter("vendor", ids)}
+          onClearAll={() => {
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete("tab");
+            params.delete("vendor");
+            router.push(`/fabric-orders?${params.toString()}`);
+          }}
         />
+        <div className="ml-auto flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGeneratePO}
+            disabled={selectedRows.length === 0}
+          >
+            <FileText className="mr-1.5 h-3.5 w-3.5" />
+            Generate Purchase Orders{selectedRows.length > 0 ? ` (${selectedRows.length})` : ""}
+          </Button>
+          <ExportExcelButton gridApiRef={gridApiRef} fileName="fabric-orders" sheetName="Fabric Orders" iconOnly />
+          <ManageColumnsDialog
+            gridApiRef={gridApiRef}
+            colStateKey={COL_STATE_KEY}
+            iconOnly
+          />
+        </div>
       </div>
 
       <FabricOrderSheet

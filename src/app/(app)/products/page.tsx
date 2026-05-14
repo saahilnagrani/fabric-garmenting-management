@@ -34,12 +34,15 @@ export default async function ProductsPage({
 
   const alertFilter = isProductAlertFilter(params.alertFilter) ? params.alertFilter : undefined;
 
+  const vendorIds = params.vendor ? params.vendor.split(",").filter(Boolean) : [];
+  const statusKeys = params.status ? params.status.split(",").filter(Boolean) : [];
+
   const [products, vendors, productMasters, fabricMasters, sizeDistributions, totalCount, lastPhaseMargins] = await Promise.all([
     getProducts(phase.id, {
       isRepeat,
       search: params.search || undefined,
-      fabricVendorId: params.vendor || undefined,
-      status: params.status as never,
+      fabricVendorIds: vendorIds.length > 0 ? vendorIds : undefined,
+      statuses: statusKeys.length > 0 ? (statusKeys as never) : undefined,
       gender: params.gender as never,
       alertFilter,
     }),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import { AllCommunityModule, ModuleRegistry, type ColDef, type GridApi, type CellValueChangedEvent, type GridReadyEvent, type ColumnState, type ColumnPinnedType, type RowClickedEvent } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
@@ -345,6 +345,22 @@ export function DataGrid<T extends Record<string, unknown>>({
 
     return cols;
   }, [columnDefs, customColumns]);
+
+  // When columnDefs change post-init (e.g., parent re-renders after router.refresh()
+  // following a sheet save), AG Grid's maintainColumnOrder is not enough to keep the
+  // user's reordering. Re-apply the saved column state from localStorage so the
+  // user's order, widths, and pin state persist across data refreshes.
+  useEffect(() => {
+    if (isInitializing.current || !gridApiRef.current) return;
+    const saved = localStorage.getItem(colStateKey);
+    if (!saved) return;
+    try {
+      const parsed: ColumnState[] = JSON.parse(saved);
+      gridApiRef.current.applyColumnState({ state: parsed, applyOrder: true });
+    } catch {
+      // Ignore invalid saved state
+    }
+  }, [fullColumnDefs, colStateKey]);
 
   const handleRowClicked = useCallback((event: RowClickedEvent<T>) => {
     if (!onRowClicked || !event.data) return;

@@ -13,7 +13,9 @@ import {
   SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { ModuleSwitcher } from "./module-switcher";
 import type { LucideIcon } from "lucide-react";
@@ -34,6 +36,8 @@ const adminItems: NavItem[] = [
 
 export function AdminSidebar() {
   const pathname = usePathname();
+  const { state } = useSidebar();
+  const collapsed = state === "collapsed";
   const contentRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<Map<string, HTMLAnchorElement | null>>(new Map());
   const [indicator, setIndicator] = useState<{ top: number; height: number } | null>(null);
@@ -64,38 +68,46 @@ export function AdminSidebar() {
 
   const renderItem = (item: NavItem) => {
     const isActive = pathname.startsWith(item.href);
+    const link = (
+      <Link
+        href={item.href}
+        ref={(el) => { itemRefs.current.set(item.href, el); }}
+        className={cn(
+          "relative z-10 flex w-full items-center gap-2 rounded-md p-2 text-sm transition-colors",
+          "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-2",
+          isActive
+            ? "font-medium text-sidebar-accent-foreground"
+            : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
+        )}
+      >
+        <item.icon className="h-4 w-4 shrink-0" />
+        <span className="group-data-[collapsible=icon]:hidden">{item.title}</span>
+      </Link>
+    );
     return (
       <SidebarMenuItem key={item.href}>
-        <Link
-          href={item.href}
-          ref={(el) => { itemRefs.current.set(item.href, el); }}
-          className={cn(
-            "relative z-10 flex w-full items-center gap-2 rounded-md p-2 text-sm transition-colors",
-            isActive
-              ? "font-medium text-sidebar-accent-foreground"
-              : "text-sidebar-foreground hover:text-sidebar-accent-foreground"
-          )}
-        >
-          <item.icon className="h-4 w-4" />
-          <span>{item.title}</span>
-        </Link>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger render={link} />
+            <TooltipContent side="right" sideOffset={8}>{item.title}</TooltipContent>
+          </Tooltip>
+        ) : link}
       </SidebarMenuItem>
     );
   };
 
   return (
-    <Sidebar>
-      <SidebarHeader className="p-0">
+    <TooltipProvider delay={0} closeDelay={0}>
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="p-0 overflow-hidden">
         <ModuleSwitcher />
       </SidebarHeader>
       <SidebarContent ref={contentRef} style={{ position: "relative" }}>
         {indicator && (
           <div
-            className="rounded-md bg-sidebar-accent pointer-events-none"
+            className="rounded-md bg-sidebar-accent pointer-events-none left-3 right-3 group-data-[collapsible=icon]:left-1.5 group-data-[collapsible=icon]:right-1.5"
             style={{
               position: "absolute",
-              left: 12,
-              right: 12,
               top: indicator.top,
               height: indicator.height,
               zIndex: 0,
@@ -113,5 +125,6 @@ export function AdminSidebar() {
         </SidebarGroup>
       </SidebarContent>
     </Sidebar>
+    </TooltipProvider>
   );
 }

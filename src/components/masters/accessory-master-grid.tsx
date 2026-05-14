@@ -65,8 +65,8 @@ export function AccessoryMasterGrid({
           comments: (m.comments as string | null) ?? null,
           imageUrl: (m.imageUrl as string | null) ?? null,
           articleCodeUnits: (
-            (m.productLinks as Array<{ productMaster: { skuCode: string }; quantityPerPiece: unknown }> | null) ?? []
-          ).map((l) => ({ code: l.productMaster.skuCode, units: Number(l.quantityPerPiece) })),
+            (m.articleLinks as Array<{ articleNumber: string; quantityPerPiece: unknown }> | null) ?? []
+          ).map((l) => ({ code: l.articleNumber, units: Number(l.quantityPerPiece) })),
           isStrikedThrough: Boolean(m.isStrikedThrough),
           displayName,
         };
@@ -79,6 +79,17 @@ export function AccessoryMasterGrid({
     vendors.forEach((v) => { vendorLabels[v.id] = v.name; });
 
     return [
+      {
+        field: "id",
+        headerName: "ID",
+        pinned: "left",
+        width: 110,
+        minWidth: 90,
+        editable: false,
+        cellClass: "font-mono text-[10px]",
+        tooltipField: "id",
+        valueFormatter: (p) => (typeof p.value === "string" ? p.value.slice(-8) : ""),
+      },
       {
         field: "displayName",
         headerName: "Accessory",

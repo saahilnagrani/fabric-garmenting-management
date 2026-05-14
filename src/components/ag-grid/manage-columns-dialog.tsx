@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, type RefObject } from "react";
 import type { GridApi, ColumnState } from "ag-grid-community";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Columns3, ChevronUp, ChevronDown, Pin, PinOff, GripVertical, Eye, EyeOff } from "lucide-react";
 
 type ColumnInfo = {
@@ -17,9 +18,11 @@ type ColumnInfo = {
 export function ManageColumnsDialog({
   gridApiRef,
   colStateKey,
+  iconOnly = false,
 }: {
   gridApiRef: RefObject<GridApi | null>;
   colStateKey: string;
+  iconOnly?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [columns, setColumns] = useState<ColumnInfo[]>([]);
@@ -162,15 +165,30 @@ export function ManageColumnsDialog({
 
   return (
     <div className="relative inline-block">
-      <Button variant="outline" size="sm" onClick={() => setOpen(!open)}>
-        <Columns3 className="mr-1.5 h-3.5 w-3.5" />
-        Manage Columns
-      </Button>
+      {iconOnly ? (
+        <TooltipProvider delay={150}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button variant="outline" size="sm" onClick={() => setOpen(!open)} aria-label="Manage Columns" className="px-2">
+                  <Columns3 className="h-3.5 w-3.5" />
+                </Button>
+              }
+            />
+            <TooltipContent>Manage Columns</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setOpen(!open)}>
+          <Columns3 className="mr-1.5 h-3.5 w-3.5" />
+          Manage Columns
+        </Button>
+      )}
 
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setEditingId(null); }} />
-          <div className="absolute top-full left-0 mt-1 z-50 w-80 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="absolute top-full right-0 mt-1 z-50 w-80 bg-popover text-popover-foreground border border-border rounded-lg shadow-lg p-3 space-y-2 max-h-[400px] overflow-y-auto">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Columns ({columns.length})
             </p>

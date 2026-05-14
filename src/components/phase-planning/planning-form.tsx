@@ -9,6 +9,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { createPlanOrders, type PlannedArticleOrder, type PlannedFabricOrder } from "@/actions/phase-planning";
 import { saveDraft, loadDraft, deleteDraft } from "@/actions/phase-planning-draft";
 import { GENDER_LABELS } from "@/lib/constants";
+import { sizeLabelForGender } from "@/lib/size-labels";
 import { toast } from "sonner";
 import { X, ArrowLeft, Loader2, ChevronDown, ChevronRight, Package, Layers } from "lucide-react";
 
@@ -435,7 +436,10 @@ export function PlanningForm({
     const baseStr = articleNumber.split("-")[0];
     if (previousArticleSet.has(baseStr)) return true;
     const baseNum = parseInt(baseStr, 10);
-    if (!isNaN(baseNum) && baseNum < phaseNumber * 1000) return true;
+    // Phase numbers can be decimal (e.g. 4.1, 4.2). Articles in the integer
+    // band of the current phase (e.g. 4xxx for phase 4.x) are "new"; anything
+    // below is treated as carried over from a previous phase.
+    if (!isNaN(baseNum) && baseNum < Math.floor(phaseNumber) * 1000) return true;
     return false;
   }
 
@@ -1353,7 +1357,7 @@ export function PlanningForm({
                   <div className={`grid ${colTemplate} gap-1.5 text-[10px] font-medium text-muted-foreground px-1`}>
                     <span>Colour</span>
                     <span className="text-right">Target Qty</span>
-                    {sizes.map((s) => <span key={s} className="text-center">{s}</span>)}
+                    {sizes.map((s) => <span key={s} className="text-center">{sizeLabelForGender(article.gender, s)}</span>)}
                     {fabricFlags[0] && <span className="text-right">F1 (kg)</span>}
                     {fabricFlags[1] && <span className="text-right">F2 (kg)</span>}
                     {fabricFlags[2] && <span className="text-right">F3 (kg)</span>}

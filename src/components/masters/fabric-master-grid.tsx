@@ -64,6 +64,17 @@ export function FabricMasterGrid({
 
     return [
       {
+        field: "id",
+        headerName: "ID",
+        pinned: "left",
+        width: 110,
+        minWidth: 90,
+        editable: false,
+        cellClass: "font-mono text-[10px]",
+        tooltipField: "id",
+        valueFormatter: (p) => (typeof p.value === "string" ? p.value.slice(-8) : ""),
+      },
+      {
         field: "fabricName", headerName: "Fabric Name", pinned: "left", minWidth: 150, editable: false,
         comparator: (a, b) => (a || "").toLowerCase().localeCompare((b || "").toLowerCase()),
       },

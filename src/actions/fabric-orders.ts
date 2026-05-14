@@ -73,6 +73,7 @@ export async function getFabricOrders(
   phaseId: string,
   filters?: {
     fabricVendorId?: string;
+    fabricVendorIds?: string[];
     isRepeat?: boolean;
     /** Alert-driven filter; see src/lib/alert-filters.ts */
     alertFilter?: FabricOrderAlertFilter;
@@ -81,7 +82,8 @@ export async function getFabricOrders(
   await requirePermission("inventory:fabric_orders:view");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { phaseId };
-  if (filters?.fabricVendorId) where.fabricVendorId = filters.fabricVendorId;
+  if (filters?.fabricVendorIds && filters.fabricVendorIds.length > 0) where.fabricVendorId = { in: filters.fabricVendorIds };
+  else if (filters?.fabricVendorId) where.fabricVendorId = filters.fabricVendorId;
   if (filters?.isRepeat !== undefined) where.isRepeat = filters.isRepeat;
 
   if (filters?.alertFilter === "stale") {

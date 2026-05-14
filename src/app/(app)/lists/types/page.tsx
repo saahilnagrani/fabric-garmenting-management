@@ -48,9 +48,9 @@ export default async function ProductTypesPage() {
 
   return (
     <div className="space-y-4 max-w-lg">
-      <h1 className="text-2xl font-bold">Product Types</h1>
+      <h1 className="text-2xl font-bold">Article Types</h1>
       <p className="text-sm text-muted-foreground">
-        {types.length} types. These appear as options in the Product Master &quot;Type&quot; dropdown.
+        {types.length}{" "}types. These appear as options in the Article Master &quot;Type&quot; dropdown.
       </p>
       <ProductTypeList types={types} />
     </div>

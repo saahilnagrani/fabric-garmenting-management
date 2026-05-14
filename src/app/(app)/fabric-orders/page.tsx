@@ -24,9 +24,11 @@ export default async function FabricOrdersPage({
 
   const alertFilter = isFabricOrderAlertFilter(params.alertFilter) ? params.alertFilter : undefined;
 
+  const vendorIds = params.vendor ? params.vendor.split(",").filter(Boolean) : [];
+
   const [orders, vendors, fabricMasters, productMasters, garmentingLocationRecords, totalCount] = await Promise.all([
     getFabricOrders(phase.id, {
-      fabricVendorId: params.vendor || undefined,
+      fabricVendorIds: vendorIds.length > 0 ? vendorIds : undefined,
       isRepeat,
       alertFilter,
     }),

@@ -14,11 +14,7 @@ export const getAccessoryMasters = cache(async (includeArchived = false) => {
     where: includeArchived ? {} : { isStrikedThrough: false },
     include: {
       vendor: true,
-      productLinks: {
-        include: {
-          productMaster: { select: { id: true, skuCode: true } },
-        },
-      },
+      articleLinks: true,
     },
     orderBy: [{ category: "asc" }, { displayName: "asc" }],
   });
@@ -40,30 +36,30 @@ export type AccessoryMasterInput = {
 };
 
 /**
- * Sync article-code BOM entries for an accessory into ProductMasterAccessory.
- * Replaces all existing BOM links for this accessory with the new set.
+ * Sync article-level BOM entries for an accessory into ArticleAccessory.
+ * Replaces all existing links for this accessory with the new set. `code`
+ * here is the articleNumber (not the SKU code) — BOM lives at article level.
  */
 async function syncArticleCodes(accessoryId: string, entries: ArticleCodeUnit[]) {
-  await db.productMasterAccessory.deleteMany({ where: { accessoryId } });
+  await db.articleAccessory.deleteMany({ where: { accessoryId } });
   if (entries.length === 0) return;
 
-  const skuCodes = [...new Set(entries.map((e) => e.code).filter(Boolean))];
-  const productMasters = await db.productMaster.findMany({
-    where: { skuCode: { in: skuCodes } },
-    select: { id: true, skuCode: true },
-  });
-  const skuToId = new Map(productMasters.map((pm) => [pm.skuCode, pm.id]));
+  // Collapse duplicates by article (last write wins).
+  const byArticle = new Map<string, number>();
+  for (const e of entries) {
+    if (!e.code || e.units <= 0) continue;
+    byArticle.set(e.code, e.units);
+  }
+  if (byArticle.size === 0) return;
 
-  const rows = entries
-    .filter((e) => e.code && skuToId.has(e.code) && e.units > 0)
-    .map((e) => ({
-      productMasterId: skuToId.get(e.code)!,
+  await db.articleAccessory.createMany({
+    data: [...byArticle.entries()].map(([articleNumber, units]) => ({
+      articleNumber,
       accessoryId,
-      quantityPerPiece: e.units,
-    }));
-
-  if (rows.length === 0) return;
-  await db.productMasterAccessory.createMany({ data: rows, skipDuplicates: true });
+      quantityPerPiece: units,
+    })),
+    skipDuplicates: true,
+  });
 }
 
 function revalidateAccessoryPaths() {
@@ -155,7 +151,7 @@ export async function deleteAccessoryMaster(id: string) {
   const [purchaseCount, dispatchCount, bomCount] = await Promise.all([
     db.accessoryPurchase.count({ where: { accessoryId: id } }),
     db.accessoryDispatch.count({ where: { accessoryId: id } }),
-    db.productMasterAccessory.count({ where: { accessoryId: id } }),
+    db.articleAccessory.count({ where: { accessoryId: id } }),
   ]);
 
   if (purchaseCount > 0 || dispatchCount > 0 || bomCount > 0) {
@@ -233,20 +229,33 @@ export async function createAccessoryMastersTyped(
   return created;
 }
 
-/** Lightweight list of article codes for the accessory master form comboboxes. */
+/**
+ * Lightweight list of article numbers for the accessory master form
+ * comboboxes. Returns one row per distinct articleNumber, with a sample
+ * productName so the user can recognise it in the dropdown.
+ */
 export async function getArticleCodes(): Promise<{ value: string; label: string }[]> {
   await requirePermission("inventory:accessories:view");
   const rows = await db.productMaster.findMany({
-    where: { isStrikedThrough: false },
-    select: { skuCode: true, articleNumber: true, productName: true, styleNumber: true },
-    orderBy: { skuCode: "asc" },
+    where: { isStrikedThrough: false, articleNumber: { not: null } },
+    select: { articleNumber: true, productName: true },
   });
-  return rows.map((r) => {
-    const parts = [r.skuCode];
-    if (r.articleNumber) parts.push(r.articleNumber);
-    if (r.productName) parts.push(r.productName);
-    return { value: r.skuCode, label: parts.join(" — ") };
-  });
+  // Group by articleNumber, pick first non-empty productName as sample label.
+  const byArticle = new Map<string, string | null>();
+  for (const r of rows) {
+    if (!r.articleNumber) continue;
+    if (!byArticle.has(r.articleNumber)) {
+      byArticle.set(r.articleNumber, r.productName ?? null);
+    } else if (!byArticle.get(r.articleNumber) && r.productName) {
+      byArticle.set(r.articleNumber, r.productName);
+    }
+  }
+  return [...byArticle.entries()]
+    .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true }))
+    .map(([articleNumber, productName]) => ({
+      value: articleNumber,
+      label: productName ? `${articleNumber} — ${productName}` : articleNumber,
+    }));
 }
 
 export async function getAccessoryCategories(): Promise<string[]> {

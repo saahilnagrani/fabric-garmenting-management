@@ -172,6 +172,15 @@ export default async function AccessoryPurchaseOrderPage({
 
           const isCancelled = vendorPurchases.every((p) => p.status === "CANCELLED");
 
+          const advanceRaw = vendorPurchases.find((p) => p.advancePercentage != null)?.advancePercentage;
+          const advancePct = advanceRaw != null ? Number(advanceRaw) : null;
+          const balancePct = advancePct != null ? +(100 - advancePct).toFixed(2) : null;
+          const formatPct = (n: number) => (Number.isInteger(n) ? n.toString() : n.toString());
+          const terms: string[] = [...PO_TERMS];
+          if (advancePct != null) {
+            terms.splice(1, 0, `${formatPct(advancePct)}% advance paid. ${formatPct(balancePct!)}% to be paid after delivery.`);
+          }
+
           return (
             <section key={vendorId} className={`po-page mb-10 print:mb-0 relative ${isCancelled ? "opacity-75" : ""}`}>
               {isCancelled && (
@@ -325,7 +334,7 @@ export default async function AccessoryPurchaseOrderPage({
                   Terms &amp; Conditions
                 </div>
                 <ol className="border border-black px-5 py-2 text-[10px] leading-snug list-decimal space-y-0.5">
-                  {PO_TERMS.map((t, i) => (
+                  {terms.map((t, i) => (
                     <li key={i}>{t}</li>
                   ))}
                 </ol>

@@ -119,6 +119,7 @@ export function PhaseList({ phases }: { phases: Phase[] }) {
               onChange={(e) => setNewData((d) => ({ ...d, number: e.target.value }))}
               placeholder="#"
               type="number"
+              step="any"
               className="w-20"
               onKeyDown={(e) => {
                 if (e.key === "Enter") handleAdd();
@@ -186,6 +187,7 @@ export function PhaseList({ phases }: { phases: Phase[] }) {
                   value={editingData.number}
                   onChange={(e) => setEditingData((d) => ({ ...d, number: e.target.value }))}
                   type="number"
+                  step="any"
                   className="h-8 w-16"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleUpdate(p.id);
