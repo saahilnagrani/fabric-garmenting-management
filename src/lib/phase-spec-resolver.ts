@@ -126,6 +126,55 @@ export async function resolveFabricAtPhase(
   return applyChangelog(filtered, FABRIC_FIELDS as readonly string[], defaults);
 }
 
+/**
+ * Resync ProductMaster's cached fabric/cost columns to the latest-phase
+ * resolved values. Call after any PhaseFabric / PhaseCost write so the
+ * master row continues to reflect "current" state. No-op if no phases
+ * exist yet.
+ */
+export async function resyncProductMasterCache(
+  tx: Tx,
+  productMasterId: string,
+): Promise<void> {
+  const latest = await tx.phase.findFirst({
+    orderBy: { number: "desc" },
+    select: { id: true },
+  });
+  if (!latest) return;
+  const [fabric, cost] = await Promise.all([
+    resolveFabricAtPhase(tx, productMasterId, latest.id),
+    resolveCostAtPhase(tx, productMasterId, latest.id),
+  ]);
+  // ProductMaster columns: fabric*Name, fabric*CostPerKg, garmentsPerKg*,
+  // plus the non-fabric cost fields. vendorId fields on the changelog have
+  // no master-column equivalent and are skipped.
+  const masterUpdate: Record<string, unknown> = {
+    fabricName: fabric.fabricName ?? null,
+    fabricCostPerKg: fabric.fabricCostPerKg ?? null,
+    garmentsPerKg: fabric.garmentsPerKg ?? null,
+    fabric2Name: fabric.fabric2Name ?? null,
+    fabric2CostPerKg: fabric.fabric2CostPerKg ?? null,
+    garmentsPerKg2: fabric.garmentsPerKg2 ?? null,
+    fabric3Name: fabric.fabric3Name ?? null,
+    fabric3CostPerKg: fabric.fabric3CostPerKg ?? null,
+    garmentsPerKg3: fabric.garmentsPerKg3 ?? null,
+    fabric4Name: fabric.fabric4Name ?? null,
+    fabric4CostPerKg: fabric.fabric4CostPerKg ?? null,
+    garmentsPerKg4: fabric.garmentsPerKg4 ?? null,
+    stitchingCost: cost.stitchingCost ?? null,
+    brandLogoCost: cost.brandLogoCost ?? null,
+    neckTwillCost: cost.neckTwillCost ?? null,
+    reflectorsCost: cost.reflectorsCost ?? null,
+    fusingCost: cost.fusingCost ?? null,
+    accessoriesCost: cost.accessoriesCost ?? null,
+    brandTagCost: cost.brandTagCost ?? null,
+    sizeTagCost: cost.sizeTagCost ?? null,
+    packagingCost: cost.packagingCost ?? null,
+    inwardShipping: cost.inwardShipping ?? null,
+  };
+  await tx.productMaster.update({ where: { id: productMasterId }, data: masterUpdate });
+}
+
 /** Resolve cost spec at a given phase. */
 export async function resolveCostAtPhase(
   tx: Tx,

@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { requirePermission } from "@/lib/require-permission";
 import { logAction } from "@/lib/audit";
+import { resyncProductMasterCache } from "@/lib/phase-spec-resolver";
 
 export async function getPhaseCosts(entityType: string, entityId: string) {
   await requirePermission("inventory:masters:view");
@@ -23,6 +24,9 @@ export async function deletePhaseCost(phaseId: string, entityType: string, entit
   await db.phaseCost.delete({
     where: { phaseId_entityType_entityId: { phaseId, entityType, entityId } },
   });
+  if (entityType === "PRODUCT_MASTER") {
+    await resyncProductMasterCache(db, entityId);
+  }
   logAction(session.user!.id!, session.user!.name!, "DELETE", "PhaseCost", existing.id);
   revalidatePath("/fabric-masters");
   revalidatePath("/product-masters");
@@ -39,6 +43,9 @@ export async function upsertPhaseCost(phaseId: string, entityType: string, entit
     update: data,
     create: { phaseId, entityType, entityId, ...data },
   });
+  if (entityType === "PRODUCT_MASTER") {
+    await resyncProductMasterCache(db, entityId);
+  }
   logAction(session.user!.id!, session.user!.name!, "UPDATE", "PhaseCost", result.id);
   revalidatePath("/fabric-masters");
   revalidatePath("/product-masters");
