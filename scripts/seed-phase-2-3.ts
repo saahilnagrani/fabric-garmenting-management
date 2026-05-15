@@ -824,23 +824,7 @@ async function stagePhaseFabric(ctx: Ctx): Promise<void> {
   };
   const sole = <T>(s: Set<T>): T | undefined => reconcile(s as Set<T | null>) as T | undefined;
 
-  // Existing master + phase data for comparison
   const masterIds = Array.from(new Set(Array.from(buckets.values()).map((b) => b.productMasterId)));
-  const masters = await prisma.productMaster.findMany({
-    where: { id: { in: masterIds } },
-    select: {
-      id: true,
-      articleNumber: true,
-      fabricName: true,
-      fabricCostPerKg: true,
-      garmentsPerKg: true,
-      fabric2Name: true,
-      fabric2CostPerKg: true,
-      garmentsPerKg2: true,
-    },
-  });
-  const masterById = new Map(masters.map((m) => [m.id, m]));
-
   const existingPhaseFabric = await prisma.phaseFabric.findMany({
     where: {
       phaseId: { in: [phase2Id, phase3Id] },
@@ -887,31 +871,17 @@ async function stagePhaseFabric(ctx: Ctx): Promise<void> {
       continue;
     }
 
-    const master = masterById.get(b.productMasterId);
-    if (!master) continue;
-
-    // Compute what the phase row would be vs master defaults — only write
-    // fields that diverge from master (so PhaseFabric only stores deltas).
-    const masterCmp = {
-      fabricName: master.fabricName ?? null,
-      fabricCostPerKg: dec(master.fabricCostPerKg),
-      garmentsPerKg: dec(master.garmentsPerKg),
-      fabric2Name: master.fabric2Name ?? null,
-      fabric2CostPerKg: dec(master.fabric2CostPerKg),
-      garmentsPerKg2: dec(master.garmentsPerKg2),
-    };
-
+    // Write the bucket's resolved spec EXPLICITLY into PhaseFabric so the
+    // history is locked in regardless of later drift on master columns or
+    // the intro-phase row. Null-on-bucket means "phase has no data for this
+    // field" — leave it null so the resolver inherits from prior rows.
     const updateData: Record<string, unknown> = {};
-    if (fabricName !== masterCmp.fabricName) updateData.fabricName = fabricName;
-    if (fabricCostPerKg !== masterCmp.fabricCostPerKg)
-      updateData.fabricCostPerKg = fabricCostPerKg;
-    if (garmentsPerKg !== masterCmp.garmentsPerKg) updateData.garmentsPerKg = garmentsPerKg;
-    if (fabric2Name !== masterCmp.fabric2Name) updateData.fabric2Name = fabric2Name;
-    if (fabric2CostPerKg !== masterCmp.fabric2CostPerKg)
-      updateData.fabric2CostPerKg = fabric2CostPerKg;
-    if (garmentsPerKg2 !== masterCmp.garmentsPerKg2)
-      updateData.garmentsPerKg2 = garmentsPerKg2;
-    // Vendor IDs aren't on master columns; they only live on PhaseFabric.
+    if (fabricName !== null) updateData.fabricName = fabricName;
+    if (fabricCostPerKg !== null) updateData.fabricCostPerKg = fabricCostPerKg;
+    if (garmentsPerKg !== null) updateData.garmentsPerKg = garmentsPerKg;
+    if (fabric2Name !== null) updateData.fabric2Name = fabric2Name;
+    if (fabric2CostPerKg !== null) updateData.fabric2CostPerKg = fabric2CostPerKg;
+    if (garmentsPerKg2 !== null) updateData.garmentsPerKg2 = garmentsPerKg2;
     if (fabricVendorId) updateData.fabricVendorId = fabricVendorId;
     if (fabric2VendorId) updateData.fabric2VendorId = fabric2VendorId;
 
