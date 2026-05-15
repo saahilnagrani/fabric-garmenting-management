@@ -160,6 +160,22 @@ type Ctx = {
       coloursAvailable: string[];
     }
   >;
+  // Article-aware resolution: key = `${rawSku}|${articleNumber ?? ""}`.
+  // Required for SKUs that collide across articles (e.g. "M TM01 BLU" is the
+  // current sku for 2103 and a previousSkuCode for 2106).
+  masterBySkuAndArticle: Map<
+    string,
+    {
+      id: string;
+      currentSkuCode: string;
+      articleNumber: string | null;
+      type: string;
+      gender: string;
+      productName: string | null;
+      typeRefId: string | null;
+      coloursAvailable: string[];
+    }
+  >;
 };
 
 async function stageMasters(): Promise<Ctx> {
@@ -196,11 +212,12 @@ async function stageMasters(): Promise<Ctx> {
       .map((f) => [f.fabricName, Number(f.mrp)]),
   );
 
-  // SKUs to resolve
+  // Resolve masters by BOTH (rawSku, articleNumber) — a raw SKU can match
+  // multiple masters (one as current, others via previousSkuCodes), so we
+  // disambiguate using the workbook row's article number.
   const rawSkus = Array.from(
     new Set(articles.map((r) => norm(r.SkuCode)).filter(Boolean)),
   );
-
   const [byCurrent, byPrev] = await Promise.all([
     prisma.productMaster.findMany({
       where: { skuCode: { in: rawSkus } },
@@ -231,43 +248,93 @@ async function stageMasters(): Promise<Ctx> {
     }),
   ]);
 
-  const masterBySku = new Map<string, Ctx["masterBySku"] extends Map<string, infer V> ? V : never>();
+  // Build candidate-list map: rawSku → [masters that could match it]
+  type MasterRow = {
+    id: string;
+    currentSkuCode: string;
+    articleNumber: string | null;
+    type: string;
+    gender: string;
+    productName: string | null;
+    typeRefId: string | null;
+    coloursAvailable: string[];
+  };
+  const candidatesBySku = new Map<string, MasterRow[]>();
+  const toRow = (m: typeof byCurrent[number]): MasterRow => ({
+    id: m.id,
+    currentSkuCode: m.skuCode,
+    articleNumber: m.articleNumber,
+    type: m.type,
+    gender: m.gender as unknown as string,
+    productName: m.productName,
+    typeRefId: m.typeRefId,
+    coloursAvailable: m.coloursAvailable,
+  });
   for (const m of byCurrent) {
-    masterBySku.set(m.skuCode, {
-      id: m.id,
-      currentSkuCode: m.skuCode,
-      articleNumber: m.articleNumber,
-      type: m.type,
-      gender: m.gender as unknown as string,
-      productName: m.productName,
-      typeRefId: m.typeRefId,
-      coloursAvailable: m.coloursAvailable,
-    });
+    const list = candidatesBySku.get(m.skuCode) ?? [];
+    list.push(toRow(m));
+    candidatesBySku.set(m.skuCode, list);
   }
   for (const m of byPrev) {
     for (const prev of m.previousSkuCodes) {
-      if (rawSkus.includes(prev) && !masterBySku.has(prev)) {
-        masterBySku.set(prev, {
-          id: m.id,
-          currentSkuCode: m.skuCode,
-          articleNumber: m.articleNumber,
-          type: m.type,
-          gender: m.gender as unknown as string,
-          productName: m.productName,
-          typeRefId: m.typeRefId,
-          coloursAvailable: m.coloursAvailable,
-        });
-      }
+      if (!rawSkus.includes(prev)) continue;
+      const list = candidatesBySku.get(prev) ?? [];
+      // Skip if this master is already in the candidate list (same id)
+      if (!list.some((x) => x.id === m.id)) list.push(toRow(m));
+      candidatesBySku.set(prev, list);
     }
   }
-  const unresolvedSkus = rawSkus.filter((s) => !masterBySku.has(s));
-  if (unresolvedSkus.length > 0) {
-    console.error(`[masters] ABORT — unresolved SKUs:\n  ${unresolvedSkus.join("\n  ")}`);
-    throw new Error(`${unresolvedSkus.length} SKU(s) not found in ProductMaster`);
+
+  // For each (rawSku, articleNumber) combination in articles, resolve to a
+  // single master. Multi-candidate SKUs use article-number to pick.
+  const masterBySkuAndArticle = new Map<string, MasterRow>();
+  const unresolved: string[] = [];
+  const ambiguous: string[] = [];
+  for (const row of articles) {
+    const rawSku = norm(row.SkuCode);
+    if (!rawSku) continue;
+    const articleNumber = norm(row.ArticleNumber) || null;
+    const key = `${rawSku}|${articleNumber ?? ""}`;
+    if (masterBySkuAndArticle.has(key)) continue;
+    const candidates = candidatesBySku.get(rawSku) ?? [];
+    if (candidates.length === 0) {
+      unresolved.push(`${rawSku} (art=${articleNumber ?? "?"})`);
+      continue;
+    }
+    let pick: MasterRow | null = null;
+    if (candidates.length === 1) {
+      pick = candidates[0];
+    } else if (articleNumber) {
+      pick = candidates.find((c) => c.articleNumber === articleNumber) ?? null;
+      if (!pick) {
+        // Fall back: prefer current-sku match over rename
+        pick = candidates.find((c) => c.currentSkuCode === rawSku) ?? candidates[0];
+      }
+    } else {
+      pick = candidates.find((c) => c.currentSkuCode === rawSku) ?? candidates[0];
+    }
+    if (!pick) {
+      ambiguous.push(key);
+      continue;
+    }
+    masterBySkuAndArticle.set(key, pick);
+  }
+  if (unresolved.length > 0) {
+    console.error(`[masters] ABORT — unresolved (rawSku, articleNumber):\n  ${unresolved.join("\n  ")}`);
+    throw new Error(`${unresolved.length} (sku,article) pair(s) not found in ProductMaster`);
+  }
+  if (ambiguous.length > 0) {
+    console.warn(`[masters] WARN — ambiguous and unresolved:\n  ${ambiguous.join("\n  ")}`);
   }
   console.log(
-    `[masters] resolved ${rawSkus.length} SKUs (${byCurrent.length} current + ${rawSkus.length - byCurrent.length} via previousSkuCodes)`,
+    `[masters] resolved ${masterBySkuAndArticle.size} (sku, article) pair(s) across ${rawSkus.length} raw SKUs`,
   );
+  // Build the legacy masterBySku map too (sku-only) — used by stagePhaseFabric
+  // when we don't have an article-number context. Prefer current-sku match.
+  const masterBySku = new Map<string, MasterRow>();
+  for (const [sku, list] of candidatesBySku) {
+    masterBySku.set(sku, list.find((c) => c.currentSkuCode === sku) ?? list[0]);
+  }
 
   // Vendors used in articles + fabrics + garmenting locations
   const vendorNames = new Set<string>();
@@ -347,6 +414,7 @@ async function stageMasters(): Promise<Ctx> {
     garmentingLocationIdByName,
     colourIdByName,
     masterBySku,
+    masterBySkuAndArticle,
   };
 }
 
@@ -355,10 +423,14 @@ async function stageProducts(ctx: Ctx): Promise<void> {
   console.log(`\n[products] ${mode}`);
   // Dedup must use the RESOLVED (current) sku code, not the workbook's raw sku,
   // because renamed SKUs are stored under their current value in Product.
+  // Resolution uses (rawSku, articleNumber) to disambiguate collisions.
   const resolvedSkus = Array.from(
     new Set(
       ctx.articles
-        .map((r) => ctx.masterBySku.get(norm(r.SkuCode))?.currentSkuCode)
+        .map((r) => {
+          const key = `${norm(r.SkuCode)}|${norm(r.ArticleNumber)}`;
+          return ctx.masterBySkuAndArticle.get(key)?.currentSkuCode;
+        })
         .filter((s): s is string => !!s),
     ),
   );
@@ -381,7 +453,8 @@ async function stageProducts(ctx: Ctx): Promise<void> {
   for (const row of ctx.articles) {
     const sku = norm(row.SkuCode);
     if (!sku) continue;
-    const master = ctx.masterBySku.get(sku);
+    const articleKey = `${sku}|${norm(row.ArticleNumber)}`;
+    const master = ctx.masterBySkuAndArticle.get(articleKey);
     if (!master) continue; // already errored in masters stage
     const phaseId = ctx.phaseIdByNumber.get(row.Phase);
     if (!phaseId) continue;
@@ -729,7 +802,27 @@ async function stagePhaseFabric(ctx: Ctx): Promise<void> {
     b.garmentsPerKg2.add(dec(p.assumedFabric2GarmentsPerKg));
   }
 
-  const sole = <T>(s: Set<T>): T | undefined => (s.size === 1 ? s.values().next().value : undefined);
+  // Reconcile a set of (possibly null) values across products in a bucket.
+  //   - Drop nulls. If 0 non-null values remain → null is the answer.
+  //   - If all remaining values agree → that value.
+  //   - Otherwise, apply the field-specific tiebreaker if provided. If none
+  //     applies, return `undefined` (signals an unresolved conflict).
+  function reconcile<T>(
+    s: Set<T | null>,
+    tiebreak?: (vs: T[]) => T | undefined,
+  ): T | null | undefined {
+    const nonNull = Array.from(s).filter((v): v is T => v !== null);
+    if (nonNull.length === 0) return null;
+    const uniq = Array.from(new Set(nonNull));
+    if (uniq.length === 1) return uniq[0];
+    return tiebreak ? tiebreak(uniq) : undefined;
+  }
+  const minNum = (vs: string[]): string | undefined => {
+    const ns = vs.map(Number).filter(Number.isFinite);
+    if (!ns.length) return undefined;
+    return String(Math.min(...ns));
+  };
+  const sole = <T>(s: Set<T>): T | undefined => reconcile(s as Set<T | null>) as T | undefined;
 
   // Existing master + phase data for comparison
   const masterIds = Array.from(new Set(Array.from(buckets.values()).map((b) => b.productMasterId)));
@@ -771,13 +864,13 @@ async function stagePhaseFabric(ctx: Ctx): Promise<void> {
       );
       continue;
     }
-    const fabricVendorId = sole(b.fabricVendorId);
-    const fabricCostPerKg = sole(b.fabricCostPerKg);
-    const garmentsPerKg = sole(b.garmentsPerKg);
-    const fabric2Name = sole(b.fabric2Name);
-    const fabric2VendorId = sole(b.fabric2VendorId);
-    const fabric2CostPerKg = sole(b.fabric2CostPerKg);
-    const garmentsPerKg2 = sole(b.garmentsPerKg2);
+    const fabricVendorId = reconcile(b.fabricVendorId);
+    const fabricCostPerKg = reconcile(b.fabricCostPerKg);
+    const garmentsPerKg = reconcile(b.garmentsPerKg, minNum);
+    const fabric2Name = reconcile(b.fabric2Name);
+    const fabric2VendorId = reconcile(b.fabric2VendorId);
+    const fabric2CostPerKg = reconcile(b.fabric2CostPerKg);
+    const garmentsPerKg2 = reconcile(b.garmentsPerKg2, minNum);
     if (
       fabricVendorId === undefined ||
       fabricCostPerKg === undefined ||
