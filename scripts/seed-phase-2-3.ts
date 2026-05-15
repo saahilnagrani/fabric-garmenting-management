@@ -353,12 +353,27 @@ async function stageMasters(): Promise<Ctx> {
 // ─── Stage: products ─────────────────────────────────────────────
 async function stageProducts(ctx: Ctx): Promise<void> {
   console.log(`\n[products] ${mode}`);
-  const skuCodes = Array.from(new Set(ctx.articles.map((r) => norm(r.SkuCode))));
+  // Dedup must use the RESOLVED (current) sku code, not the workbook's raw sku,
+  // because renamed SKUs are stored under their current value in Product.
+  const resolvedSkus = Array.from(
+    new Set(
+      ctx.articles
+        .map((r) => ctx.masterBySku.get(norm(r.SkuCode))?.currentSkuCode)
+        .filter((s): s is string => !!s),
+    ),
+  );
   const existing = await prisma.product.findMany({
-    where: { skuCode: { in: skuCodes } },
-    select: { skuCode: true, phaseId: true },
+    where: { skuCode: { in: resolvedSkus } },
+    select: { skuCode: true, phaseId: true, articleNumber: true, fabricName: true, isRepeat: true, notes: true },
   });
-  const existingKey = new Set(existing.map((p) => `${p.skuCode}|${p.phaseId}`));
+  // Bucket by (skuCode, phaseId, isRepeat, fabricName) so we can detect when
+  // the SAME workbook row was already seeded but allow legitimate dupes
+  // (e.g. same sku in P3-AO-New and P3-AO-Rpt — different isRepeat).
+  const existingCount = new Map<string, number>();
+  for (const p of existing) {
+    const key = `${p.skuCode}|${p.phaseId}|${p.isRepeat}|${p.fabricName}`;
+    existingCount.set(key, (existingCount.get(key) ?? 0) + 1);
+  }
 
   let toCreate = 0;
   let skipped = 0;
@@ -370,16 +385,20 @@ async function stageProducts(ctx: Ctx): Promise<void> {
     if (!master) continue; // already errored in masters stage
     const phaseId = ctx.phaseIdByNumber.get(row.Phase);
     if (!phaseId) continue;
-    const key = `${sku}|${phaseId}`;
-    if (existingKey.has(key)) {
-      skipped++;
-      continue;
-    }
 
     const fabricVendors = splitList(row.FabricVendors);
     const fabricNames = splitList(row.FabricNames);
     const fabricName = fabricNames[0] ?? "";
     const fabric2Name = norm(row.Fabric2Name) || fabricNames[1] || null;
+    // Dedup: same (sku, phase, isRepeat, fabricName) row already in DB? skip.
+    // This allows legit duplicates (same sku in *-New + *-Rpt sheets, different
+    // isRepeat) while suppressing genuine re-runs.
+    const dedupKey = `${master.currentSkuCode}|${phaseId}|${row.IsRepeat}|${fabricName}`;
+    if ((existingCount.get(dedupKey) ?? 0) > 0) {
+      existingCount.set(dedupKey, existingCount.get(dedupKey)! - 1);
+      skipped++;
+      continue;
+    }
     // Vendor: row first, fall back to FabricMaster.vendorId by fabric name
     const fabricVendor1Id =
       (fabricVendors[0] ? ctx.vendorIdByName.get(fabricVendors[0]) : undefined) ??
@@ -397,9 +416,11 @@ async function stageProducts(ctx: Ctx): Promise<void> {
     const garmentingAtId =
       garmentingAt ? ctx.garmentingLocationIdByName.get(garmentingAt) ?? null : null;
 
+    const workbookStatus = norm(row.Status);
     const notes = [
       `Seeded from ${row.Sheet} (Phase ${row.Phase}${row.IsRepeat ? ", repeat" : ""}).`,
       sku !== master.currentSkuCode ? `Workbook SKU "${sku}" → current "${master.currentSkuCode}".` : null,
+      workbookStatus ? `Workbook status: "${workbookStatus}".` : null,
     ]
       .filter(Boolean)
       .join(" ");
@@ -417,7 +438,7 @@ async function stageProducts(ctx: Ctx): Promise<void> {
       gender: master.gender as never,
       productName: master.productName,
       typeRefId: master.typeRefId ?? null,
-      status: (row.Status?.trim().toUpperCase().replaceAll(" ", "_") || "PLANNED") as never,
+      status: "PLANNED" as never,
       fabricVendorId: fabricVendor1Id,
       fabricName,
       fabricGsm: row.GSM,
@@ -474,9 +495,13 @@ async function stageFabricOrders(ctx: Ctx): Promise<void> {
   const articleNumbers = Array.from(
     new Set(ctx.fabrics.flatMap((r) => splitList(r.ArticleNumbers))),
   );
+  const phaseIds = Array.from(ctx.phaseIdByNumber.values());
   const existing = await prisma.fabricOrder.findMany({
     where: {
       OR: [
+        // Empty-articleNumbers FabricOrders in our phases (otherwise the
+        // sub-clauses below would miss them since they only match by article).
+        { phaseId: { in: phaseIds }, articleNumbers: "" },
         { articleNumbers: { in: articleNumbers } },
         ...articleNumbers.map((n) => ({ articleNumbers: { contains: n } })),
       ],
@@ -496,6 +521,10 @@ async function stageFabricOrders(ctx: Ctx): Promise<void> {
     if (norm(ex.colour) !== norm(row.Colour)) return false;
     const wanted = splitList(row.ArticleNumbers);
     const have = splitList(ex.articleNumbers);
+    // Empty articleNumbers on both sides → treat as the same bucket. Without
+    // this, rows with blank article numbers (e.g. raw fabric buys not tied to
+    // any article) bypass dedup and duplicate on every re-run.
+    if (wanted.length === 0 && have.length === 0) return true;
     return wanted.some((w) => have.includes(w));
   }
 
@@ -528,10 +557,19 @@ async function stageFabricOrders(ctx: Ctx): Promise<void> {
       cutToPieceNote = `Cut-to-piece order; cost-per-kg substituted with FabricMaster.mrp${mrp != null ? ` (${mrp})` : " (unset)"} as a placeholder.`;
       cutToPiecePlaceholder++;
     }
+    // Workbook Gender is freeform ("Mens", "Womens & Kids", "Collars", etc.);
+    // map only clean single-gender values to the enum, otherwise null + note.
+    const genderRaw = norm(row.Gender);
+    const genderEnum =
+      genderRaw === "Mens" ? "MENS" :
+      genderRaw === "Womens" ? "WOMENS" :
+      genderRaw === "Kids" ? "KIDS" : null;
+    const genderNote =
+      genderRaw && !genderEnum ? `Workbook gender: "${genderRaw}".` : null;
     const data = {
       phaseId,
       fabricVendorId,
-      gender: row.Gender ? (row.Gender as never) : null,
+      gender: genderEnum as never,
       articleNumbers: norm(row.ArticleNumbers),
       fabricName: norm(row.FabricName),
       colour,
@@ -550,6 +588,7 @@ async function stageFabricOrders(ctx: Ctx): Promise<void> {
       notes: [
         `Seeded from ${row.Sheet} (Phase ${row.Phase}${row.IsRepeat ? ", repeat" : ""}).`,
         cutToPieceNote,
+        genderNote,
         norm(row.Notes) || null,
       ]
         .filter(Boolean)
