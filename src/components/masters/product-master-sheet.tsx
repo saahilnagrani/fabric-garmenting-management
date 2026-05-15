@@ -1130,6 +1130,7 @@ export function ProductMasterSheet({
           );
         };
 
+        let phaseHistoryWarning = false;
         for (const entry of skuEntries) {
           const active = editingRow.skus.find((s) => matchEntry(s, entry));
           const archived = !active ? editingRow.archivedSkus?.find((s) => matchEntry(s, entry)) : null;
@@ -1141,7 +1142,7 @@ export function ProductMasterSheet({
             colours4Available: entry.colour4 ? [entry.colour4] : [],
           };
           if (existingSku) {
-            await updateProductMaster(existingSku.id, {
+            const res = await updateProductMaster(existingSku.id, {
               ...sharedPayload,
               skuCode: entry.skuCode,
               ...coloursPayload,
@@ -1149,6 +1150,9 @@ export function ProductMasterSheet({
               ...(archived ? { isStrikedThrough: false } : {}),
               ...(bomPayload !== undefined ? { bomLines: bomPayload } : {}),
             });
+            if (res && (res as { _phaseHistoryWarning?: boolean })._phaseHistoryWarning) {
+              phaseHistoryWarning = true;
+            }
           } else {
             await createProductMaster({
               ...sharedPayload,
@@ -1166,6 +1170,12 @@ export function ProductMasterSheet({
           }
         }
         toast.success("Article updated");
+        if (phaseHistoryWarning) {
+          toast.warning(
+            "Fabric / cost changes saved on master but NOT recorded to phase history — no phase is marked current.",
+            { duration: 8000 },
+          );
+        }
       } else {
         await batchCreateProductMasters(sharedPayload, skuEntries);
         toast.success(`${skuEntries.length} variant(s) created`);

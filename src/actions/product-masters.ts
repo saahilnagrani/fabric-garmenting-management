@@ -224,22 +224,28 @@ export async function updateProductMaster(id: string, data: any) {
     await linkArticleToFabricMaster(data.fabric2Name, master.articleNumber);
   }
   // Record fabric/cost edits to the changelog at the current phase. Skips
-  // when no fabric/cost fields actually changed, or when no phase is marked
-  // as current.
+  // when no fabric/cost fields actually changed. When fabric/cost did change
+  // but no phase is marked current, the master row still updates but the
+  // edit is NOT captured in history — surface a warning to the caller so
+  // the UI can toast.
+  let phaseHistoryWarning = false;
   if (previous) {
     const specChanges = diffSpecFields(
       previous as unknown as Record<string, unknown>,
       master as unknown as Record<string, unknown>,
     );
     if (Object.keys(specChanges).length > 0) {
-      await writePhaseSpecAtCurrentPhase(db, id, specChanges);
+      const { recorded } = await writePhaseSpecAtCurrentPhase(db, id, specChanges);
+      if (!recorded) phaseHistoryWarning = true;
     }
   }
   const action = data.isStrikedThrough !== undefined ? "ARCHIVE" : "UPDATE";
   const changes = previous ? computeDiff(previous as unknown as Record<string, unknown>, master as unknown as Record<string, unknown>) : undefined;
   logAction(session.user!.id!, session.user!.name!, action, "ProductMaster", id, changes);
   revalidatePath("/product-masters");
-  return JSON.parse(JSON.stringify(master));
+  const out = JSON.parse(JSON.stringify(master));
+  if (phaseHistoryWarning) out._phaseHistoryWarning = true;
+  return out;
 }
 
 export async function deleteProductMaster(id: string) {

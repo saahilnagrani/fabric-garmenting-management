@@ -120,16 +120,19 @@ export async function writePhaseSpecAtIntroduction(
 /**
  * Write changelog rows for an edit at the system's current phase. Used by
  * `updateProductMaster` to record edits made through the regular Fabric /
- * Garmenting Costs sections. No-op if no current phase is set.
+ * Garmenting Costs sections. Returns `{ recorded: false }` when no phase is
+ * marked current so the caller can warn the user that the edit went onto the
+ * master row but was NOT captured in phase history.
  */
 export async function writePhaseSpecAtCurrentPhase(
   tx: Tx,
   productMasterId: string,
   fields: SpecFields,
-): Promise<void> {
+): Promise<{ recorded: boolean }> {
   const currentPhaseId = await findCurrentPhaseId(tx);
-  if (!currentPhaseId) return;
+  if (!currentPhaseId) return { recorded: false };
   await writePhaseSpec(tx, productMasterId, currentPhaseId, fields);
+  return { recorded: true };
 }
 
 /**
